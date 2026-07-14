@@ -102,11 +102,13 @@
 - [x] Render.com, Supabase 가입 완료
 
 ### Phase 1. 백엔드 전환 + 국내주식 기반 다지기
-- [ ] Node.js 서버 뼈대 생성
-- [ ] `corsproxy.io` 의존 완전 제거 → 서버가 직접 Yahoo/KIS 호출
-- [ ] KIS API로 국내 종목 시세 + 차트(OHLC) 조회 연동
+- [x] Node.js 서버 뼈대 생성 (`server/` — Express, `server/src/index.js`)
+- [x] `corsproxy.io` 의존 완전 제거 → 서버가 직접 Yahoo 호출 (`/api/yahoo/chart`, `/api/yahoo/profile`). 브라우저 실검증 완료(매크로 대시보드 4개 지표 정상 수신)
+- [ ] 국내 종목 시세 + 차트(OHLC) 조회 연동 — **KIS 대신 토스증권 Open API로 변경 예정, 실시간 프로그램매매/OHLC 지원 여부 확인 필요** (진행 중)
 - [ ] 프론트에 국내/해외 자동 판별 로직 추가 (숫자 6자리=국내, 알파벳=해외)
-- [ ] PIN 인증을 서버 사이드로 이전 (보안 개선)
+- [x] PIN 인증을 서버 사이드로 이전 (`POST /api/auth/verify-pin`, IP당 5회 실패 시 60초 잠금). 브라우저 실검증 완료
+
+> ⚠️ Yahoo `quoteSummary`(회사 프로필/섹터) 엔드포인트는 Yahoo 측에서 크럼/쿠키 인증을 요구하도록 바뀌어 401 발생 — chart 엔드포인트는 정상. 원래도 실패 시 null 처리되던 부분이라 앱 동작에는 영향 없음. 필요 시 별도 해결 필요.
 
 ### Phase 2. 수급 데이터 파이프라인
 - [ ] KIS API → 프로그램매매 동향 (실시간 폴링)
