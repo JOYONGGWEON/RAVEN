@@ -555,23 +555,18 @@ function attachTickerAutocomplete(inputEl) {
   });
 }
 
-// 3-1. 개별 종목 데이터 (OHLC + Volume) — 국내/해외 자동 분기
+// 3-1. 개별 종목 데이터 (OHLC + Volume) — 국내/해외 모두 토스증권 API로 통합
+// (매크로 지표(VIX/10년물/BTC)만 Yahoo에 남아있음 — 토스는 지수/암호화폐를 다루지 않음)
 async function fetchStockData(ticker) {
   const trimmed = (ticker || "").trim();
-  if (isDomesticTicker(trimmed)) {
-    return fetchDomesticStockData(trimmed);
-  }
-  return fetchOverseasStockData(trimmed);
-}
+  const domestic = isDomesticTicker(trimmed);
+  const symbol = domestic ? trimmed : trimmed.toUpperCase();
 
-// 3-1-a. 국내 종목 데이터 (토스증권 API)
-async function fetchDomesticStockData(ticker) {
-  const symbol = ticker.trim();
   const finalUrl = `${API_BASE}/api/toss/candles?symbol=${encodeURIComponent(
     symbol
   )}&interval=1d&count=180`;
 
-  console.log(`[RAVEN] Fetching (domestic): ${symbol}`);
+  console.log(`[RAVEN] Fetching (${domestic ? "domestic" : "overseas"}): ${symbol}`);
 
   try {
     const response = await fetch(finalUrl);
@@ -581,7 +576,7 @@ async function fetchDomesticStockData(ticker) {
     const candles = json?.result?.candles;
     if (!candles || !candles.length) throw new Error("No candle result");
 
-    // 토스 캔들은 최신순으로 내려오므로, 야후 데이터와 동일하게 오래된 순으로 뒤집음
+    // 토스 캔들은 최신순으로 내려오므로 오래된 순으로 뒤집음
     const chronological = [...candles].reverse();
 
     const opens = [];
@@ -618,103 +613,33 @@ async function fetchDomesticStockData(ticker) {
       volumes
     };
   } catch (error) {
-    console.error("[RAVEN] 국내 시세 불러오기 실패:", error);
-    showToast("⚠️ 실시간 데이터 접속 실패. 분석을 진행할 수 없습니다.");
-    throw error;
-  }
-}
-
-// 3-1-b. 해외 종목 데이터 (Yahoo Finance)
-async function fetchOverseasStockData(ticker) {
-  const symbol = ticker.toUpperCase().trim();
-  const finalUrl = `${API_BASE}/api/yahoo/chart?symbol=${encodeURIComponent(
-    symbol
-  )}&range=6mo&interval=1d`;
-
-  console.log(`[RAVEN] Fetching: ${symbol}`);
-
-  try {
-    const response = await fetch(finalUrl);
-    if (!response.ok) throw new Error("Network Error");
-    const json = await response.json();
-
-    const result = json?.chart?.result?.[0];
-    if (!result) throw new Error("No chart result");
-
-    const meta = result.meta || {};
-    const quote = result.indicators?.quote?.[0];
-    if (!quote) throw new Error("No quote data");
-
-    const opens = quote.open || [];
-    const closes = quote.close || [];
-    const highs = quote.high || [];
-    const lows = quote.low || [];
-    const volumes = quote.volume || [];
-
-    const len = closes.length;
-    if (len < 2) throw new Error("Too few data points");
-
-    const cleanOpens = [];
-    const cleanCloses = [];
-    const cleanHighs = [];
-    const cleanLows = [];
-    const cleanVolumes = [];
-
-    for (let i = 0; i < len; i++) {
-      const o = opens[i];
-      const c = closes[i];
-      const h = highs[i];
-      const l = lows[i];
-      const v = volumes[i];
-
-      // 하나라도 null/undefined면 그 날 데이터는 버림
-      if (o == null || c == null || h == null || l == null || v == null) continue;
-
-      cleanOpens.push(o);
-      cleanCloses.push(c);
-      cleanHighs.push(h);
-      cleanLows.push(l);
-      cleanVolumes.push(v);
-    }
-
-    if (cleanCloses.length < 2) {
-      throw new Error("Not enough clean OHLC data");
-    }
-
-    const lastPrice =
-      typeof meta.regularMarketPrice === "number"
-        ? meta.regularMarketPrice
-        : cleanCloses[cleanCloses.length - 1];
-
-    return {
-      symbol: meta.symbol || symbol,
-      price: lastPrice,
-      opens: cleanOpens,
-      closes: cleanCloses,
-      highs: cleanHighs,
-      lows: cleanLows,
-      volumes: cleanVolumes
-    };
-  } catch (error) {
     console.error("[RAVEN] 실시간 시세 불러오기 실패:", error);
     showToast("⚠️ 실시간 데이터 접속 실패. 분석을 진행할 수 없습니다.");
-    // 더미값 사용 금지: 바로 에러 던져서 상위에서 처리
     throw error;
   }
 }
 
-// 3-2. 환율(KRW=X)
+// 3-2. 환율(USD/KRW) — 토스증권 API
+async function fetchTossFxRate() {
+  try {
+    const res = await fetch(`${API_BASE}/api/toss/exchange-rate?base=USD&quote=KRW`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const rate = Number(json?.result?.rate);
+    return Number.isFinite(rate) ? rate : null;
+  } catch (e) {
+    console.warn("[RAVEN] 토스 환율 조회 실패:", e);
+    return null;
+  }
+}
+
 async function fetchFxRate() {
   if (typeof fxRateKRW === "number") return fxRateKRW;
 
-  try {
-    const { lastClose } = await fetchYahooChart("KRW=X", "1d", "1d");
-    if (typeof lastClose === "number") {
-      fxRateKRW = lastClose;
-      return fxRateKRW;
-    }
-  } catch (e) {
-    console.warn("[RAVEN] FX fetch error:", e);
+  const rate = await fetchTossFxRate();
+  if (typeof rate === "number") {
+    fxRateKRW = rate;
+    return fxRateKRW;
   }
   return null;
 }
@@ -722,10 +647,10 @@ async function fetchFxRate() {
 // 3-3. 매크로 바 데이터 (+ Regime 태그)
 async function fetchMacroData() {
   try {
-    const [tnx, vix, krw, btc] = await Promise.all([
+    const [tnx, vix, krwRate, btc] = await Promise.all([
       fetchYahooChart("^TNX", "1d", "1d").catch(() => null),
       fetchYahooChart("^VIX", "1d", "1d").catch(() => null),
-      fetchYahooChart("KRW=X", "1d", "1d").catch(() => null),
+      fetchTossFxRate().catch(() => null),
       fetchYahooChart("BTC-USD", "1d", "1d").catch(() => null)
     ]);
 
@@ -761,8 +686,8 @@ async function fetchMacroData() {
 
     // KRW
     let krwVal = null;
-    if (krw) {
-      krwVal = krw.lastClose;
+    if (typeof krwRate === "number") {
+      krwVal = krwRate;
       if ($("macro-krw"))
         $("macro-krw").textContent =
           "₩" + Math.round(krwVal).toLocaleString("ko-KR");
