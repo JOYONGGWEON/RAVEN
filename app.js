@@ -2475,6 +2475,69 @@ function renderTradingViewChart(symbol) {
 }
 
 // ===============================
+// 📏 포지션 사이즈 계산기
+// ===============================
+
+// 분석 완료 시 통화 라벨과 진입가(현재가) 자동 입력
+function preparePositionCalculator(isDomestic, currentPrice) {
+  const capitalLabel = document.querySelector('label[for="pos-capital"]');
+  if (capitalLabel) {
+    capitalLabel.textContent = isDomestic ? "총 자본 (KRW 기준)" : "총 자본 (USD 기준)";
+  }
+
+  const entryEl = $("pos-entry");
+  if (entryEl && Number.isFinite(currentPrice)) {
+    entryEl.value = isDomestic ? Math.round(currentPrice) : currentPrice.toFixed(2);
+  }
+}
+
+// 총 자본 · 리스크(%) · 진입가/손절가 기준으로 매수 수량과 손실 한도 계산
+function calcPositionSize() {
+  if (!lastAnalysis) {
+    showToast("먼저 종목을 분석해 주세요.");
+    return;
+  }
+
+  const { data, analysis } = lastAnalysis;
+  const domestic = isDomesticTicker(data.symbol);
+  const formatPrice = domestic ? formatKRW : formatUSD;
+
+  const capital = Number($("pos-capital")?.value);
+  const riskPct = Number($("pos-risk")?.value);
+  const entryPrice = Number($("pos-entry")?.value) || analysis.price;
+  const stopPrice = analysis.stop;
+
+  const sizeEl = $("pos-size");
+  const riskAmountEl = $("pos-risk-amount");
+
+  if (!Number.isFinite(capital) || capital <= 0) {
+    showToast("총 자본을 입력해 주세요.");
+    return;
+  }
+  if (!Number.isFinite(riskPct) || riskPct <= 0) {
+    showToast("트레이드당 리스크(%)를 입력해 주세요.");
+    return;
+  }
+  if (!Number.isFinite(entryPrice) || !Number.isFinite(stopPrice)) {
+    showToast("진입가/손절가 정보가 부족해 계산할 수 없습니다.");
+    return;
+  }
+
+  const riskPerShare = Math.abs(entryPrice - stopPrice);
+  if (riskPerShare <= 0) {
+    showToast("진입가와 손절가가 같아 계산할 수 없습니다.");
+    return;
+  }
+
+  const riskAmount = capital * (riskPct / 100);
+  const quantity = Math.floor(riskAmount / riskPerShare);
+  const actualLoss = quantity * riskPerShare;
+
+  if (sizeEl) sizeEl.textContent = `수량: ${quantity.toLocaleString()}주`;
+  if (riskAmountEl) riskAmountEl.textContent = `손실 한도: ${formatPrice(actualLoss)}`;
+}
+
+// ===============================
 // 메인 실행 로직 (티커 입력 + 버튼/엔터)
 // ===============================
 async function runAnalysisForTicker(rawSymbol) {
@@ -2502,6 +2565,7 @@ async function runAnalysisForTicker(rawSymbol) {
 
     const analysis = analyzeData(data);
     updateUI(data, analysis, fxRate, profile, stockName);
+    preparePositionCalculator(domestic, analysis.price);
 
     // 차트 위젯 렌더
     renderTradingViewChart(symbol);
@@ -2528,6 +2592,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // 국내 종목명 자동완성 (엔트리 화면 + 메인 검색창)
   attachTickerAutocomplete($("entry-ticker"));
   attachTickerAutocomplete($("ticker-input"));
+
+  // 📏 포지션 사이즈 계산기 CALC 버튼
+  const posCalcBtn = $("pos-calc-btn");
+  if (posCalcBtn) posCalcBtn.addEventListener("click", calcPositionSize);
 
   // ----- 아래로 기존 검색/분석 로직 그대로 유지 -----
   const input = $("ticker-input");
