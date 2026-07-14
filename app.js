@@ -56,6 +56,8 @@ const formatUSD = (num) =>
     maximumFractionDigits: 2
   });
 
+const formatKRW = (num) => "₩" + Math.round(Number(num)).toLocaleString("ko-KR");
+
 function showToast(msg) {
   const el = $("toast-msg");
   if (!el) return;
@@ -443,8 +445,82 @@ async function fetchYahooChart(symbol, range = "1d", interval = "1d") {
   return { meta, closes, lastClose };
 }
 
-// 3-1. 개별 종목 데이터 (OHLC + Volume)
+// 국내(KOSPI/KOSDAQ) 종목코드는 숫자 6자리, 해외는 알파벳 티커
+function isDomesticTicker(ticker) {
+  return /^\d{6}$/.test((ticker || "").trim());
+}
+
+// 3-1. 개별 종목 데이터 (OHLC + Volume) — 국내/해외 자동 분기
 async function fetchStockData(ticker) {
+  const trimmed = (ticker || "").trim();
+  if (isDomesticTicker(trimmed)) {
+    return fetchDomesticStockData(trimmed);
+  }
+  return fetchOverseasStockData(trimmed);
+}
+
+// 3-1-a. 국내 종목 데이터 (토스증권 API)
+async function fetchDomesticStockData(ticker) {
+  const symbol = ticker.trim();
+  const finalUrl = `${API_BASE}/api/toss/candles?symbol=${encodeURIComponent(
+    symbol
+  )}&interval=1d&count=180`;
+
+  console.log(`[RAVEN] Fetching (domestic): ${symbol}`);
+
+  try {
+    const response = await fetch(finalUrl);
+    if (!response.ok) throw new Error("Network Error");
+    const json = await response.json();
+
+    const candles = json?.result?.candles;
+    if (!candles || !candles.length) throw new Error("No candle result");
+
+    // 토스 캔들은 최신순으로 내려오므로, 야후 데이터와 동일하게 오래된 순으로 뒤집음
+    const chronological = [...candles].reverse();
+
+    const opens = [];
+    const closes = [];
+    const highs = [];
+    const lows = [];
+    const volumes = [];
+
+    for (const c of chronological) {
+      const o = Number(c.openPrice);
+      const cl = Number(c.closePrice);
+      const h = Number(c.highPrice);
+      const l = Number(c.lowPrice);
+      const v = Number(c.volume);
+
+      if ([o, cl, h, l, v].some((n) => Number.isNaN(n))) continue;
+
+      opens.push(o);
+      closes.push(cl);
+      highs.push(h);
+      lows.push(l);
+      volumes.push(v);
+    }
+
+    if (closes.length < 2) throw new Error("Not enough clean OHLC data");
+
+    return {
+      symbol,
+      price: closes[closes.length - 1],
+      opens,
+      closes,
+      highs,
+      lows,
+      volumes
+    };
+  } catch (error) {
+    console.error("[RAVEN] 국내 시세 불러오기 실패:", error);
+    showToast("⚠️ 실시간 데이터 접속 실패. 분석을 진행할 수 없습니다.");
+    throw error;
+  }
+}
+
+// 3-1-b. 해외 종목 데이터 (Yahoo Finance)
+async function fetchOverseasStockData(ticker) {
   const symbol = ticker.toUpperCase().trim();
   const finalUrl = `${API_BASE}/api/yahoo/chart?symbol=${encodeURIComponent(
     symbol
@@ -1614,9 +1690,12 @@ function updateUI(data, analysis, fxRate, profile) {
     $("ticker-symbol").textContent = data.symbol;
   }
 
-  // 가격: USD + KRW
-  let priceText = formatUSD(analysis.price);
-  if (typeof fxRate === "number") {
+  // 국내 종목은 원화가 원래 통화이므로 달러 환산 없이 그대로 표시
+  const isDomestic = isDomesticTicker(data.symbol);
+  const formatPrice = isDomestic ? formatKRW : formatUSD;
+
+  let priceText = formatPrice(analysis.price);
+  if (!isDomestic && typeof fxRate === "number") {
     const krw = analysis.price * fxRate;
     priceText += " / ₩" + Math.round(krw).toLocaleString("ko-KR");
   }
@@ -1759,7 +1838,7 @@ function updateUI(data, analysis, fxRate, profile) {
     if (target1Box) {
       if (Number.isFinite(target1) && Number.isFinite(price)) {
         const pct = fmtPct(target1, price);
-        target1Box.textContent = `${formatUSD(target1)} (${pct})`;
+        target1Box.textContent = `${formatPrice(target1)} (${pct})`;
       } else {
         target1Box.textContent = "-";
       }
@@ -1767,7 +1846,7 @@ function updateUI(data, analysis, fxRate, profile) {
     if (target2Box) {
       if (Number.isFinite(target2) && Number.isFinite(price)) {
         const pct = fmtPct(target2, price);
-        target2Box.textContent = `${formatUSD(target2)} (${pct})`;
+        target2Box.textContent = `${formatPrice(target2)} (${pct})`;
       } else {
         target2Box.textContent = "-";
       }
@@ -1775,7 +1854,7 @@ function updateUI(data, analysis, fxRate, profile) {
     if (stopBox) {
       if (Number.isFinite(stop) && Number.isFinite(price)) {
         const pct = fmtPct(stop, price);
-        stopBox.textContent = `${formatUSD(stop)} (${pct})`;
+        stopBox.textContent = `${formatPrice(stop)} (${pct})`;
       } else {
         stopBox.textContent = "-";
       }
@@ -1925,7 +2004,7 @@ function updateUI(data, analysis, fxRate, profile) {
       if (!Number.isFinite(lv) || !Number.isFinite(px) || px === 0) return null;
       const pct = ((lv - px) / px) * 100;
       const sign = pct >= 0 ? "+" : "";
-      return `${label} ${formatUSD(lv)} (${sign}${pct.toFixed(1)}%)`;
+      return `${label} ${formatPrice(lv)} (${sign}${pct.toFixed(1)}%)`;
     };
 
     const s1Line = fmtLevelLine("1차 지지선", s1);
@@ -1938,11 +2017,11 @@ function updateUI(data, analysis, fxRate, profile) {
 
     let summaryLine = "";
     if (parts.length) {
-      summaryLine = `현재가 ${formatUSD(px)} 기준, ${parts.join(
+      summaryLine = `현재가 ${formatPrice(px)} 기준, ${parts.join(
         " · "
       )} 구간에 위치한 파동입니다.`;
     } else {
-      summaryLine = `현재가 ${formatUSD(
+      summaryLine = `현재가 ${formatPrice(
         px
       )} 기준, 최근 스윙 고점·저점을 기준으로 한 명확한 지지·저항 레벨이 부족한 파동 구간입니다.`;
     }
@@ -2369,10 +2448,11 @@ async function runAnalysisForTicker(rawSymbol) {
   showLoading(true);
 
   try {
+    // 회사 프로필(섹터/업종)은 Yahoo 전용 정보라 국내 종목에는 조회하지 않음
     const [data, fxRate, profile] = await Promise.all([
       fetchStockData(symbol),
       fetchFxRate(),
-      fetchCompanyProfile(symbol)
+      isDomesticTicker(symbol) ? Promise.resolve(null) : fetchCompanyProfile(symbol)
     ]);
 
     const analysis = analyzeData(data);
