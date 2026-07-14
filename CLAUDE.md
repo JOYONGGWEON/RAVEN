@@ -95,11 +95,11 @@
 
 ## 6. 전체 로드맵 (단계별 — 순서대로 진행)
 
-### Phase 0. 준비 (1회성 세팅)
-- [ ] KIS Developers 가입 → API 키(App Key/Secret) 발급 (모의투자 계좌로 먼저 테스트 권장)
-- [ ] 텔레그램 봇 생성 (BotFather)
-- [ ] GitHub 저장소 정리
-- [ ] Render.com, Supabase 가입
+### Phase 0. 준비 (1회성 세팅) — ✅ 완료 (2026-07-14)
+- [x] ~~KIS Developers 가입~~ → **토스증권 Open API**로 대체 발급 (Client Id/Secret 확보, 로컬 `open api.txt`에 보관·git 제외). ⚠️ 토스증권 API가 프로그램매매 실시간/OHLC 차트를 제공하는지 Phase 1에서 검증 필요
+- [x] 텔레그램 봇 생성 (BotFather) — Bot Token / Chat ID 확보
+- [x] GitHub 저장소 정리 — `github.com/JOYONGGWEON/RAVEN` 신규 생성, 초기 커밋 push 완료
+- [x] Render.com, Supabase 가입 완료
 
 ### Phase 1. 백엔드 전환 + 국내주식 기반 다지기
 - [ ] Node.js 서버 뼈대 생성
