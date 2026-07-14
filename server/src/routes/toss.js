@@ -49,6 +49,21 @@ router.get("/candles", async (req, res) => {
   }
 });
 
+// 종목 마스터 정보 조회 (해외종목 한글명 표시용 — symbol 필수, 이름 검색은 미지원)
+router.get("/stock-info", async (req, res) => {
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: "symbol query param required" });
+
+  try {
+    const { ok, status, json } = await tossGet("/api/v1/stocks", { symbols: symbol });
+    if (!ok) return res.status(status).json(json);
+    res.json(json);
+  } catch (e) {
+    console.error("[RAVEN] /api/toss/stock-info error:", e);
+    res.status(502).json({ error: "Toss stock-info proxy error" });
+  }
+});
+
 // 환율 조회 (예: base=USD, quote=KRW)
 router.get("/exchange-rate", async (req, res) => {
   const { base = "USD", quote = "KRW" } = req.query;

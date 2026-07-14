@@ -470,6 +470,19 @@ async function fetchDomesticStockName(code) {
   }
 }
 
+// 해외 티커 → 한글 종목명 조회 (결과 화면 타이틀 표시용, 토스 종목 마스터 정보 사용)
+async function fetchOverseasStockName(symbol) {
+  try {
+    const res = await fetch(`${API_BASE}/api/toss/stock-info?symbol=${encodeURIComponent(symbol)}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json?.result?.[0]?.name || null;
+  } catch (e) {
+    console.warn("[RAVEN] 해외 종목명 조회 실패:", e);
+    return null;
+  }
+}
+
 // 국내 종목명 검색 (자동완성용)
 async function searchDomesticStocks(query) {
   try {
@@ -1717,9 +1730,7 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
     $("stoploss") || $("stop-txt") || $("stop-loss") || $("stop") || $("sl");
 
   if ($("ticker-symbol")) {
-    $("ticker-symbol").textContent = stockName
-      ? `${stockName} (${data.symbol})`
-      : data.symbol;
+    $("ticker-symbol").textContent = stockName || data.symbol;
   }
 
   // 국내 종목은 원화가 원래 통화이므로 달러 환산 없이 그대로 표시
@@ -2486,7 +2497,7 @@ async function runAnalysisForTicker(rawSymbol) {
       fetchStockData(symbol),
       fetchFxRate(),
       domestic ? Promise.resolve(null) : fetchCompanyProfile(symbol),
-      domestic ? fetchDomesticStockName(symbol) : Promise.resolve(null)
+      domestic ? fetchDomesticStockName(symbol) : fetchOverseasStockName(symbol)
     ]);
 
     const analysis = analyzeData(data);
