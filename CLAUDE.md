@@ -53,7 +53,9 @@
 
 | 항목 | 결정된 처리 방식 |
 |---|---|
-| **국내주식 시세/차트(OHLC)** | ✅ **토스증권 Open API**로 변경 (KIS 대신). `/api/v1/prices`, `/orderbook`, `/trades`, `/price-limits`, `/candles` 전부 실시간 지원 확인됨. 부가로 주문 실행/조건주문(자동매매) API도 제공 — Phase 3에서 알림 대신 실매매 자동화 확장 가능 |
+| **국내+해외주식 시세/차트(OHLC)** | ✅ **토스증권 Open API로 완전 통합** (KIS 안 씀, Yahoo도 개별 종목 조회용으로는 안 씀). AAPL 등 미국 주식도 `/api/v1/prices`, `/candles`로 정상 조회 확인됨(문서에 "국내 및 미국 주식" 명시돼 있었음). 부가로 주문 실행/조건주문(자동매매) API도 제공 — Phase 3에서 알림 대신 실매매 자동화 확장 가능 |
+| **환율(USD/KRW)** | ✅ 토스 `/api/v1/exchange-rate`로 통합 (Yahoo KRW=X 제거) |
+| **매크로 지표(VIX, 미국 10년물, BTC)** | ⚠️ 토스는 증권사 API라 지수/암호화폐를 종목으로 취급 안 함(VIX·BTC-USD 조회 시 빈 배열, market-indicators는 국내 지수·국채 전용) → **Yahoo Finance 계속 사용** |
 | **프로그램매매** | ⚠️ 토스 API는 종목별 프로그램매매 미제공(코스피/코스닥 지수 단위 투자자별 매매대금만 제공). → **KIS 포기, KRX 정보데이터시스템에서 종목별 프로그램매매 통계 수집**으로 대체. 공매도/대차/신용잔고와 동일하게 **"전일 데이터 기반 해석 + 내일 예상" 방식**으로 처리 (완전 실시간 아님, 당일 장마감 후 집계) |
 | **공매도, 대차잔고, 신용잔고** | ⚠️ 원래 실시간 불가능(KRX가 D+1 익일 공시) → **"전일 데이터 기반으로 오늘 흐름 해석 + 내일 예상 코멘트" 방식으로 처리하기로 결정** |
 | **CFD 수급** | ❌ **포기하기로 결정** (국내 CFD 취급 증권사 소수, 데이터 API 공개 안 됨) |
@@ -71,9 +73,9 @@
 [프론트엔드] RAVEN 웹앱 (기존 HTML/CSS/JS 개선)
         ↕ (API 호출)
 [백엔드 서버] Node.js — 신규 구축
-        ├─ 토스증권 Open API     → 국내 시세 + 차트(OHLC), 추후 주문/자동매매 확장 가능
+        ├─ 토스증권 Open API     → 국내+해외 개별 종목 시세/차트(OHLC), 환율(USD/KRW), 추후 주문/자동매매 확장 가능
         ├─ KRX 정보데이터시스템   → 프로그램매매/공매도/대차/신용잔고 (전일자, 매일 새벽 자동수집)
-        ├─ Yahoo Finance         → 해외 시세 (기존 corsproxy.io 완전 제거, 서버가 직접 호출)
+        ├─ Yahoo Finance         → 매크로 지표 전용(VIX/미국 10년물/BTC — 토스가 지수·암호화폐 미지원). corsproxy.io는 완전 제거, 서버가 직접 호출
         ├─ DART Open API         → 국내 실적(분기 매출/영업이익)
         ├─ 뉴스 API              → 국내(네이버뉴스)/해외(NewsAPI 등)
         ├─ Claude API (Anthropic) → 실제 AI 서술 분석 (API 키는 서버에만 보관, 프론트 노출 금지)
@@ -108,8 +110,10 @@
 - [x] Node.js 서버 뼈대 생성 (`server/` — Express, `server/src/index.js`)
 - [x] `corsproxy.io` 의존 완전 제거 → 서버가 직접 Yahoo 호출 (`/api/yahoo/chart`, `/api/yahoo/profile`). 브라우저 실검증 완료(매크로 대시보드 4개 지표 정상 수신)
 - [x] 국내 종목 시세 + 차트(OHLC) 조회 연동 — **토스증권 Open API** (`server/src/lib/tossAuth.js` OAuth2 토큰 캐싱, `server/src/routes/toss.js` `/api/toss/prices`, `/api/toss/candles`). 삼성전자(005930) 실데이터로 검증 완료
-- [x] 프론트에 국내/해외 자동 판별 로직 추가 (`isDomesticTicker` — 숫자 6자리=국내→토스, 그 외=해외→야후). 브라우저 실검증 완료(005930 전체 분석 플로우 정상)
+- [x] **개별 종목 데이터 국내+해외 전부 토스로 통합** — AAPL 등 해외 티커도 토스 `/candles`로 정상 조회됨을 확인하고 Yahoo 기반 해외 조회 경로(`fetchOverseasStockData`)를 완전히 제거. 환율(USD/KRW)도 Yahoo KRW=X → 토스 `/api/toss/exchange-rate`로 전환. Yahoo는 매크로 지표(VIX/10년물/BTC)만 남음
+- [x] 프론트에 국내/해외 자동 판별 로직 추가 (`isDomesticTicker` — 통화 표시(₩/$) 및 회사프로필 조회 스킵 여부 판단용으로 사용, 데이터 소스 자체는 국내/해외 모두 토스로 통일됨). 브라우저 실검증 완료(005930, AAPL 둘 다 정상)
 - [x] PIN 인증을 서버 사이드로 이전 (`POST /api/auth/verify-pin`, IP당 5회 실패 시 60초 잠금). 브라우저 실검증 완료
+- [x] (로드맵 외 추가) 국내 종목명 검색/자동완성 — 토스 API가 이름 검색 미지원이라 KRX KIND 공개 상장법인목록으로 이름↔코드 매핑 자체 구축(`server/src/lib/stockDirectory.js`). 결과 화면 타이틀도 "삼성전자 (005930)" 형태로 표시
 
 > ⚠️ Yahoo `quoteSummary`(회사 프로필/섹터) 엔드포인트는 Yahoo 측에서 크럼/쿠키 인증을 요구하도록 바뀌어 401 발생 — chart 엔드포인트는 정상. 원래도 실패 시 null 처리되던 부분이라 앱 동작에는 영향 없음. 필요 시 별도 해결 필요. 국내 종목은 애초에 프로필 조회를 스킵하도록 처리함.
 > ⚠️ 국내 종목 테스트 중 발견한 통화 표시 버그 수정함 — 원화 가격을 달러 포맷터에 넣고 환율을 또 곱해 완전히 잘못된 숫자가 나오던 문제. `formatPrice()`(국내=₩, 해외=$) 도입으로 해결.
