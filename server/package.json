@@ -1,0 +1,15 @@
+{
+  "name": "raven-server",
+  "version": "1.0.0",
+  "description": "Raven trading app backend (Yahoo Finance proxy, PIN auth, and future KIS/Toss + KRX + DART integrations)",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}

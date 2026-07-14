@@ -38,8 +38,9 @@ const SIGNAL_MAP = {
 let activeCategory = "trend";
 
 // 1. 설정
-const PROXY_URL = "https://corsproxy.io/?";
-const YAHOO_API_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/";
+// corsproxy.io 공개 프록시 의존 제거 — 이제 백엔드 서버가 Yahoo Finance를 직접 호출함.
+// TODO: Render 배포 후 실제 서버 주소로 교체
+const API_BASE = "http://localhost:3001";
 
 // FX 캐시 & 마지막 분석 결과(포지션 계산용)
 let fxRateKRW = null;
@@ -95,7 +96,7 @@ function hideResultCard() {
 }
 
 // ===== RAVEN VIP CODE + Intro + Entry Flow v2 =====
-const RAVEN_PIN = "0524";
+// PIN은 더 이상 프론트에 평문으로 두지 않고, 서버(/api/auth/verify-pin)가 검증함.
 
 let overlayRoot;
 let lockScreen, introScreen, entryScreen;
@@ -125,8 +126,8 @@ function showOverlayScreen(target) {
   });
 }
 
-// PIN 체크
-function checkPinCode() {
+// PIN 체크 (서버에 검증 요청)
+async function checkPinCode() {
   if (!pinInputs || pinInputs.length !== 4) return;
 
   const code = Array.from(pinInputs)
@@ -135,7 +136,20 @@ function checkPinCode() {
 
   if (code.length < 4) return;
 
-  if (code === RAVEN_PIN) {
+  let ok = false;
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/verify-pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin: code }),
+    });
+    const json = await res.json();
+    ok = res.ok && json.ok === true;
+  } catch (e) {
+    console.error("[RAVEN] PIN 검증 요청 실패:", e);
+  }
+
+  if (ok) {
     // 에러 메시지 숨김
     if (lockErrorEl) {
       lockErrorEl.classList.add("hidden");
@@ -369,10 +383,7 @@ function toKoreanSector(engSector, engIndustry) {
 
 async function fetchCompanyProfile(ticker) {
   const symbol = ticker.toUpperCase().trim();
-  const baseUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(
-    symbol
-  )}?modules=assetProfile`;
-  const finalUrl = PROXY_URL + encodeURIComponent(baseUrl);
+  const finalUrl = `${API_BASE}/api/yahoo/profile?symbol=${encodeURIComponent(symbol)}`;
 
   try {
     const res = await fetch(finalUrl);
@@ -401,10 +412,9 @@ async function fetchCompanyProfile(ticker) {
 
 // 3. 공통 야후 파서 (간단 버전)
 async function fetchYahooChart(symbol, range = "1d", interval = "1d") {
-  const targetUrl = `${YAHOO_API_BASE}${encodeURIComponent(
+  const finalUrl = `${API_BASE}/api/yahoo/chart?symbol=${encodeURIComponent(
     symbol
-  )}?range=${range}&interval=${interval}`;
-  const finalUrl = PROXY_URL + encodeURIComponent(targetUrl);
+  )}&range=${range}&interval=${interval}`;
 
   const response = await fetch(finalUrl);
   if (!response.ok) throw new Error("Network Error");
@@ -436,8 +446,9 @@ async function fetchYahooChart(symbol, range = "1d", interval = "1d") {
 // 3-1. 개별 종목 데이터 (OHLC + Volume)
 async function fetchStockData(ticker) {
   const symbol = ticker.toUpperCase().trim();
-  const targetUrl = `${YAHOO_API_BASE}${symbol}?range=6mo&interval=1d`;
-  const finalUrl = PROXY_URL + encodeURIComponent(targetUrl);
+  const finalUrl = `${API_BASE}/api/yahoo/chart?symbol=${encodeURIComponent(
+    symbol
+  )}&range=6mo&interval=1d`;
 
   console.log(`[RAVEN] Fetching: ${symbol}`);
 
