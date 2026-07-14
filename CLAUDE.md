@@ -104,14 +104,17 @@
 - [x] GitHub 저장소 정리 — `github.com/JOYONGGWEON/RAVEN` 신규 생성, 초기 커밋 push 완료
 - [x] Render.com, Supabase 가입 완료
 
-### Phase 1. 백엔드 전환 + 국내주식 기반 다지기
+### Phase 1. 백엔드 전환 + 국내주식 기반 다지기 — ✅ 완료 (2026-07-14)
 - [x] Node.js 서버 뼈대 생성 (`server/` — Express, `server/src/index.js`)
 - [x] `corsproxy.io` 의존 완전 제거 → 서버가 직접 Yahoo 호출 (`/api/yahoo/chart`, `/api/yahoo/profile`). 브라우저 실검증 완료(매크로 대시보드 4개 지표 정상 수신)
-- [ ] 국내 종목 시세 + 차트(OHLC) 조회 연동 — **토스증권 Open API** 사용 확정 (`POST /oauth2/token` → `GET /api/v1/prices`, `/candles` 등). WTS에서 허용 IP 등록 필요 (Render 배포 후 서버 고정 IP 등록)
-- [ ] 프론트에 국내/해외 자동 판별 로직 추가 (숫자 6자리=국내, 알파벳=해외)
+- [x] 국내 종목 시세 + 차트(OHLC) 조회 연동 — **토스증권 Open API** (`server/src/lib/tossAuth.js` OAuth2 토큰 캐싱, `server/src/routes/toss.js` `/api/toss/prices`, `/api/toss/candles`). 삼성전자(005930) 실데이터로 검증 완료
+- [x] 프론트에 국내/해외 자동 판별 로직 추가 (`isDomesticTicker` — 숫자 6자리=국내→토스, 그 외=해외→야후). 브라우저 실검증 완료(005930 전체 분석 플로우 정상)
 - [x] PIN 인증을 서버 사이드로 이전 (`POST /api/auth/verify-pin`, IP당 5회 실패 시 60초 잠금). 브라우저 실검증 완료
 
-> ⚠️ Yahoo `quoteSummary`(회사 프로필/섹터) 엔드포인트는 Yahoo 측에서 크럼/쿠키 인증을 요구하도록 바뀌어 401 발생 — chart 엔드포인트는 정상. 원래도 실패 시 null 처리되던 부분이라 앱 동작에는 영향 없음. 필요 시 별도 해결 필요.
+> ⚠️ Yahoo `quoteSummary`(회사 프로필/섹터) 엔드포인트는 Yahoo 측에서 크럼/쿠키 인증을 요구하도록 바뀌어 401 발생 — chart 엔드포인트는 정상. 원래도 실패 시 null 처리되던 부분이라 앱 동작에는 영향 없음. 필요 시 별도 해결 필요. 국내 종목은 애초에 프로필 조회를 스킵하도록 처리함.
+> ⚠️ 국내 종목 테스트 중 발견한 통화 표시 버그 수정함 — 원화 가격을 달러 포맷터에 넣고 환율을 또 곱해 완전히 잘못된 숫자가 나오던 문제. `formatPrice()`(국내=₩, 해외=$) 도입으로 해결.
+> 📌 후속 과제(미해결): 포지션 사이즈 계산기가 아직 "USD 기준" 라벨/계산만 지원(국내 미대응), TradingView 차트 위젯이 국내 티커를 `KRX:005930` 형식으로 안 바꿔줘서 "symbol only available on TradingView" 에러 표시됨.
+> 📌 실제 배포 시 주의: 토스 WTS에서 "허용 IP 등록" 필요 — Render 배포 후 서버 고정 IP를 등록해야 API 호출 가능 (로컬 테스트는 이미 등록된 IP라 통과됨).
 
 ### Phase 2. 수급 데이터 파이프라인
 - [ ] KRX 정보데이터시스템 → 프로그램매매 + 공매도/대차/신용잔고 **4종 전부**, 매일 새벽 자동 수집 후 DB 저장 (전일자 기준 — KRX Data Marketplace 리뉴얼로 정확한 메뉴/API 경로 재확인 필요)
