@@ -215,7 +215,7 @@ function hideEntryBackdrop() {
 async function runRavenFromEntry() {
   if (!entryTickerEl) return;
 
-  const ticker = entryTickerEl.value.trim().toUpperCase();
+  const ticker = resolveTickerInput(entryTickerEl.value).toUpperCase();
   if (!ticker) return;
 
   // 🔹 메인 분석화면 준비되는 동안 백드롭 먼저 켜두기
@@ -448,6 +448,111 @@ async function fetchYahooChart(symbol, range = "1d", interval = "1d") {
 // 국내(KOSPI/KOSDAQ) 종목코드는 숫자 6자리, 해외는 알파벳 티커
 function isDomesticTicker(ticker) {
   return /^\d{6}$/.test((ticker || "").trim());
+}
+
+// 자동완성에서 "삼성전자 (005930)" 형태로 선택된 입력값에서 종목코드만 추출
+function resolveTickerInput(raw) {
+  const trimmed = (raw || "").trim();
+  const match = trimmed.match(/\((\d{6})\)\s*$/);
+  return match ? match[1] : trimmed;
+}
+
+// 국내 종목코드 → 종목명 조회 (결과 화면 타이틀 표시용)
+async function fetchDomesticStockName(code) {
+  try {
+    const res = await fetch(`${API_BASE}/api/stocks/name?code=${encodeURIComponent(code)}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.name || null;
+  } catch (e) {
+    console.warn("[RAVEN] 종목명 조회 실패:", e);
+    return null;
+  }
+}
+
+// 국내 종목명 검색 (자동완성용)
+async function searchDomesticStocks(query) {
+  try {
+    const res = await fetch(`${API_BASE}/api/stocks/search?q=${encodeURIComponent(query)}`);
+    if (!res.ok) return [];
+    const json = await res.json();
+    return json.result || [];
+  } catch (e) {
+    console.warn("[RAVEN] 종목명 검색 실패:", e);
+    return [];
+  }
+}
+
+// 티커 입력창에 종목명 자동완성 드롭다운 연결
+function attachTickerAutocomplete(inputEl) {
+  if (!inputEl) return;
+
+  const list = document.createElement("div");
+  list.className = "ticker-suggest-list hidden";
+  document.body.appendChild(list);
+
+  let debounceTimer = null;
+  let currentItems = [];
+
+  function hideList() {
+    list.classList.add("hidden");
+    list.innerHTML = "";
+    currentItems = [];
+  }
+
+  function positionList() {
+    const rect = inputEl.getBoundingClientRect();
+    list.style.left = `${rect.left}px`;
+    list.style.top = `${rect.bottom + 4}px`;
+    list.style.width = `${rect.width}px`;
+  }
+
+  function renderList(items) {
+    currentItems = items;
+    if (!items.length) {
+      hideList();
+      return;
+    }
+    list.innerHTML = "";
+    items.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "ticker-suggest-item";
+      row.textContent = `${item.name} (${item.code}) · ${item.market}`;
+      row.addEventListener("mousedown", (e) => {
+        // blur보다 먼저 실행되도록 mousedown 사용
+        e.preventDefault();
+        inputEl.value = `${item.name} (${item.code})`;
+        hideList();
+      });
+      list.appendChild(row);
+    });
+    positionList();
+    list.classList.remove("hidden");
+  }
+
+  inputEl.addEventListener("input", () => {
+    const q = inputEl.value.trim();
+    clearTimeout(debounceTimer);
+
+    // 순수 종목코드/영문 티커는 자동완성 대상 아님 (한글 종목명 검색만 지원)
+    if (!q || !/[가-힣]/.test(q)) {
+      hideList();
+      return;
+    }
+
+    debounceTimer = setTimeout(async () => {
+      const items = await searchDomesticStocks(q);
+      renderList(items);
+    }, 250);
+  });
+
+  inputEl.addEventListener("blur", () => {
+    setTimeout(hideList, 100);
+  });
+
+  window.addEventListener("resize", () => {
+    if (!list.classList.contains("hidden")) positionList();
+  });
 }
 
 // 3-1. 개별 종목 데이터 (OHLC + Volume) — 국내/해외 자동 분기
@@ -1659,7 +1764,7 @@ function classifyTickerSymbol(symbol) {
 }
 
 // 7. UI 업데이트 (섹터/패턴/시나리오 포함)
-function updateUI(data, analysis, fxRate, profile) {
+function updateUI(data, analysis, fxRate, profile, stockName) {
   const priceEl = $("ticker-price");
   const scoreEl = $("ai-score");
   const rankEl = $("ai-rank");
@@ -1687,7 +1792,9 @@ function updateUI(data, analysis, fxRate, profile) {
     $("stoploss") || $("stop-txt") || $("stop-loss") || $("stop") || $("sl");
 
   if ($("ticker-symbol")) {
-    $("ticker-symbol").textContent = data.symbol;
+    $("ticker-symbol").textContent = stockName
+      ? `${stockName} (${data.symbol})`
+      : data.symbol;
   }
 
   // 국내 종목은 원화가 원래 통화이므로 달러 환산 없이 그대로 표시
@@ -2435,7 +2542,7 @@ function renderTradingViewChart(symbol) {
 // 메인 실행 로직 (티커 입력 + 버튼/엔터)
 // ===============================
 async function runAnalysisForTicker(rawSymbol) {
-  const symbol = (rawSymbol || "").trim().toUpperCase();
+  const symbol = resolveTickerInput(rawSymbol).toUpperCase();
   if (!symbol) {
     showToast("티커를 입력해 주세요. (예: NVDA, AAPL)");
     return;
@@ -2448,15 +2555,17 @@ async function runAnalysisForTicker(rawSymbol) {
   showLoading(true);
 
   try {
+    const domestic = isDomesticTicker(symbol);
     // 회사 프로필(섹터/업종)은 Yahoo 전용 정보라 국내 종목에는 조회하지 않음
-    const [data, fxRate, profile] = await Promise.all([
+    const [data, fxRate, profile, stockName] = await Promise.all([
       fetchStockData(symbol),
       fetchFxRate(),
-      isDomesticTicker(symbol) ? Promise.resolve(null) : fetchCompanyProfile(symbol)
+      domestic ? Promise.resolve(null) : fetchCompanyProfile(symbol),
+      domestic ? fetchDomesticStockName(symbol) : Promise.resolve(null)
     ]);
 
     const analysis = analyzeData(data);
-    updateUI(data, analysis, fxRate, profile);
+    updateUI(data, analysis, fxRate, profile, stockName);
 
     // 차트 위젯 렌더
     renderTradingViewChart(symbol);
@@ -2479,6 +2588,10 @@ async function runAnalysisForTicker(rawSymbol) {
 document.addEventListener("DOMContentLoaded", () => {
   // 🔒 PIN + 인트로 + 엔트리 화면 초기화
   initLockAndIntro();
+
+  // 국내 종목명 자동완성 (엔트리 화면 + 메인 검색창)
+  attachTickerAutocomplete($("entry-ticker"));
+  attachTickerAutocomplete($("ticker-input"));
 
   // ----- 아래로 기존 검색/분석 로직 그대로 유지 -----
   const input = $("ticker-input");

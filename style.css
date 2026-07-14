@@ -1356,6 +1356,37 @@ body.raven-result-bg {
   color: #ffffff66;
 }
 
+/* 국내 종목명 자동완성 드롭다운 (엔트리/메인 검색창 공용) */
+.ticker-suggest-list {
+  position: fixed;
+  z-index: 10000;
+  background: var(--bg-card);
+  border: 1px solid #ffffff22;
+  border-radius: 12px;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.ticker-suggest-list.hidden {
+  display: none;
+}
+
+.ticker-suggest-item {
+  padding: 10px 14px;
+  font-size: 0.92rem;
+  color: var(--text-main);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ticker-suggest-item:hover {
+  background: var(--bg-input);
+}
+
 .entry-btn {
   border: none;
   outline: none;
