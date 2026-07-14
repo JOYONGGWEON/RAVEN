@@ -2420,6 +2420,14 @@ function renderTradingViewChart(symbol) {
   // 이전 차트 정리
   container.innerHTML = "";
 
+  // TradingView 무료 위젯은 KRX(한국거래소) 실시간 데이터 재배포를 막아둬서
+  // 국내 종목은 심볼 형식과 무관하게 항상 에러가 남 — 위젯 호출 자체를 생략하고 안내만 표시
+  if (isDomesticTicker(symbol)) {
+    container.innerHTML =
+      '<div class="chart-placeholder">📈 국내 종목 차트는 준비 중입니다.<br />위 지표/분석 내용을 참고해 주세요.</div>';
+    return;
+  }
+
   const initWidget = () => {
     if (typeof TradingView === "undefined" || !TradingView.widget) {
       console.warn("[RAVEN] TradingView 객체 없음");

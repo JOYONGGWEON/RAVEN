@@ -363,6 +363,18 @@ body.raven-result-bg {
   overflow: hidden;
 }
 
+.chart-placeholder {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--text-sub);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  padding: 20px;
+}
+
 
 /* ───────── Grid Sections ───────── */
 
