@@ -7,6 +7,7 @@ const yahooRoutes = require("./routes/yahoo");
 const authRoutes = require("./routes/auth");
 const tossRoutes = require("./routes/toss");
 const stocksRoutes = require("./routes/stocks");
+const kisRoutes = require("./routes/kis");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -20,6 +21,7 @@ app.use("/api/yahoo", yahooRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/toss", tossRoutes);
 app.use("/api/stocks", stocksRoutes);
+app.use("/api/kis", kisRoutes);
 
 app.listen(PORT, () => {
   console.log(`[RAVEN] server listening on port ${PORT}`);
