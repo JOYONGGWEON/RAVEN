@@ -121,12 +121,15 @@
 > 📌 후속 과제(별도 트래킹): 국내 종목 자체 차트(`lightweight-charts` + 토스 캔들 데이터) — Phase 2 이후 후순위.
 > 📌 실제 배포 시 주의: 토스 WTS에서 "허용 IP 등록" 필요 — Render 배포 후 서버 고정 IP를 등록해야 API 호출 가능 (로컬 테스트는 이미 등록된 IP라 통과됨).
 
-### Phase 2. 수급 데이터 파이프라인
-- [ ] KIS Developers 가입 및 API 키 발급 (수급데이터 전용 — Toss와 별개 계정/키)
-- [ ] KIS API → 프로그램매매(`program-trade-by-stock-daily`) + 공매도(`daily-short-sale`) + 신용잔고(`daily-credit-balance`) + 대차거래(`daily-loan-trans`) **4종 전부**, 매일 새벽 자동 수집 후 DB 저장 (D+1 공시 기준)
+### Phase 2. 수급 데이터 파이프라인 (진행중, 2026-07-15 시작)
+- [x] KIS Developers 가입 및 API 키 발급 (수급데이터 전용 — Toss와 별개 계정/키)
+- [x] KIS API 서버 연동 — `server/src/lib/kisAuth.js`(OAuth2 토큰) + `server/src/routes/kis.js` (`/api/kis/program-trade`, `/short-sale`, `/credit-balance`, `/loan-trans`). 삼성전자(005930) 실데이터로 4종 전부 검증 완료 (일자별 시계열 정상 수신)
+- [ ] Supabase DB 스키마 설계 + 연결 (수급데이터 캐시 테이블)
+- [ ] 매일 새벽 자동 수집 스케줄러 (관심종목 대상, D+1 공시 기준)
+- [ ] "전일 수급 → 오늘 해석 + 내일 예상" 코멘트 로직 (규칙기반 + Claude API 서술 결합)
+- [ ] 프론트 결과 화면의 "Supply (수급)" 섹션을 지금의 거래량 기반 추정 로직 → 실제 KIS 수급데이터 기반으로 교체
 
 > ⚠️ KRX 정보데이터시스템 직접 스크레이핑 방식은 폐기 — "KRX Data Marketplace" 리뉴얼 후 로그인 필요로 확인되어(2026-07-15), 대신 KIS Developers의 종목별/일별 전용 엔드포인트로 대체 확정.
-- [ ] "전일 수급 → 오늘 해석 + 내일 예상" 코멘트 로직 (규칙기반 + Claude API 서술 결합)
 
 ### Phase 3. 매수/매도 타점 시그널 + 관심종목
 - [ ] 골든크로스/데드크로스 감지 로직 신규 추가
