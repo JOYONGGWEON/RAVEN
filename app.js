@@ -679,10 +679,6 @@ async function fetchMacroData() {
       fetchYahooChart("BTC-USD", "1d", "1d").catch(() => null)
     ]);
 
-    let riskState = "Neutral";
-    let fxState = "Neutral";
-    let cryptoState = "Neutral";
-
     // 미국10년물
     let rate = null;
     if (tnx) {
@@ -740,61 +736,6 @@ async function fetchMacroData() {
       $("macro-btc-note").textContent = "데이터 수신 실패";
     }
 
-    // Market Regime 태그 텍스트
-    const riskTag = $("regime-risk");
-    const fxTag = $("regime-fx");
-    const cryptoTag = $("regime-crypto");
-
-    if (riskTag && rate != null && vixVal != null) {
-      if (rate < 3 && vixVal < 18) {
-        riskTag.textContent = "Risk On (성장주 우호)";
-        riskState = "Risk On";
-      } else if (rate > 5 || vixVal > 25) {
-        riskTag.textContent = "Risk Off (방어주 선호)";
-        riskState = "Risk Off";
-      } else {
-        riskTag.textContent = "Risk Neutral";
-        riskState = "Neutral";
-      }
-    } else if (riskTag && !riskTag.textContent) {
-      riskTag.textContent = "Risk Regime";
-    }
-
-    if (fxTag && krwVal != null) {
-      if (krwVal > 1400) {
-        fxTag.textContent = "원화 약세 · 달러 강세";
-        fxState = "약세";
-      } else if (krwVal < 1300) {
-        fxTag.textContent = "원화 강세 · 달러 약세";
-        fxState = "강세";
-      } else {
-        fxTag.textContent = "환율 중립";
-        fxState = "Neutral";
-      }
-    } else if (fxTag && !fxTag.textContent) {
-      fxTag.textContent = "FX";
-    }
-
-    if (cryptoTag && btcVal != null) {
-      if (btcVal > 80000) {
-        cryptoTag.textContent = "Crypto 과열 구간";
-        cryptoState = "Hot";
-      } else if (btcVal < 40000) {
-        cryptoTag.textContent = "Crypto 침체/조정";
-        cryptoState = "Cold";
-      } else {
-        cryptoTag.textContent = "Crypto 중립";
-        cryptoState = "Neutral";
-      }
-    } else if (cryptoTag && !cryptoTag.textContent) {
-      cryptoTag.textContent = "Crypto";
-    }
-
-    updateRegimePills({
-      risk: riskState,
-      fx: fxState,
-      crypto: cryptoState
-    });
   } catch (e) {
     console.warn("[RAVEN] Macro fetch error:", e);
   }
@@ -1641,52 +1582,6 @@ function detectCandlePatterns(data, analysis) {
   return patterns;
 }
 
-// 6-1. Market Regime Pill 색상 적용 함수
-function updateRegimePills(regime) {
-  const riskPill = $("regime-risk");
-  const fxPill = $("regime-fx");
-  const cryptoPill = $("regime-crypto");
-  if (!riskPill || !fxPill || !cryptoPill) return;
-
-  const all = [riskPill, fxPill, cryptoPill];
-
-  all.forEach((p) =>
-    p.classList.remove(
-      "regime-pill-neutral",
-      "regime-pill-riskon",
-      "regime-pill-riskoff",
-      "regime-pill-fx-weak",
-      "regime-pill-fx-strong",
-      "regime-pill-crypto-hot",
-      "regime-pill-crypto-cold"
-    )
-  );
-
-  if (regime.risk === "Risk On") {
-    riskPill.classList.add("regime-pill-riskon");
-  } else if (regime.risk === "Risk Off") {
-    riskPill.classList.add("regime-pill-riskoff");
-  } else {
-    riskPill.classList.add("regime-pill-neutral");
-  }
-
-  if (regime.fx === "약세") {
-    fxPill.classList.add("regime-pill-fx-weak");
-  } else if (regime.fx === "강세") {
-    fxPill.classList.add("regime-pill-fx-strong");
-  } else {
-    fxPill.classList.add("regime-pill-neutral");
-  }
-
-  if (regime.crypto === "Hot") {
-    cryptoPill.classList.add("regime-pill-crypto-hot");
-  } else if (regime.crypto === "Cold") {
-    cryptoPill.classList.add("regime-pill-crypto-cold");
-  } else {
-    cryptoPill.classList.add("regime-pill-neutral");
-  }
-}
-
 // 6-2. 종목 라벨 / 섹터 태깅 (간단 버전 보조)
 function classifyTickerSymbol(symbol) {
   const s = (symbol || "").toUpperCase();
@@ -1725,7 +1620,6 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
   const fundEl = $("fund-txt");
 
   const rsiBox = $("rsi-txt");
-  const maBox = $("ma-txt");
   const macdBox = $("macd-txt");
   const labelBox = $("ticker-labels") || $("ticker-tags");
 
@@ -1751,6 +1645,23 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
     priceText += " / ₩" + Math.round(krw).toLocaleString("ko-KR");
   }
   if (priceEl) priceEl.textContent = priceText;
+
+  // 전일 대비 등락률 (주식앱처럼 ▲/▼ 표시)
+  const changeEl = $("ticker-change");
+  if (changeEl) {
+    const chg = analysis.dailyChangePct;
+    if (Number.isFinite(chg)) {
+      const arrow = chg > 0 ? "▲" : chg < 0 ? "▼" : "-";
+      const sign = chg > 0 ? "+" : "";
+      changeEl.textContent = `${arrow} ${sign}${chg.toFixed(2)}%`;
+      changeEl.classList.remove("positive", "negative", "neutral");
+      changeEl.classList.add(chg > 0 ? "positive" : chg < 0 ? "negative" : "neutral");
+    } else {
+      changeEl.textContent = "-";
+      changeEl.classList.remove("positive", "negative");
+      changeEl.classList.add("neutral");
+    }
+  }
 
   // 라벨/섹터 태깅 (실제 섹터 + 보조 태그)
   if (labelBox) {
@@ -1922,12 +1833,9 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
   }
 
   // ==== 상단 Trend / Momentum / Vol / R:R 뱃지 텍스트 ====
-  const trendBadge = $("factor-trend");
-  const momentumBadge = $("factor-momentum");
-  const volBadge = $("factor-vol");
   const rrBadge = $("factor-rr");
 
-  // 팩터 뱃지 색상(강세/약세/중립) 일괄 적용
+  // 팩터 뱃지 색상(강세/약세/중립) 적용
   const setFactorPill = (el, text, state) => {
     if (!el) return;
     el.textContent = text;
@@ -1937,56 +1845,7 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
     );
   };
 
-  if (trendBadge || momentumBadge || volBadge || rrBadge) {
-    // Trend 판단
-    let trendTxt = "중립";
-    let trendState = "neutral";
-    if (ma20 && ma60 && ma120) {
-      const isBullTrend =
-        ma20 > ma60 && ma60 > ma120 && price >= ma20 * 0.97 && price <= ma20 * 1.1;
-      const isBearTrend =
-        ma20 < ma60 && price < ma20 && price < ma60 && price < ma120;
-
-      if (isBullTrend) {
-        trendTxt = "상승";
-        trendState = "bull";
-      } else if (isBearTrend) {
-        trendTxt = "하락";
-        trendState = "bear";
-      }
-    }
-    setFactorPill(trendBadge, `Trend: ${trendTxt}`, trendState);
-
-    // Momentum (RSI 기반)
-    let momTxt = "중립";
-    let momState = "neutral";
-    if (rsi >= 70) {
-      momTxt = "과열";
-      momState = "bear";
-    } else if (rsi >= 60) {
-      momTxt = "상승";
-      momState = "bull";
-    } else if (rsi <= 30) {
-      momTxt = "과매도";
-      momState = "neutral";
-    } else if (rsi <= 40) {
-      momTxt = "약세";
-      momState = "bear";
-    }
-    setFactorPill(momentumBadge, `Momentum: ${momTxt}`, momState);
-
-    // Volatility (변동성 자체는 방향성이 없으므로 "고변동성"만 주의 표시)
-    let volTxt = "보통";
-    let volState = "neutral";
-    if (volatility > 6) {
-      volTxt = "고변동성";
-      volState = "bear";
-    } else if (volatility > 0 && volatility < 2) {
-      volTxt = "저변동성";
-    }
-    setFactorPill(volBadge, `Vol: ${volTxt}`, volState);
-
-    // R:R
+  if (rrBadge) {
     let rrTxt = "-";
     let rrState = "neutral";
     if (Number.isFinite(rrRatio) && Number.isFinite(riskPct)) {
@@ -2402,27 +2261,18 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
       "관리자 모드의 Pro Raven Engine 구동이 필요합니다";
   }
 
-  // 6) RSI / MA / MACD 박스
+  // 6) RSI / MACD 박스 (숫자 + 짧은 해석)
   if (rsiBox) {
     if (typeof rsi === "number") {
-      rsiBox.textContent = `RSI(14) : ${rsi.toFixed(1)}`;
+      let rsiNote = "중립";
+      if (rsi >= 70) rsiNote = "과열";
+      else if (rsi >= 60) rsiNote = "상승 우위";
+      else if (rsi <= 30) rsiNote = "과매도";
+      else if (rsi <= 40) rsiNote = "약세";
+      rsiBox.textContent = `RSI(14) : ${rsi.toFixed(1)} (${rsiNote})`;
     } else {
       rsiBox.textContent = "RSI 데이터 부족";
     }
-  }
-
-  if (maBox) {
-    const { ma5, ma20: _ma20, ma60: _ma60, ma120: _ma120 } = analysis;
-    const parts2 = [];
-    if (ma5) parts2.push(`5일선 ${ma5.toFixed(2)}`);
-    if (_ma20) parts2.push(`20일선 ${_ma20.toFixed(2)}`);
-    if (_ma60) parts2.push(`60일선 ${_ma60.toFixed(2)}`);
-    if (_ma120) parts2.push(`120일선 ${_ma120.toFixed(2)}`);
-
-    maBox.textContent =
-      parts2.length > 0
-        ? parts2.join(" · ")
-        : "이평선 데이터가 부족합니다.";
   }
 
   if (macdBox) {

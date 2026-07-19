@@ -259,30 +259,39 @@ body.raven-result-bg {
   gap: 0.5rem;
 }
 
-.ticker-symbol-wrapper {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-}
-
-/* 티커 오른쪽 가격/섹터 블록 */
-.ticker-price-block {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.2rem;
-}
-
 .ticker-symbol {
-  font-size: 4rem;
+  font-size: 3rem;
   font-weight: 900;
-  line-height: 1;
+  line-height: 1.1;
+}
+
+.ticker-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
 }
 
 .ticker-price {
-  font-size: 1.2rem;
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.ticker-change {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.ticker-change.positive {
+  color: var(--success);
+}
+
+.ticker-change.negative {
+  color: var(--danger);
+}
+
+.ticker-change.neutral {
   color: var(--text-sub);
-  margin-top: 0;
 }
 
 .status-badge {
@@ -522,6 +531,7 @@ body.raven-result-bg {
 .target-row {
   display: flex;
   gap: 1rem;
+  margin-top: 1.5rem;
 }
 
 .target-box {
@@ -740,73 +750,6 @@ body.raven-result-bg {
   font-size: 0.8rem;
   color: var(--text-sub);
   opacity: 0.9;
-}
-
-
-/* ───────── Market Regime / Factors ───────── */
-
-/* 상단 pill 줄 (Risk / FX / Crypto) */
-.regime-tag-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 0.35rem;
-}
-
-/* 기본 pill 스타일 */
-.regime-pill {
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 0.78rem;
-  border: 1px solid rgba(148, 163, 184, 0.6);
-  background: rgba(15, 23, 42, 0.9);
-  color: #e5e7eb;
-  white-space: nowrap;
-}
-
-/* 상태별 색상 */
-.regime-pill-neutral {
-  border-color: #6b7280;
-  background: rgba(15, 23, 42, 0.9);
-  color: #e5e7eb;
-}
-
-.regime-pill-riskon {
-  border-color: #22c55e;
-  background: rgba(34, 197, 94, 0.14);
-  color: #bbf7d0;
-}
-
-.regime-pill-riskoff {
-  border-color: #f97316;
-  background: rgba(248, 113, 113, 0.14);
-  color: #fed7aa;
-}
-
-/* FX Regime */
-.regime-pill-fx-weak {
-  border-color: #60a5fa;
-  background: rgba(59, 130, 246, 0.16);
-  color: #bfdbfe;
-}
-
-.regime-pill-fx-strong {
-  border-color: #f97316;
-  background: rgba(248, 150, 88, 0.2);
-  color: #fed7aa;
-}
-
-/* Crypto Regime */
-.regime-pill-crypto-hot {
-  border-color: #eab308;
-  background: rgba(234, 179, 8, 0.18);
-  color: #facc15;
-}
-
-.regime-pill-crypto-cold {
-  border-color: #38bdf8;
-  background: rgba(56, 189, 248, 0.18);
-  color: #bae6fd;
 }
 
 
