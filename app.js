@@ -1694,10 +1694,6 @@ function classifyTickerSymbol(symbol) {
     labels.push("Index ETF");
   }
 
-  if (labels.length === 0) {
-    labels.push("Single Stock");
-  }
-
   return labels;
 }
 
@@ -1762,11 +1758,6 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
       if (!labels.includes(t)) labels.push(t);
     });
 
-    // 3) 아무 것도 없으면 기본 태그
-    if (!labels.length) {
-      labels.push("Single Stock");
-    }
-
     labels.forEach((text) => {
       const span = document.createElement("span");
       span.className = "tag-pill label-pill";
@@ -1794,17 +1785,8 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
     rankEl.style.textShadow = `0 0 10px ${color}88`;
   }
 
-  const badge = $("status-badge");
-  if (badge) {
-    badge.textContent =
-      analysis.rank === "S" || analysis.rank === "A" ? "매수 우위" : "관망/주의";
-    badge.style.backgroundColor = color;
-    badge.style.color = "white";
-  }
-
-  // ===== 메인 R:R 텍스트 =====
-  let mainComment = "분석 결과가 여기에 표시됩니다.";
-
+  // ===== 3단계 판정 (매수 우위 / 중립·관망 / 매도 신중) =====
+  // R:R이 계산 가능하면 그걸 기준으로, 아니면 등급(rank)으로 대체 판정
   const upPctRaw = analysis.rewardPct1;
   const downPctRaw = analysis.riskPct;
   const rrRaw = analysis.rrRatio;
@@ -1815,28 +1797,51 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
     downPctRaw > 0 &&
     Number.isFinite(rrRaw);
 
+  let verdictLabel = "중립·관망";
+  let verdictColor = "#fbbf24";
+  let verdictBracket = "[중립]";
+
+  if (isValid) {
+    if (rrRaw >= 2) {
+      verdictLabel = "매수 우위";
+      verdictColor = "#10b981";
+      verdictBracket = "[매수]";
+    } else if (rrRaw < 1) {
+      verdictLabel = "매도 신중";
+      verdictColor = "#ef4444";
+      verdictBracket = "[주의]";
+    }
+  } else if (analysis.rank === "S" || analysis.rank === "A") {
+    verdictLabel = "매수 우위";
+    verdictColor = "#10b981";
+    verdictBracket = "[매수]";
+  } else if (analysis.rank === "D") {
+    verdictLabel = "매도 신중";
+    verdictColor = "#ef4444";
+    verdictBracket = "[주의]";
+  }
+
+  const badge = $("status-badge");
+  if (badge) {
+    badge.textContent = verdictLabel;
+    badge.style.backgroundColor = verdictColor;
+    badge.style.color = "white";
+  }
+
+  // ===== 메인 R:R 텍스트 =====
+  let mainComment = "분석 결과가 여기에 표시됩니다.";
+
   if (isValid) {
     const upPct = upPctRaw.toFixed(1);
     const downPct = downPctRaw.toFixed(1);
     const rrText = rrRaw.toFixed(2);
-
-    let statusLabel = "[중립]";
-    let statusColor = "#fbbf24";
-
-    if (rrRaw >= 2) {
-      statusLabel = "[매수]";
-      statusColor = "#10b981";
-    } else if (rrRaw < 1) {
-      statusLabel = "[주의]";
-      statusColor = "#ef4444";
-    }
 
     mainComment =
       `<span style="color:#10b981;">▲ UP: ${upPct}%</span> ` +
       `<span style="color:#ef4444; margin-left:6px;">▼ DOWN: ${downPct}%</span> ` +
       `<span style="color:#666; margin:0 6px;">·</span>` +
       `<span style="color:#3b82f6; font-weight:700;">R:R ≈ ${rrText} : 1</span> ` +
-      `<span style="color:${statusColor}; font-weight:600; margin-left:6px;">${statusLabel}</span>`;
+      `<span style="color:${verdictColor}; font-weight:600; margin-left:6px;">${verdictBracket}</span>`;
   } else {
     mainComment =
       "최근 구간에서 뚜렷한 지지·저항이 부족해, 기본 추세·모멘텀 기준으로만 평가합니다.";
@@ -1910,42 +1915,80 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
   const volBadge = $("factor-vol");
   const rrBadge = $("factor-rr");
 
+  // 팩터 뱃지 색상(강세/약세/중립) 일괄 적용
+  const setFactorPill = (el, text, state) => {
+    if (!el) return;
+    el.textContent = text;
+    el.classList.remove("factor-bull", "factor-bear", "factor-neutral");
+    el.classList.add(
+      state === "bull" ? "factor-bull" : state === "bear" ? "factor-bear" : "factor-neutral"
+    );
+  };
+
   if (trendBadge || momentumBadge || volBadge || rrBadge) {
     // Trend 판단
     let trendTxt = "중립";
+    let trendState = "neutral";
     if (ma20 && ma60 && ma120) {
       const isBullTrend =
         ma20 > ma60 && ma60 > ma120 && price >= ma20 * 0.97 && price <= ma20 * 1.1;
       const isBearTrend =
         ma20 < ma60 && price < ma20 && price < ma60 && price < ma120;
 
-      if (isBullTrend) trendTxt = "상승";
-      else if (isBearTrend) trendTxt = "하락";
+      if (isBullTrend) {
+        trendTxt = "상승";
+        trendState = "bull";
+      } else if (isBearTrend) {
+        trendTxt = "하락";
+        trendState = "bear";
+      }
     }
-    if (trendBadge) trendBadge.textContent = `Trend: ${trendTxt}`;
+    setFactorPill(trendBadge, `Trend: ${trendTxt}`, trendState);
 
     // Momentum (RSI 기반)
     let momTxt = "중립";
-    if (rsi >= 70) momTxt = "과열";
-    else if (rsi >= 60) momTxt = "상승";
-    else if (rsi <= 30) momTxt = "과매도";
-    else if (rsi <= 40) momTxt = "약세";
-    if (momentumBadge) momentumBadge.textContent = `Momentum: ${momTxt}`;
+    let momState = "neutral";
+    if (rsi >= 70) {
+      momTxt = "과열";
+      momState = "bear";
+    } else if (rsi >= 60) {
+      momTxt = "상승";
+      momState = "bull";
+    } else if (rsi <= 30) {
+      momTxt = "과매도";
+      momState = "neutral";
+    } else if (rsi <= 40) {
+      momTxt = "약세";
+      momState = "bear";
+    }
+    setFactorPill(momentumBadge, `Momentum: ${momTxt}`, momState);
 
-    // Volatility
+    // Volatility (변동성 자체는 방향성이 없으므로 "고변동성"만 주의 표시)
     let volTxt = "보통";
-    if (volatility > 6) volTxt = "고변동성";
-    else if (volatility > 0 && volatility < 2) volTxt = "저변동성";
-    if (volBadge) volBadge.textContent = `Vol: ${volTxt}`;
+    let volState = "neutral";
+    if (volatility > 6) {
+      volTxt = "고변동성";
+      volState = "bear";
+    } else if (volatility > 0 && volatility < 2) {
+      volTxt = "저변동성";
+    }
+    setFactorPill(volBadge, `Vol: ${volTxt}`, volState);
 
     // R:R
     let rrTxt = "-";
+    let rrState = "neutral";
     if (Number.isFinite(rrRatio) && Number.isFinite(riskPct)) {
-      if (rrRatio >= 2) rrTxt = "우위(매수)";
-      else if (rrRatio < 1) rrTxt = "불리(주의)";
-      else rrTxt = "중립";
+      if (rrRatio >= 2) {
+        rrTxt = "우위(매수)";
+        rrState = "bull";
+      } else if (rrRatio < 1) {
+        rrTxt = "불리(주의)";
+        rrState = "bear";
+      } else {
+        rrTxt = "중립";
+      }
     }
-    if (rrBadge) rrBadge.textContent = `R:R: ${rrTxt}`;
+    setFactorPill(rrBadge, `R:R: ${rrTxt}`, rrState);
   }
 
   // ==== Trend 카드 텍스트 ====
@@ -2483,6 +2526,23 @@ function renderTradingViewChart(symbol) {
 }
 
 // ===============================
+// 📑 상세 탭 (추세·모멘텀 / 수급 / 패턴·신호 / 실적)
+// ===============================
+function initResultTabs() {
+  const tabBtns = document.querySelectorAll(".tab-btn");
+  const track = $("tabs-track");
+  if (!tabBtns.length || !track) return;
+
+  tabBtns.forEach((btn, idx) => {
+    btn.addEventListener("click", () => {
+      tabBtns.forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      track.style.transform = `translateX(-${idx * 25}%)`;
+    });
+  });
+}
+
+// ===============================
 // 📏 포지션 사이즈 계산기
 // ===============================
 
@@ -2604,6 +2664,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // 📏 포지션 사이즈 계산기 CALC 버튼
   const posCalcBtn = $("pos-calc-btn");
   if (posCalcBtn) posCalcBtn.addEventListener("click", calcPositionSize);
+
+  // 📑 상세 탭 (추세·모멘텀 / 수급 / 패턴·신호 / 실적)
+  initResultTabs();
 
   // ----- 아래로 기존 검색/분석 로직 그대로 유지 -----
   const input = $("ticker-input");

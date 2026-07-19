@@ -352,6 +352,14 @@ body.raven-result-bg {
   color: var(--accent);
 }
 
+.z-metrics-caption {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--text-sub);
+  text-align: right;
+  max-width: 280px;
+}
+
 
 /* ───────── Chart ───────── */
 
@@ -377,13 +385,6 @@ body.raven-result-bg {
 
 
 /* ───────── Grid Sections ───────── */
-
-.section-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-bottom: 2rem;
-}
 
 .section-box {
   background: rgba(255,255,255,0.03);
@@ -414,6 +415,7 @@ body.raven-result-bg {
   display: flex;
   gap: 1rem;
   margin-bottom: 2rem;
+  grid-column: span 2;
 }
 
 .indicator-box {
@@ -433,6 +435,58 @@ body.raven-result-bg {
   margin: 0;
   font-size: 0.95rem;
   line-height: 1.5;
+}
+
+
+/* ───────── 상세 탭 (추세·모멘텀 / 수급 / 패턴·신호 / 실적) ───────── */
+
+.tabs-bar {
+  display: flex;
+  gap: 6px;
+  margin: 2rem 0 1rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tab-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-sub);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.75rem 0.5rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s ease, border-color 0.2s ease;
+  white-space: nowrap;
+}
+
+.tab-btn:hover {
+  color: var(--text-main);
+}
+
+.tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.tabs-viewport {
+  overflow: hidden;
+}
+
+.tabs-track {
+  display: flex;
+  width: 400%;
+  transition: transform 0.35s ease;
+}
+
+.tab-panel {
+  flex: 0 0 25%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-content: start;
 }
 
 
@@ -664,30 +718,7 @@ body.raven-result-bg {
 
 /* ───────── Market Regime / Factors ───────── */
 
-.regime-section {
-  margin-top: 1.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.regime-header {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.regime-header .section-title {
-  margin: 0;
-  display: flex;
-  align-items: center;
-}
-
-.regime-caption {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--text-sub);
-}
-
-/* 상단/하단 공용 pill 줄 */
+/* 상단 pill 줄 (Risk / FX / Crypto) */
 .regime-tag-row {
   display: flex;
   flex-wrap: wrap;
@@ -865,7 +896,7 @@ body.raven-result-bg {
     flex: 1;
   }
 
-  .section-grid {
+  .tab-panel {
     grid-template-columns: 1fr;
   }
 
@@ -875,6 +906,16 @@ body.raven-result-bg {
 
   .indicator-row {
     flex-direction: column;
+    grid-column: span 1;
+  }
+
+  .tabs-bar {
+    overflow-x: auto;
+  }
+
+  .tab-btn {
+    font-size: 0.78rem;
+    padding: 0.65rem 0.4rem;
   }
 
   .target-row {

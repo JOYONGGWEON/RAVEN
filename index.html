@@ -185,18 +185,19 @@
         </div>
       </div>
 
-      <!-- ▶ Z SCORE / Z RANK + 팩터 뱃지 묶음 -->
+      <!-- ▶ RAVEN SCORE / 등급 + 팩터 뱃지 묶음 -->
       <div class="z-metrics-column">
         <div class="z-metrics">
           <div class="z-badge">
-            <div class="z-badge-label">Z SCORE</div>
+            <div class="z-badge-label">RAVEN SCORE</div>
             <div id="ai-score" class="z-badge-value">0</div>
           </div>
           <div class="z-badge">
-            <div class="z-badge-label">Z RANK</div>
+            <div class="z-badge-label">등급</div>
             <div id="ai-rank" class="z-badge-value">-</div>
           </div>
         </div>
+        <p class="z-metrics-caption">추세·모멘텀·변동성·R:R을 종합한 자체 점수입니다</p>
 
         <!-- 팩터 분리 뱃지 (Trend / Momentum / Vol / R:R) -->
         <div class="factor-row">
@@ -211,65 +212,18 @@
     <!-- 차트 영역 -->
     <div id="tv-chart" class="chart-container"></div>
 
-    <!-- 상세 분석 그리드 -->
-    <div class="section-grid">
-      <div class="section-box">
-        <h3>📈 Trend (추세)</h3>
-        <p id="trend-txt">분석 중...</p>
-      </div>
-      <div class="section-box">
-        <h3>🌊 Wave (파동)</h3>
-        <p id="wave-txt">분석 중...</p>
-      </div>
-      <div class="section-box">
-        <h3>🔔 Momentum (모멘텀)</h3>
-        <p id="momentum-txt">분석 중...</p>
-      </div>
-      <div class="section-box">
-        <h3>💰 Supply (수급)</h3>
-        <p id="supply-txt">분석 중...</p>
-      </div>
-      <div class="section-box">
-        <h3>📊 Pattern (패턴)</h3>
-        <p id="pattern-txt">분석 중...</p>
-      </div>
-      <div class="section-box">
-        <h3>⚡Signal (신호)</h3>
-        <p id="signal-txt">분석 중...</p>
-      </div>
-      <div class="section-box wide">
-        <h3>🏦 Fundamentals (실적 / 밸류에이션)</h3>
-        <p id="fund-txt">분석 중...</p>
-      </div>
+    <!-- ===== 섹션 1: 최종 요약 (항상 표시) ===== -->
+    <div class="strategy-box">
+      <h3>🧠 RAVEN 전략 요약</h3>
+      <p id="strategy-main">
+        현재 자리의 전략적 의미가 여기에 표시됩니다.
+      </p>
+      <p id="strategy-detail" class="strategy-detail">
+        지지·저항, R:R, 모멘텀을 종합해 진입/관망 여부를 요약합니다.
+      </p>
     </div>
 
-    <!-- 📡 Market Regime 섹션 -->
-    <section class="section regime-section">
-      <div class="regime-header">
-        <h3 class="section-title">📡 Market Regime</h3>
-        <p class="regime-caption">
-          상단 'Risk / FX / Crypto' 상태 pill을 기준으로 현재 시장 레짐을 요약합니다.
-        </p>
-      </div>
-    </section>
-
-    <!-- 지표 분석 박스 (RSI / MA / MACD) -->
-    <div class="indicator-row">
-      <div class="indicator-box">
-        <h4>RSI (14)</h4>
-        <p id="rsi-txt">—</p>
-      </div>
-      <div class="indicator-box">
-        <h4>MA 20 / 60</h4>
-        <p id="ma-txt">—</p>
-      </div>
-      <div class="indicator-box">
-        <h4>MACD (12, 26)</h4>
-        <p id="macd-txt">—</p>
-      </div>
-    </div>
-
-    <!-- 가격 타겟 -->
+    <!-- 가격 타겟 (Wave 수치 통합) -->
     <div class="target-row">
       <div class="target-box target-1">
         <h4>🎯 1차 목표가</h4>
@@ -319,15 +273,70 @@
       </p>
     </div>
 
-    <!-- 전략 요약 박스 -->
-    <div class="strategy-box">
-      <h3>🧠 RAVEN 전략 요약</h3>
-      <p id="strategy-main">
-        현재 자리의 전략적 의미가 여기에 표시됩니다.
-      </p>
-      <p id="strategy-detail" class="strategy-detail">
-        지지·저항, R:R, 모멘텀을 종합해 진입/관망 여부를 요약합니다.
-      </p>
+    <!-- ===== 탭 영역: 추세·모멘텀 / 수급 / 패턴·신호 / 실적 ===== -->
+    <div class="tabs-bar" role="tablist">
+      <button type="button" class="tab-btn active" data-tab="trend">📈 추세·모멘텀</button>
+      <button type="button" class="tab-btn" data-tab="supply">💰 수급</button>
+      <button type="button" class="tab-btn" data-tab="pattern">📊 패턴·신호</button>
+      <button type="button" class="tab-btn" data-tab="fund">🏦 실적</button>
+    </div>
+
+    <div class="tabs-viewport">
+      <div id="tabs-track" class="tabs-track">
+        <div class="tab-panel" data-tab-panel="trend">
+          <div class="section-box">
+            <h3>📈 Trend (추세)</h3>
+            <p id="trend-txt">분석 중...</p>
+          </div>
+          <div class="section-box">
+            <h3>🔔 Momentum (모멘텀)</h3>
+            <p id="momentum-txt">분석 중...</p>
+          </div>
+          <div class="section-box wide">
+            <h3>🌊 Wave (파동)</h3>
+            <p id="wave-txt">분석 중...</p>
+          </div>
+          <div class="indicator-row">
+            <div class="indicator-box">
+              <h4>RSI (14)</h4>
+              <p id="rsi-txt">—</p>
+            </div>
+            <div class="indicator-box">
+              <h4>MA 20 / 60</h4>
+              <p id="ma-txt">—</p>
+            </div>
+            <div class="indicator-box">
+              <h4>MACD (12, 26)</h4>
+              <p id="macd-txt">—</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-panel" data-tab-panel="supply">
+          <div class="section-box wide">
+            <h3>💰 Supply (수급)</h3>
+            <p id="supply-txt">분석 중...</p>
+          </div>
+        </div>
+
+        <div class="tab-panel" data-tab-panel="pattern">
+          <div class="section-box">
+            <h3>📊 Pattern (패턴)</h3>
+            <p id="pattern-txt">분석 중...</p>
+          </div>
+          <div class="section-box">
+            <h3>⚡Signal (신호)</h3>
+            <p id="signal-txt">분석 중...</p>
+          </div>
+        </div>
+
+        <div class="tab-panel" data-tab-panel="fund">
+          <div class="section-box wide">
+            <h3>🏦 Fundamentals (실적 / 밸류에이션)</h3>
+            <p id="fund-txt">분석 중...</p>
+          </div>
+        </div>
+      </div>
     </div>
 
     <p class="footer-note">
