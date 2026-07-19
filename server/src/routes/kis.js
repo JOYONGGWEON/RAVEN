@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { getKisAccessToken } = require("../lib/kisAuth");
 const { collectSupplyDemandForSymbol } = require("../lib/supplyDemandCollector");
+const { interpretSupplyDemand } = require("../lib/supplyDemandInterpreter");
 
 const KIS_API_BASE = "https://openapi.koreainvestment.com:9443";
 
@@ -118,6 +119,20 @@ router.get("/loan-trans", async (req, res) => {
   } catch (e) {
     console.error("[RAVEN] /api/kis/loan-trans error:", e);
     res.status(502).json({ error: "KIS loan-trans proxy error" });
+  }
+});
+
+// 전일 수급 4종 → 오늘 해석 + 내일 예상 코멘트
+router.get("/supply-demand", async (req, res) => {
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: "symbol query param required" });
+
+  try {
+    const result = await interpretSupplyDemand(symbol);
+    res.json(result);
+  } catch (e) {
+    console.error("[RAVEN] /api/kis/supply-demand error:", e);
+    res.status(502).json({ error: "supply-demand interpret error" });
   }
 });
 

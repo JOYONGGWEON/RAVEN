@@ -483,6 +483,18 @@ async function fetchOverseasStockName(symbol) {
   }
 }
 
+// 전일 수급(프로그램매매/공매도/신용/대차) 해석 코멘트 조회 (국내 종목 전용)
+async function fetchSupplyDemandComment(symbol) {
+  try {
+    const res = await fetch(`${API_BASE}/api/kis/supply-demand?symbol=${encodeURIComponent(symbol)}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    console.warn("[RAVEN] 수급 해석 조회 실패:", e);
+    return null;
+  }
+}
+
 // 국내 종목명 검색 (자동완성용)
 async function searchDomesticStocks(query) {
   try {
@@ -2605,6 +2617,34 @@ function calcPositionSize() {
   if (riskAmountEl) riskAmountEl.textContent = `손실 한도: ${formatPrice(actualLoss)}`;
 }
 
+// 전일 수급 해석 박스 렌더링 (국내 종목 전용, 결과 카드 표시 후 비동기로 채워짐)
+function renderSupplyDemandBox(data) {
+  const box = $("supply-kis-box");
+  if (!box) return;
+
+  if (!data || !data.lines || !data.lines.length) {
+    box.classList.add("hidden");
+    return;
+  }
+
+  const dateEl = $("supply-kis-date");
+  const listEl = $("supply-kis-list");
+  const outlookEl = $("supply-kis-outlook");
+
+  if (dateEl) dateEl.textContent = data.date ? `기준일: ${data.date}` : "";
+  if (listEl) {
+    listEl.innerHTML = "";
+    data.lines.forEach((line) => {
+      const li = document.createElement("li");
+      li.textContent = line;
+      listEl.appendChild(li);
+    });
+  }
+  if (outlookEl) outlookEl.textContent = data.outlook || "";
+
+  box.classList.remove("hidden");
+}
+
 // ===============================
 // 메인 실행 로직 (티커 입력 + 버튼/엔터)
 // ===============================
@@ -2643,6 +2683,15 @@ async function runAnalysisForTicker(rawSymbol) {
 
     // 🔹 모든 세팅이 끝난 뒤 결과 카드 페이드인
     showResultCard();
+
+    // 전일 수급 해석은 국내 종목만 지원 — 메인 분석을 늦추지 않도록 비동기로 별도 로드
+    const supplyKisBox = $("supply-kis-box");
+    if (domestic) {
+      if (supplyKisBox) supplyKisBox.classList.add("hidden");
+      fetchSupplyDemandComment(symbol).then(renderSupplyDemandBox);
+    } else if (supplyKisBox) {
+      supplyKisBox.classList.add("hidden");
+    }
   } catch (err) {
     console.error("[RAVEN] 분석 중 오류:", err);
     showToast("분석 중 오류가 발생했습니다. 티커/네트워크를 확인해 주세요.");

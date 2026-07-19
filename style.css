@@ -408,6 +408,33 @@ body.raven-result-bg {
   grid-column: span 2;
 }
 
+.supply-kis-date {
+  margin: 0 0 0.6rem 0 !important;
+  font-size: 0.78rem !important;
+  color: var(--text-sub);
+}
+
+.supply-kis-list {
+  margin: 0 0 0.75rem 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.supply-kis-list li {
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.supply-kis-outlook {
+  margin: 0 !important;
+  font-size: 0.92rem !important;
+  line-height: 1.5;
+  color: var(--accent);
+  font-weight: 600;
+}
+
 
 /* 지표 박스 */
 
