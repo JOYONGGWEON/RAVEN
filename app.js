@@ -2,38 +2,6 @@
 // RAVEN v6.6 - Pattern / Signal / Target / Chart 통합 버전
 // =======================
 
-// 12종 캔들 패턴 목록 (이름만 정규화해서 사용)
-const CANDLE_PATTERNS = [
-  "Bullish Engulfing",
-  "Bearish Engulfing",
-  "Hammer",
-  "Inverted Hammer",
-  "Morning Star",
-  "Evening Star",
-  "Doji",
-  "Dragonfly Doji",
-  "Gravestone Doji",
-  "Three White Soldiers",
-  "Three Black Crows",
-  "Harami"
-];
-
-// 패턴별 섹터/테마 & 강도 매핑 (패턴 기반 테마용 - 필요시 확장)
-const SIGNAL_MAP = {
-  "Bullish Engulfing": { sector: "AI / Tech", strength: 4 },
-  "Bearish Engulfing": { sector: "Energy / Commodities", strength: 3 },
-  "Hammer": { sector: "Semiconductor", strength: 5 },
-  "Inverted Hammer": { sector: "EV / Battery", strength: 3 },
-  "Morning Star": { sector: "Growth / Tech", strength: 5 },
-  "Evening Star": { sector: "Finance / Value", strength: 4 },
-  "Doji": { sector: "Market Neutral", strength: 2 },
-  "Dragonfly Doji": { sector: "Biotech / High Beta", strength: 3 },
-  "Gravestone Doji": { sector: "Defense / Risk-Off", strength: 3 },
-  "Three White Soldiers": { sector: "Momentum Leaders", strength: 5 },
-  "Three Black Crows": { sector: "Macro Risk / Risk-Off", strength: 4 },
-  "Harami": { sector: "Mixed / Transition", strength: 2 }
-};
-
 // Trend / Momentum / Vol / R:R 카테고리 상태 (추후 버튼화용)
 let activeCategory = "trend";
 
@@ -1577,6 +1545,82 @@ function detectCandlePatterns(data, analysis) {
     });
   }
 
+  // 4-11) Piercing Line (관통형) — 하락 후 반전 시도, Bullish Engulfing보다는 약한 형태
+  if (
+    isBull &&
+    isBear1 &&
+    o <= c1 &&
+    c > (o1 + c1) / 2 &&
+    c < o1 &&
+    body1 / (range1 || 1e-9) > 0.3
+  ) {
+    patterns.push({
+      name: "Piercing Line",
+      strength: 3,
+      comment:
+        "전일 음봉 몸통의 절반 이상을 되돌리는 양봉이 출현한 관통형 패턴입니다. 완전한 장악(Engulfing)만큼 강하진 않지만, 하락 흐름에 제동이 걸렸다는 신호로 볼 수 있습니다."
+    });
+  }
+
+  // 4-12) Dark Cloud Cover (먹구름형) — 상승 후 반전 시도, Piercing Line의 대칭 패턴
+  if (
+    isBear &&
+    isBull1 &&
+    o >= c1 &&
+    c < (o1 + c1) / 2 &&
+    c > o1 &&
+    body1 / (range1 || 1e-9) > 0.3
+  ) {
+    patterns.push({
+      name: "Dark Cloud Cover",
+      strength: 3,
+      comment:
+        "전일 양봉 몸통의 절반 이상을 되돌리는 음봉이 덮은 먹구름형 패턴입니다. 상승 추세 상단에서 나오면 매수세 소진·단기 조정 신호로 해석합니다."
+    });
+  }
+
+  // 4-13) Spinning Top — Doji보다는 몸통이 있지만 위아래 꼬리가 균형 잡힌 방향성 부재형
+  const wickBalance =
+    Math.min(upperWick, lowerWick) > 0
+      ? Math.max(upperWick, lowerWick) / Math.min(upperWick, lowerWick)
+      : Infinity;
+  if (
+    bodyRatio >= 0.1 &&
+    bodyRatio < 0.3 &&
+    upperWick > body * 0.6 &&
+    lowerWick > body * 0.6 &&
+    wickBalance < 2.2
+  ) {
+    patterns.push({
+      name: "Spinning Top",
+      strength: 1,
+      comment:
+        "몸통은 작고 위아래 꼬리가 비슷하게 균형 잡힌 스피닝탑입니다. 매수·매도 힘이 팽팽해 방향성이 뚜렷하지 않은 구간으로, Doji만큼 극단적이진 않지만 관망 신호로 보는 편이 좋습니다."
+    });
+  }
+
+  // 4-14) Tweezer Top / Bottom — 연속 두 캔들의 고가(혹은 저가)가 거의 일치
+  const highDiff = Math.abs(h - h1) / (range1 || 1e-9);
+  const lowDiff = Math.abs(l - l1) / (range1 || 1e-9);
+
+  if (highDiff < 0.08 && isBull1 && isBear) {
+    patterns.push({
+      name: "Tweezer Top",
+      strength: 2,
+      comment:
+        "전일과 오늘의 고점이 거의 같은 높이에서 막힌 집게형 상단 패턴입니다. 같은 가격대에서 매도 물량이 반복적으로 나왔다는 뜻으로, 저항선 부근이라면 신뢰도가 더 높아집니다."
+    });
+  }
+
+  if (lowDiff < 0.08 && isBear1 && isBull) {
+    patterns.push({
+      name: "Tweezer Bottom",
+      strength: 2,
+      comment:
+        "전일과 오늘의 저점이 거의 같은 높이에서 지지된 집게형 하단 패턴입니다. 같은 가격대에서 매수세가 반복적으로 들어왔다는 뜻으로, 지지선 부근이라면 신뢰도가 더 높아집니다."
+    });
+  }
+
   patterns.sort((a, b) => b.strength - a.strength);
 
   return patterns;
@@ -1616,7 +1660,6 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
   const supplyEl = $("supply-txt");
   const patternEl = $("pattern-txt"); // 패턴 카드
   const signalEl = $("signal-txt"); // 시그널 카드
-  const newsEl = $("news-txt");
   const fundEl = $("fund-txt");
 
   const rsiBox = $("rsi-txt");
@@ -1983,57 +2026,38 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
       )} 기준, 최근 스윙 고점·저점을 기준으로 한 명확한 지지·저항 레벨이 부족한 파동 구간입니다.`;
     }
 
+    // Wave는 "지금 구조가 어떻게 생겼는지"만 순수하게 설명함 —
+    // 매수/매도 전략 판단은 위쪽 RAVEN 전략요약(strategy-main/detail)에 이미 있어서 여기서 안 겹치게 함
     let detail =
       "최근 파동 구조와 지지·저항 위치를 기준으로 파동을 해석합니다.";
-
-    const haveRR =
-      typeof rrRatio === "number" &&
-      typeof riskPct === "number" &&
-      typeof rewardPct1 === "number" &&
-      riskPct > 0 &&
-      rewardPct1 > 0;
 
     if (s1 && r1) {
       if (nearSupport && !nearResistance) {
         detail =
-          `현재가는 주요 지지선 근처(지지선 ≈ ${s1.toFixed(
+          `현재가는 주요 지지선 근처(≈ ${s1.toFixed(
             2
-          )})에 위치한 파동 하단 구간입니다. ` +
-          "이전 저점/매물대에서 매수세가 재차 들어오는지 확인하는 자리고, ";
-        if (haveRR && rrRatio >= 1.5) {
-          detail +=
-            `손절 폭 대비 위쪽 기대 수익이 유리한 R:R 구조(R:R ≈ ${rrRatio.toFixed(
-              2
-            )}:1)입니다. 지지선 이탈 시에는 손절을 빠르게 고려해야 합니다.`;
-        } else {
-          detail +=
-            "아직 보상 대비 위험 비율이 확실히 유리하진 않아서, 지지선 재확인/반등 확인 후 진입하는 전략이 더 안전합니다.";
-        }
+          )})에 위치한 파동 하단 구간입니다. 이전 저점·매물대에서 형성된 자리로, ` +
+          "지지선이 유지되는지 이탈하는지에 따라 다음 파동의 방향이 갈립니다.";
       } else if (!nearSupport && nearResistance) {
         detail =
-          `현재가는 주요 저항선 근처(저항선 ≈ ${r1.toFixed(
+          `현재가는 주요 저항선 근처(≈ ${r1.toFixed(
             2
-          )})에 위치한 파동 상단 구간입니다. ` +
-          "이전 고점/매물대에서 매도·청산이 나올 수 있는 자리이며, ";
-        if (haveRR && rrRatio < 1) {
-          detail +=
-            "위쪽 남은 업사이드보다 아래쪽 리스크가 더 큰 비대칭 구간입니다. 신규 매수보다는 보유분 분할 청산/헤지 쪽이 자연스럽습니다.";
-        } else {
-          detail +=
-            "돌파가 성공하면 새로운 파동 상단 구간이 열리지만, 실패 시에는 이전 지지선까지 되돌림이 나올 수 있는 자리입니다.";
-        }
+          )})에 위치한 파동 상단 구간입니다. 이전 고점·매물대에서 형성된 자리로, ` +
+          "저항을 돌파하는지 되밀리는지에 따라 다음 파동의 방향이 갈립니다.";
       } else if (nearSupport && nearResistance) {
         detail =
           "지지와 저항 레벨이 서로 가깝게 밀집한 박스 구간 상·하단에 동시에 걸쳐 있는 구조입니다. " +
-          "단기 박스 돌파 방향에 따라 다음 파동이 크게 갈릴 수 있는 구간으로, 손절·목표 구간을 짧게 잡은 단기 트레이딩에 적합합니다.";
+          "박스 폭이 좁아, 어느 한쪽을 벗어나는 순간 다음 파동의 방향이 비교적 빠르게 드러나는 자리입니다.";
       } else {
         detail =
-          "현재가는 주요 지지·저항 사이의 중립 파동 구간에 위치해 있습니다. " +
-          "박스 중단부에서는 추격 진입보다는, 지지선 재테스트(눌림)나 저항 근처(반발)에서 방향성을 보고 대응하는 편이 유리합니다.";
+          `현재가는 지지선(≈ ${s1.toFixed(2)})과 저항선(≈ ${r1.toFixed(
+            2
+          )}) 사이 중간에 위치한 파동 중단 구간입니다. ` +
+          "박스 상·하단 중 어느 쪽에 먼저 재접근하느냐가 다음 파동을 가늠하는 기준점이 됩니다.";
       }
     } else {
       detail =
-        "최근 스윙 고점/저점을 기반으로 한 명확한 지지·저항 레벨이 충분히 잡히지 않았습니다. " +
+        "최근 스윙 고점/저점을 기반으로 한 명확한 지지·저항 레벨이 충분히 잡히지 않은 구간입니다. " +
         "이 경우에는 이평선·RSI 등 모멘텀 지표와 상위 타임프레임 차트를 함께 보고 파동 위치를 판단하는 것이 좋습니다.";
     }
 
@@ -2248,13 +2272,7 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
     if (stratDetail) stratDetail.textContent = detailTxt;
   }
 
-  // 5) News / Fund 섹터 (펀디멘탈 API 연동 전)
-  if (newsEl) {
-    newsEl.textContent =
-      "실시간 뉴스/공시 API는 아직 연동 전입니다. " +
-      "실제 매매 전에는 반드시 네이버/증권사 HTS에서 최근 공시·뉴스(실적, 가이던스, 수주, 규제 이슈 등)를 직접 확인해 주세요.";
-  }
-
+  // 5) Fund 섹터 (펀디멘탈 API 연동 전)
   if (fundEl) {
     fundEl.textContent =
       "현재 버전에서는 재무제표/밸류에이션 지표를 API로 직접 불러오지 않습니다. " +
