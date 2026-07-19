@@ -126,8 +126,10 @@
 - [x] KIS Developers 가입 및 API 키 발급 (수급데이터 전용 — Toss와 별개 계정/키)
 - [x] KIS API 서버 연동 — `server/src/lib/kisAuth.js`(OAuth2 토큰) + `server/src/routes/kis.js` (`/api/kis/program-trade`, `/short-sale`, `/credit-balance`, `/loan-trans`). 삼성전자(005930) 실데이터로 4종 전부 검증 완료 (일자별 시계열 정상 수신)
 - [x] Supabase DB 스키마 설계 + 연결 — `supply_demand_daily` 테이블(symbol/trade_date/data_type/raw_data JSONB, RLS 활성화). insert/select/delete 실제 검증 완료
-- [ ] 매일 새벽 자동 수집 스케줄러 (관심종목 대상, D+1 공시 기준)
+- [x] 매일 새벽 자동 수집 스케줄러 — `server/src/scheduler.js` (node-cron, 매일 06:00 KST). 관심종목 기능이 아직 없어서 임시로 삼성전자(005930) 고정 목록, Phase 3에서 DB 기반 관심종목으로 교체 예정. `POST /api/kis/collect-now`로 수동 트리거 가능(테스트용)
 - [ ] "전일 수급 → 오늘 해석 + 내일 예상" 코멘트 로직 (규칙기반 + Claude API 서술 결합)
+
+> ⚠️ KIS API 운영 시 주의: ①토큰 발급은 1분당 1회 제한 — 서버가 자주 재시작되면 걸릴 수 있음(정상 운영 중엔 문제 없음, 캐시된 토큰 재사용). ②데이터 조회는 "초당 거래건수" 제한이 빡빡해서 4종을 연속 호출하면 걸릴 수 있음 — 호출 사이 600ms 딜레이 + 1회 재시도로 대응. ③KIS는 HTTP 200이어도 응답 바디의 `rt_cd`로 성공/실패를 알려줘서, 이걸 체크 안 하면 레이트리밋 에러가 "0건 수집"으로 조용히 묻힘 (실제로 이 버그를 겪고 수정함).
 - [ ] 프론트 결과 화면의 "Supply (수급)" 섹션을 지금의 거래량 기반 추정 로직 → 실제 KIS 수급데이터 기반으로 교체
 
 > ⚠️ KRX 정보데이터시스템 직접 스크레이핑 방식은 폐기 — "KRX Data Marketplace" 리뉴얼 후 로그인 필요로 확인되어(2026-07-15), 대신 KIS Developers의 종목별/일별 전용 엔드포인트로 대체 확정.
