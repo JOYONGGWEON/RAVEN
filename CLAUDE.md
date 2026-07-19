@@ -124,7 +124,7 @@
 ### Phase 2. 수급 데이터 파이프라인 (진행중, 2026-07-15 시작)
 - [x] KIS Developers 가입 및 API 키 발급 (수급데이터 전용 — Toss와 별개 계정/키)
 - [x] KIS API 서버 연동 — `server/src/lib/kisAuth.js`(OAuth2 토큰) + `server/src/routes/kis.js` (`/api/kis/program-trade`, `/short-sale`, `/credit-balance`, `/loan-trans`). 삼성전자(005930) 실데이터로 4종 전부 검증 완료 (일자별 시계열 정상 수신)
-- [ ] Supabase DB 스키마 설계 + 연결 (수급데이터 캐시 테이블)
+- [x] Supabase DB 스키마 설계 + 연결 — `supply_demand_daily` 테이블(symbol/trade_date/data_type/raw_data JSONB, RLS 활성화). insert/select/delete 실제 검증 완료
 - [ ] 매일 새벽 자동 수집 스케줄러 (관심종목 대상, D+1 공시 기준)
 - [ ] "전일 수급 → 오늘 해석 + 내일 예상" 코멘트 로직 (규칙기반 + Claude API 서술 결합)
 - [ ] 프론트 결과 화면의 "Supply (수급)" 섹션을 지금의 거래량 기반 추정 로직 → 실제 KIS 수급데이터 기반으로 교체
