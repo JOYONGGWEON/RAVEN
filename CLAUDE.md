@@ -122,12 +122,12 @@
 > 📌 실제 배포 시 주의: 토스 WTS에서 "허용 IP 등록" 필요 — Render 배포 후 서버 고정 IP를 등록해야 API 호출 가능 (로컬 테스트는 이미 등록된 IP라 통과됨).
 > ✅ (로드맵 외 추가, 2026-07-16) 분석 결과 화면 UI 리디자인 — 요약(전략요약+목표가/손절가+포지션계산기)을 항상 보이게 승격하고, 나머지 상세는 추세·모멘텀/수급/패턴·신호/실적 4개 탭(슬라이드 전환)으로 재구성. "Market Regime" 빈 섹션·"Single Stock" 무의미 태그 삭제. "Z SCORE/Z RANK"를 "RAVEN SCORE/등급"으로 개명하고 무엇의 합산인지 캡션 추가. 매수/관망/매도 판정을 rank 단독 판단(이분법)에서 R:R 기준 3단계로 통일. 팩터 뱃지(Trend/Momentum/Vol/R:R) 색상 코딩 적용(기존 CSS는 있었으나 미연결 상태였음).
 
-### Phase 2. 수급 데이터 파이프라인 (진행중, 2026-07-15 시작)
+### Phase 2. 수급 데이터 파이프라인 — ✅ 완료 (2026-07-15 ~ 2026-07-19)
 - [x] KIS Developers 가입 및 API 키 발급 (수급데이터 전용 — Toss와 별개 계정/키)
 - [x] KIS API 서버 연동 — `server/src/lib/kisAuth.js`(OAuth2 토큰) + `server/src/routes/kis.js` (`/api/kis/program-trade`, `/short-sale`, `/credit-balance`, `/loan-trans`). 삼성전자(005930) 실데이터로 4종 전부 검증 완료 (일자별 시계열 정상 수신)
 - [x] Supabase DB 스키마 설계 + 연결 — `supply_demand_daily` 테이블(symbol/trade_date/data_type/raw_data JSONB, RLS 활성화). insert/select/delete 실제 검증 완료
 - [x] 매일 새벽 자동 수집 스케줄러 — `server/src/scheduler.js` (node-cron, 매일 06:00 KST). 관심종목 기능이 아직 없어서 임시로 삼성전자(005930) 고정 목록, Phase 3에서 DB 기반 관심종목으로 교체 예정. `POST /api/kis/collect-now`로 수동 트리거 가능(테스트용)
-- [ ] "전일 수급 → 오늘 해석 + 내일 예상" 코멘트 로직 (규칙기반 + Claude API 서술 결합)
+- [x] "전일 수급 → 오늘 해석 + 내일 예상" 코멘트 로직 — `server/src/lib/supplyDemandInterpreter.js` (규칙기반). 캐시 없는 종목은 그 자리에서 KIS 즉시조회+캐싱하는 폴백 포함, 어떤 국내 티커든 동작. `GET /api/kis/supply-demand`로 노출, 결과화면 "수급" 탭에 연결 완료(해외 종목은 박스 자체를 숨김). Claude API 서술 결합은 Phase 4(진짜 AI 분석)에서 진행 예정 — 지금은 순수 규칙기반 문장
 
 > ⚠️ KIS API 운영 시 주의: ①토큰 발급은 1분당 1회 제한 — 서버가 자주 재시작되면 걸릴 수 있음(정상 운영 중엔 문제 없음, 캐시된 토큰 재사용). ②데이터 조회는 "초당 거래건수" 제한이 빡빡해서 4종을 연속 호출하면 걸릴 수 있음 — 호출 사이 600ms 딜레이 + 1회 재시도로 대응. ③KIS는 HTTP 200이어도 응답 바디의 `rt_cd`로 성공/실패를 알려줘서, 이걸 체크 안 하면 레이트리밋 에러가 "0건 수집"으로 조용히 묻힘 (실제로 이 버그를 겪고 수정함).
 - [ ] 프론트 결과 화면의 "Supply (수급)" 섹션을 지금의 거래량 기반 추정 로직 → 실제 KIS 수급데이터 기반으로 교체
