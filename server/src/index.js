@@ -8,6 +8,7 @@ const authRoutes = require("./routes/auth");
 const tossRoutes = require("./routes/toss");
 const stocksRoutes = require("./routes/stocks");
 const kisRoutes = require("./routes/kis");
+const { startScheduler } = require("./scheduler");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -25,4 +26,5 @@ app.use("/api/kis", kisRoutes);
 
 app.listen(PORT, () => {
   console.log(`[RAVEN] server listening on port ${PORT}`);
+  startScheduler();
 });

@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { getKisAccessToken } = require("../lib/kisAuth");
+const { collectSupplyDemandForSymbol } = require("../lib/supplyDemandCollector");
 
 const KIS_API_BASE = "https://openapi.koreainvestment.com:9443";
 
@@ -117,6 +118,20 @@ router.get("/loan-trans", async (req, res) => {
   } catch (e) {
     console.error("[RAVEN] /api/kis/loan-trans error:", e);
     res.status(502).json({ error: "KIS loan-trans proxy error" });
+  }
+});
+
+// 스케줄러가 실제로 도는지 수동으로 즉시 트리거 (테스트/디버그용)
+router.post("/collect-now", async (req, res) => {
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: "symbol query param required" });
+
+  try {
+    const result = await collectSupplyDemandForSymbol(symbol);
+    res.json(result);
+  } catch (e) {
+    console.error("[RAVEN] /api/kis/collect-now error:", e);
+    res.status(502).json({ error: "collect-now error" });
   }
 });
 
