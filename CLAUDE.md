@@ -159,11 +159,12 @@
 2. **RAVEN 분석 엔진 전체 재검토 — ✅ 완료 (2026-07-20)**
    - GPT 엔진과 비교해서 Claude 기준으로 판단 기준 자체(시그널/지지저항/캔들·보조지표/SCORE·RANK)를 재검토하는 작업. 아래 "Phase 1.5 — 분석 엔진 퀀트 업그레이드" 섹션에 상세 기록.
 
-### Phase 3. 매수/매도 타점 시그널 + 관심종목
-- [ ] 골든크로스/데드크로스 감지 로직 신규 추가
-- [ ] 거래량 급증 + 수급 신호 결합 스코어링 체계
-- [ ] 관심종목 DB 등록 기능
-- [ ] 스케줄러 → 조건 충족 시 텔레그램 알림
+### Phase 3. 매수/매도 타점 시그널 + 관심종목 — ⚠️ 코드는 완료, DB 마이그레이션 미실행 (2026-07-20)
+- [x] 골든크로스/데드크로스 감지 로직 — `server/src/lib/signalDetector.js`의 `detectMACross()`. MA20/MA60 EMA가 "어제→오늘 사이에" 대소관계가 뒤집힌 경우만 감지(상태가 아니라 사건 기준이라 매일 반복 알림 안 됨). 합성 데이터로 크로스 당일=GOLDEN, 다음날=NONE 정확히 검증함.
+- [x] 거래량 급증 + 방향 결합 신호 — `detectVolumeSurge()`. 평균 대비 2배 이상 거래량 + ±1.5% 이상 당일 등락이 같이 나온 날만 BUY/SELL. 매도 신호(데드크로스·거래량급증매도)가 항상 우선하는 리스크 관리 우선 정책.
+- [x] 관심종목 DB 등록 — `server/src/routes/watchlist.js`(GET/POST/DELETE `/api/watchlist`), 프론트에 별표 토글 버튼(결과화면)+관심종목 pill 목록(헤더) 추가. **`server/db/schema.sql`에 `watchlist` 테이블 추가함 — 사용자가 Supabase SQL 에디터에서 직접 실행해야 함(아직 미실행, `PGRST205` 에러로 확인됨)**
+- [x] 스케줄러 → 텔레그램 알림 — `server/src/scheduler.js`가 매일 06:00 KST에 관심종목 전체(국내+해외)를 돌면서 신호 체크 후 `server/src/lib/telegram.js`로 전송. 수동 테스트용 `POST /api/watchlist/check-now-and-alert`(실제 전송됨), `GET /api/watchlist/check-now/:symbol`(판정만, 전송 안 함) 둘 다 만들어둠.
+- 📌 다음 세션 필요 작업: ①사용자가 Supabase에서 `watchlist` 테이블 생성 SQL 실행 ②실제 add/remove/스케줄러/텔레그램 전송까지 진짜 end-to-end 검증(지금은 테이블이 없어서 신호 판정 로직만 합성데이터로 검증하고 DB 연동 부분은 "에러 안 나고 우아하게 실패하는지"만 확인함) ③실제 텔레그램 테스트 메시지는 사용자 폰에 진짜로 도착하니 미리 동의 구하고 트리거할 것
 
 ### Phase 4. 실제 AI 분석 연동
 - [ ] 계산된 지표 요약 → Claude API 프롬프트 전달 → 자연어 해석 생성

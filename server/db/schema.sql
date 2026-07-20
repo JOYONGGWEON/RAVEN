@@ -13,3 +13,13 @@ create table if not exists supply_demand_daily (
 
 create index if not exists idx_supply_demand_symbol_date
   on supply_demand_daily (symbol, trade_date desc);
+
+-- Phase 3: 관심종목. domestic=true면 6자리 종목코드, false면 해외 티커.
+-- 스케줄러가 매일 새벽 이 목록을 돌면서 골든/데드크로스·거래량 급증 신호를 체크해 텔레그램으로 알림.
+create table if not exists watchlist (
+  id bigint generated always as identity primary key,
+  symbol text not null,
+  domestic boolean not null,
+  added_at timestamptz not null default now(),
+  unique (symbol)
+);

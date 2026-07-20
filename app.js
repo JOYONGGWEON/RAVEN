@@ -2672,6 +2672,144 @@ function renderSupplyDemandBox(data) {
 }
 
 // ===============================
+// 관심종목 (Phase 3)
+// ===============================
+let watchlistCache = [];
+
+async function fetchWatchlist() {
+  try {
+    const res = await fetch(`${API_BASE}/api/watchlist`);
+    if (!res.ok) return [];
+    const json = await res.json();
+    return json.result || [];
+  } catch (e) {
+    console.warn("[RAVEN] 관심종목 조회 실패:", e);
+    return [];
+  }
+}
+
+async function addToWatchlist(symbol, domestic) {
+  try {
+    const res = await fetch(`${API_BASE}/api/watchlist`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ symbol, domestic })
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn("[RAVEN] 관심종목 추가 실패:", e);
+    return false;
+  }
+}
+
+async function removeFromWatchlist(symbol) {
+  try {
+    const res = await fetch(`${API_BASE}/api/watchlist/${encodeURIComponent(symbol)}`, {
+      method: "DELETE"
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn("[RAVEN] 관심종목 삭제 실패:", e);
+    return false;
+  }
+}
+
+function renderWatchlistPills(list) {
+  const row = $("watchlist-row");
+  const pillsEl = $("watchlist-pills");
+  if (!row || !pillsEl) return;
+
+  watchlistCache = list;
+
+  if (!list.length) {
+    row.classList.add("hidden");
+    pillsEl.innerHTML = "";
+    return;
+  }
+
+  pillsEl.innerHTML = "";
+  list.forEach((item) => {
+    const pill = document.createElement("span");
+    pill.className = "watchlist-pill";
+
+    const label = document.createElement("span");
+    label.textContent = item.symbol;
+    label.addEventListener("click", () => runAnalysisForTicker(item.symbol));
+    pill.appendChild(label);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "watchlist-pill-remove";
+    removeBtn.textContent = "×";
+    removeBtn.title = "관심종목에서 삭제";
+    removeBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const ok = await removeFromWatchlist(item.symbol);
+      if (ok) {
+        renderWatchlistPills(watchlistCache.filter((w) => w.symbol !== item.symbol));
+        updateWatchlistStarState();
+      } else {
+        showToast("관심종목 삭제에 실패했습니다.");
+      }
+    });
+    pill.appendChild(removeBtn);
+
+    pillsEl.appendChild(pill);
+  });
+
+  row.classList.remove("hidden");
+}
+
+async function refreshWatchlistPanel() {
+  renderWatchlistPills(await fetchWatchlist());
+}
+
+// 현재 분석 중인 종목이 관심종목에 있는지에 따라 별표 아이콘 상태 갱신
+function updateWatchlistStarState() {
+  const starBtn = $("watchlist-toggle-btn");
+  if (!starBtn) return;
+
+  const symbol = lastAnalysis?.data?.symbol;
+  if (!symbol) {
+    starBtn.classList.remove("active");
+    starBtn.textContent = "☆";
+    return;
+  }
+
+  const inWatchlist = watchlistCache.some((w) => w.symbol === symbol);
+  starBtn.classList.toggle("active", inWatchlist);
+  starBtn.textContent = inWatchlist ? "★" : "☆";
+}
+
+async function toggleWatchlistForCurrentTicker() {
+  const symbol = lastAnalysis?.data?.symbol;
+  if (!symbol) return;
+
+  const domestic = isDomesticTicker(symbol);
+  const alreadyIn = watchlistCache.some((w) => w.symbol === symbol);
+
+  if (alreadyIn) {
+    const ok = await removeFromWatchlist(symbol);
+    if (ok) {
+      showToast(`${symbol} 관심종목에서 삭제됨`);
+      await refreshWatchlistPanel();
+      updateWatchlistStarState();
+    } else {
+      showToast("관심종목 삭제에 실패했습니다.");
+    }
+  } else {
+    const ok = await addToWatchlist(symbol, domestic);
+    if (ok) {
+      showToast(`${symbol} 관심종목에 추가됨`);
+      await refreshWatchlistPanel();
+      updateWatchlistStarState();
+    } else {
+      showToast("관심종목 추가에 실패했습니다.");
+    }
+  }
+}
+
+// ===============================
 // 메인 실행 로직 (티커 입력 + 버튼/엔터)
 // ===============================
 async function runAnalysisForTicker(rawSymbol) {
@@ -2701,6 +2839,7 @@ async function runAnalysisForTicker(rawSymbol) {
     const analysis = analyzeData(data, benchmarkData);
     updateUI(data, analysis, fxRate, stockName);
     preparePositionCalculator(domestic, analysis.price);
+    updateWatchlistStarState();
 
     // 차트 위젯 렌더
     renderTradingViewChart(symbol);
@@ -2740,6 +2879,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // 📏 포지션 사이즈 계산기 CALC 버튼
   const posCalcBtn = $("pos-calc-btn");
   if (posCalcBtn) posCalcBtn.addEventListener("click", calcPositionSize);
+
+  // ★ 관심종목 — 헤더 패널 초기 로드 + 별표 토글 버튼
+  refreshWatchlistPanel();
+  const watchlistStarBtn = $("watchlist-toggle-btn");
+  if (watchlistStarBtn) {
+    watchlistStarBtn.addEventListener("click", toggleWatchlistForCurrentTicker);
+  }
 
   // 📑 상세 탭 (추세·모멘텀 / 수급 / 패턴·신호 / 실적)
   initResultTabs();

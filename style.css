@@ -103,6 +103,87 @@ body.raven-result-bg {
 }
 
 
+/* ───────── Watchlist Row ───────── */
+
+.watchlist-row {
+  margin-top: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.watchlist-row-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-sub);
+}
+
+.watchlist-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+.watchlist-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.25rem 0.5rem 0.25rem 0.7rem;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(30, 64, 175, 0.15);
+  border: 1px solid rgba(129, 140, 248, 0.6);
+  color: #e5e7eb;
+  cursor: pointer;
+}
+
+.watchlist-pill:hover {
+  background: rgba(30, 64, 175, 0.3);
+}
+
+.watchlist-pill-remove {
+  border: none;
+  background: transparent;
+  color: #ffffff99;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px;
+}
+
+.watchlist-pill-remove:hover {
+  color: #f87171;
+}
+
+.ticker-symbol-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.watchlist-star {
+  border: none;
+  background: transparent;
+  color: #ffffff66;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.watchlist-star:hover {
+  color: #fbbf24;
+}
+
+.watchlist-star.active {
+  color: #fbbf24;
+}
+
+
 /* ───────── Macro Bar ───────── */
 
 .macro-row {

@@ -143,6 +143,12 @@
       </form>
     </div>
 
+    <!-- 관심종목 -->
+    <div id="watchlist-row" class="watchlist-row hidden">
+      <span class="watchlist-row-label">★ 관심종목</span>
+      <div id="watchlist-pills" class="watchlist-pills"></div>
+    </div>
+
   </header>
 
   <!-- 로딩 인디케이터 -->
@@ -156,7 +162,10 @@
     <!-- 상단 정보: 티커 & 점수 -->
     <div class="ticker-header-row">
       <div class="ticker-main">
-        <div id="ticker-symbol" class="ticker-symbol">AMD</div>
+        <div class="ticker-symbol-row">
+          <div id="ticker-symbol" class="ticker-symbol">AMD</div>
+          <button id="watchlist-toggle-btn" class="watchlist-star" type="button" title="관심종목 추가/삭제">☆</button>
+        </div>
 
         <div class="ticker-price-row">
           <span id="ticker-price" class="ticker-price">$0.00</span>
