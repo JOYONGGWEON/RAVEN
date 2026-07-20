@@ -309,77 +309,6 @@ function initLockAndIntro() {
   }
 }
 
-// ────────────────────────────────
-// 종목 섹터 / 업종 정보 (Yahoo quoteSummary)
-// ────────────────────────────────
-const SECTOR_KR_MAP = {
-  "Semiconductors": "반도체",
-  "Semiconductor Equipment & Materials": "반도체 장비/소재",
-  "Information Technology": "정보기술(IT)",
-  "Software—Application": "소프트웨어(응용)",
-  "Software—Infrastructure": "소프트웨어(인프라)",
-  "Communication Services": "커뮤니케이션 서비스",
-  "Consumer Defensive": "필수소비재",
-  "Consumer Cyclical": "경기소비재",
-  "Industrials": "산업재",
-  "Energy": "에너지",
-  "Utilities": "유틸리티",
-  "Financial Services": "금융",
-  "Health Care": "헬스케어",
-  "Real Estate": "리츠/부동산"
-};
-
-function toKoreanSector(engSector, engIndustry) {
-  if (!engSector && !engIndustry) return null;
-
-  if (engSector && SECTOR_KR_MAP[engSector]) {
-    return SECTOR_KR_MAP[engSector];
-  }
-
-  const ind = (engIndustry || "").toLowerCase();
-
-  if (ind.includes("semi")) return "반도체";
-  if (ind.includes("software")) return "소프트웨어";
-  if (ind.includes("application")) return "소프트웨어(응용)";
-  if (ind.includes("equipment")) return "장비";
-  if (ind.includes("beverage") || ind.includes("soft drinks")) return "음료/식품";
-  if (ind.includes("banks") || ind.includes("financial")) return "금융";
-  if (ind.includes("utility")) return "유틸리티";
-  if (ind.includes("biotech") || ind.includes("biotechnology")) return "바이오";
-  if (ind.includes("communication") || ind.includes("telecom")) return "커뮤니케이션";
-
-  return engSector || engIndustry || null;
-}
-
-async function fetchCompanyProfile(ticker) {
-  const symbol = ticker.toUpperCase().trim();
-  const finalUrl = `${API_BASE}/api/yahoo/profile?symbol=${encodeURIComponent(symbol)}`;
-
-  try {
-    const res = await fetch(finalUrl);
-    if (!res.ok) throw new Error("Profile network error");
-    const json = await res.json();
-
-    const result = json?.quoteSummary?.result?.[0];
-    if (!result || !result.assetProfile) return null;
-
-    const ap = result.assetProfile;
-    const sector = ap.sector || null;
-    const industry = ap.industry || null;
-
-    const sectorKR = toKoreanSector(sector, industry);
-
-    return {
-      sector,
-      industry,
-      sectorKR
-    };
-  } catch (e) {
-    console.warn("[RAVEN] company profile fetch error:", e);
-    return null;
-  }
-}
-
 // 3. 공통 야후 파서 (간단 버전)
 async function fetchYahooChart(symbol, range = "1d", interval = "1d") {
   const finalUrl = `${API_BASE}/api/yahoo/chart?symbol=${encodeURIComponent(
@@ -550,66 +479,110 @@ function attachTickerAutocomplete(inputEl) {
 
 // 3-1. 개별 종목 데이터 (OHLC + Volume) — 국내/해외 모두 토스증권 API로 통합
 // (매크로 지표(VIX/10년물/BTC)만 Yahoo에 남아있음 — 토스는 지수/암호화폐를 다루지 않음)
+// 토스 캔들 API 공통 호출 — 개별 종목 조회(fetchStockData)와 벤치마크(RS 비교용) 조회가 공유
+async function fetchCandleData(symbol) {
+  const finalUrl = `${API_BASE}/api/toss/candles?symbol=${encodeURIComponent(
+    symbol
+  )}&interval=1d&count=180`;
+
+  const response = await fetch(finalUrl);
+  if (!response.ok) throw new Error("Network Error");
+  const json = await response.json();
+
+  const candles = json?.result?.candles;
+  if (!candles || !candles.length) throw new Error("No candle result");
+
+  // 토스 캔들은 최신순으로 내려오므로 오래된 순으로 뒤집음
+  const chronological = [...candles].reverse();
+
+  const opens = [];
+  const closes = [];
+  const highs = [];
+  const lows = [];
+  const volumes = [];
+
+  for (const c of chronological) {
+    const o = Number(c.openPrice);
+    const cl = Number(c.closePrice);
+    const h = Number(c.highPrice);
+    const l = Number(c.lowPrice);
+    const v = Number(c.volume);
+
+    if ([o, cl, h, l, v].some((n) => Number.isNaN(n))) continue;
+
+    opens.push(o);
+    closes.push(cl);
+    highs.push(h);
+    lows.push(l);
+    volumes.push(v);
+  }
+
+  if (closes.length < 2) throw new Error("Not enough clean OHLC data");
+
+  return {
+    symbol,
+    price: closes[closes.length - 1],
+    opens,
+    closes,
+    highs,
+    lows,
+    volumes
+  };
+}
+
 async function fetchStockData(ticker) {
   const trimmed = (ticker || "").trim();
   const domestic = isDomesticTicker(trimmed);
   const symbol = domestic ? trimmed : trimmed.toUpperCase();
 
-  const finalUrl = `${API_BASE}/api/toss/candles?symbol=${encodeURIComponent(
-    symbol
-  )}&interval=1d&count=180`;
-
   console.log(`[RAVEN] Fetching (${domestic ? "domestic" : "overseas"}): ${symbol}`);
 
   try {
-    const response = await fetch(finalUrl);
-    if (!response.ok) throw new Error("Network Error");
-    const json = await response.json();
-
-    const candles = json?.result?.candles;
-    if (!candles || !candles.length) throw new Error("No candle result");
-
-    // 토스 캔들은 최신순으로 내려오므로 오래된 순으로 뒤집음
-    const chronological = [...candles].reverse();
-
-    const opens = [];
-    const closes = [];
-    const highs = [];
-    const lows = [];
-    const volumes = [];
-
-    for (const c of chronological) {
-      const o = Number(c.openPrice);
-      const cl = Number(c.closePrice);
-      const h = Number(c.highPrice);
-      const l = Number(c.lowPrice);
-      const v = Number(c.volume);
-
-      if ([o, cl, h, l, v].some((n) => Number.isNaN(n))) continue;
-
-      opens.push(o);
-      closes.push(cl);
-      highs.push(h);
-      lows.push(l);
-      volumes.push(v);
-    }
-
-    if (closes.length < 2) throw new Error("Not enough clean OHLC data");
-
-    return {
-      symbol,
-      price: closes[closes.length - 1],
-      opens,
-      closes,
-      highs,
-      lows,
-      volumes
-    };
+    return await fetchCandleData(symbol);
   } catch (error) {
     console.error("[RAVEN] 실시간 시세 불러오기 실패:", error);
     showToast("⚠️ 실시간 데이터 접속 실패. 분석을 진행할 수 없습니다.");
     throw error;
   }
+}
+
+// 상대강도(RS) 비교용 벤치마크 — 국내는 KODEX 200(069500, KOSPI200 추종 ETF), 해외는 SPY(S&P500 ETF)
+// 실패해도 메인 분석은 그대로 진행되도록 조용히 null 반환 (토스트 없음)
+async function fetchBenchmarkData(domestic) {
+  const symbol = domestic ? "069500" : "SPY";
+  try {
+    return await fetchCandleData(symbol);
+  } catch (e) {
+    console.warn("[RAVEN] 벤치마크(RS) 데이터 조회 실패:", e);
+    return null;
+  }
+}
+
+// 개별 종목 vs 벤치마크의 20일/60일 수익률 격차 — "시장 대비 잘 가는지"를 직접 비교
+// (예전엔 개별 종목 지표만 봐서, 업종/지수 전체가 빠지는 중에도 종목만 보고 좋다고 오판할 수 있었음)
+function calcRelativeStrength(stockData, benchmarkData) {
+  if (!stockData || !benchmarkData) return null;
+  const sc = stockData.closes;
+  const bc = benchmarkData.closes;
+  if (!sc || !bc || sc.length < 21 || bc.length < 21) return null;
+
+  const ret = (arr, lookback) => {
+    const n = arr.length;
+    if (n < lookback + 1) return null;
+    const start = arr[n - 1 - lookback];
+    if (!start) return null;
+    return ((arr[n - 1] - start) / start) * 100;
+  };
+
+  const sRet20 = ret(sc, 20);
+  const bRet20 = ret(bc, 20);
+  const sRet60 = ret(sc, 60);
+  const bRet60 = ret(bc, 60);
+
+  return {
+    rs20: sRet20 != null && bRet20 != null ? sRet20 - bRet20 : null,
+    rs60: sRet60 != null && bRet60 != null ? sRet60 - bRet60 : null
+  };
 }
 
 // 3-2. 환율(USD/KRW) — 토스증권 API
@@ -709,43 +682,6 @@ async function fetchMacroData() {
   }
 }
 
-// 4. 데모 데이터 생성기 (비상용, OHLC 포함)
-// 더미 모드는 사용하지 않지만, 혹시 모를 참조를 위해 함수만 보존
-function generateDemoData(symbol) {
-  const opens = [];
-  const closes = [];
-  const highs = [];
-  const lows = [];
-  const volumes = [];
-
-  let price = 100;
-
-  for (let i = 0; i < 120; i++) {
-    const change = (Math.random() - 0.45) * 0.05;
-    const open = price;
-    price = price * (1 + change);
-
-    const high = Math.max(open, price) * (1 + Math.random() * 0.01);
-    const low = Math.min(open, price) * (1 - Math.random() * 0.01);
-
-    opens.push(open);
-    closes.push(price);
-    highs.push(high);
-    lows.push(low);
-    volumes.push(1000000 + Math.random() * 500000);
-  }
-
-  return {
-    symbol: symbol,
-    price: price,
-    opens,
-    closes,
-    highs,
-    lows,
-    volumes
-  };
-}
-
 // ===== 지표 헬퍼: EMA / RSI(Wilder) / MACD =====
 
 function calcEMA(values, period) {
@@ -799,20 +735,177 @@ function calcRSI_Wilder(closes, period = 14) {
   return rsi;
 }
 
-function calcMACD(closes) {
-  if (!Array.isArray(closes) || closes.length < 26) return null;
-  const ema12 = calcEMA(closes, 12);
-  const ema26 = calcEMA(closes, 26);
-  if (ema12 == null || ema26 == null) return null;
-  const macd = ema12 - ema26;
-  return macd;
+// EMA "시리즈"(각 시점별 값) — calcEMA는 마지막 값 하나만 주기 때문에
+// MACD 시그널선(=MACD의 9-EMA)을 만들려면 MACD 자체의 시계열이 필요해서 별도로 둠
+function calcEMASeries(values, period) {
+  const len = values.length;
+  if (!Array.isArray(values) || len < period) return null;
+
+  const k = 2 / (period + 1);
+  const series = new Array(len).fill(null);
+
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += values[i];
+  let ema = sum / period;
+  series[period - 1] = ema;
+
+  for (let i = period; i < len; i++) {
+    ema = values[i] * k + ema * (1 - k);
+    series[i] = ema;
+  }
+  return series;
+}
+
+// MACD 라인 + 시그널선(9-EMA) + 히스토그램 + 골든/데드 크로스 감지
+// (예전엔 MACD 라인 값 하나만 계산해서 크로스오버를 아예 감지할 수 없었음)
+function calcMACDFull(closes) {
+  if (!Array.isArray(closes) || closes.length < 26 + 9) return null;
+
+  const ema12Series = calcEMASeries(closes, 12);
+  const ema26Series = calcEMASeries(closes, 26);
+  if (!ema12Series || !ema26Series) return null;
+
+  const n = closes.length;
+  const validStart = 26 - 1; // ema26가 유효해지는 시점부터 MACD 라인도 유효함
+
+  const macdValid = [];
+  for (let i = validStart; i < n; i++) {
+    macdValid.push(ema12Series[i] - ema26Series[i]);
+  }
+
+  const signalValidSeries = calcEMASeries(macdValid, 9);
+  if (!signalValidSeries) return null;
+
+  const macdSeries = new Array(n).fill(null);
+  const signalSeries = new Array(n).fill(null);
+  for (let i = 0; i < macdValid.length; i++) {
+    macdSeries[validStart + i] = macdValid[i];
+    if (signalValidSeries[i] != null) signalSeries[validStart + i] = signalValidSeries[i];
+  }
+
+  const last = n - 1;
+  const prev = n - 2;
+
+  const macd = macdSeries[last];
+  const signal = signalSeries[last];
+  if (macd == null || signal == null) return null;
+  const histogram = macd - signal;
+
+  let crossover = "NONE";
+  if (
+    prev >= 0 &&
+    macdSeries[prev] != null &&
+    signalSeries[prev] != null
+  ) {
+    const prevDiff = macdSeries[prev] - signalSeries[prev];
+    const currDiff = macd - signal;
+    if (prevDiff <= 0 && currDiff > 0) crossover = "GOLDEN";
+    else if (prevDiff >= 0 && currDiff < 0) crossover = "DEAD";
+  }
+
+  return { macd, signal, histogram, crossover };
+}
+
+// ATR(14, Wilder) — 변동성 기반 손절폭 계산용
+// (예전엔 지지선이 없으면 종목 변동성과 무관하게 그냥 -5% 고정값을 손절가로 썼음)
+function calcATR(highs, lows, closes, period = 14) {
+  const n = closes.length;
+  if (n < period + 1) return null;
+
+  const trList = [];
+  for (let i = 1; i < n; i++) {
+    const tr = Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - closes[i - 1]),
+      Math.abs(lows[i] - closes[i - 1])
+    );
+    trList.push(tr);
+  }
+
+  let atr = trList.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < trList.length; i++) {
+    atr = (atr * (period - 1) + trList[i]) / period;
+  }
+  return atr;
+}
+
+// ADX(14) + DI+ / DI- — 추세의 "강도"를 측정 (예전엔 MA20/60 격차만으로 추세 강도를 대신 판단해서
+// 강한 추세와 그냥 횡보 노이즈를 구분하지 못했음)
+function calcADX(highs, lows, closes, period = 14) {
+  const n = closes.length;
+  if (n < period * 2 + 1) return null;
+
+  const trList = [];
+  const plusDMList = [];
+  const minusDMList = [];
+
+  for (let i = 1; i < n; i++) {
+    const upMove = highs[i] - highs[i - 1];
+    const downMove = lows[i - 1] - lows[i];
+
+    plusDMList.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDMList.push(downMove > upMove && downMove > 0 ? downMove : 0);
+
+    trList.push(
+      Math.max(
+        highs[i] - lows[i],
+        Math.abs(highs[i] - closes[i - 1]),
+        Math.abs(lows[i] - closes[i - 1])
+      )
+    );
+  }
+
+  const wilderSmooth = (arr) => {
+    const len = arr.length;
+    if (len < period) return null;
+    const smoothed = [];
+    let sum = 0;
+    for (let i = 0; i < period; i++) sum += arr[i];
+    smoothed.push(sum);
+    for (let i = period; i < len; i++) {
+      smoothed.push(smoothed[smoothed.length - 1] - smoothed[smoothed.length - 1] / period + arr[i]);
+    }
+    return smoothed;
+  };
+
+  const trSmoothed = wilderSmooth(trList);
+  const plusDMSmoothed = wilderSmooth(plusDMList);
+  const minusDMSmoothed = wilderSmooth(minusDMList);
+  if (!trSmoothed || !plusDMSmoothed || !minusDMSmoothed) return null;
+
+  const dxList = [];
+  for (let i = 0; i < trSmoothed.length; i++) {
+    const tr = trSmoothed[i];
+    if (!tr) {
+      dxList.push(null);
+      continue;
+    }
+    const plusDI = (plusDMSmoothed[i] / tr) * 100;
+    const minusDI = (minusDMSmoothed[i] / tr) * 100;
+    const sum = plusDI + minusDI;
+    dxList.push(sum > 0 ? (Math.abs(plusDI - minusDI) / sum) * 100 : 0);
+  }
+
+  const validDx = dxList.filter((v) => v != null);
+  if (validDx.length < period) return null;
+
+  let adx = validDx.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < validDx.length; i++) {
+    adx = (adx * (period - 1) + validDx[i]) / period;
+  }
+
+  const lastTR = trSmoothed[trSmoothed.length - 1];
+  const plusDI = (plusDMSmoothed[plusDMSmoothed.length - 1] / lastTR) * 100;
+  const minusDI = (minusDMSmoothed[minusDMSmoothed.length - 1] / lastTR) * 100;
+
+  return { adx, plusDI, minusDI };
 }
 
 // ────────────────────────────────
 // 스윙 포인트 → 지지/저항 레벨 클러스터링 헬퍼
 // ────────────────────────────────
-function clusterSwingLevels(levels, totalBars) {
-  const TOL = 0.03;
+function clusterSwingLevels(levels, totalBars, tol = 0.03) {
+  const TOL = tol;
   const clusters = [];
 
   levels.forEach((lv) => {
@@ -867,7 +960,7 @@ function pickSupportResistance(clusters, lastPrice, isSupport) {
 }
 
 // 5. 지표 계산 엔진
-function analyzeData(data) {
+function analyzeData(data, benchmarkData) {
   const closes = data.closes;
   const highs = data.highs;
   const lows = data.lows;
@@ -875,6 +968,8 @@ function analyzeData(data) {
   const n = closes.length;
 
   const lastPrice = data.price || closes[n - 1];
+
+  const rsInfo = benchmarkData ? calcRelativeStrength(data, benchmarkData) : null;
 
   const ma5 = calcEMA(closes, 5);
   const ma20 = calcEMA(closes, 20);
@@ -886,7 +981,19 @@ function analyzeData(data) {
     rsi = 50;
   }
 
-  const macd = calcMACD(closes);
+  const macdFull = calcMACDFull(closes);
+  const macd = macdFull ? macdFull.macd : null;
+  const macdSignal = macdFull ? macdFull.signal : null;
+  const macdHistogram = macdFull ? macdFull.histogram : null;
+  const macdCrossover = macdFull ? macdFull.crossover : "NONE";
+
+  const atr = calcATR(highs, lows, closes, 14);
+  const atrPct = typeof atr === "number" && lastPrice > 0 ? (atr / lastPrice) * 100 : null;
+
+  const adxInfo = calcADX(highs, lows, closes, 14);
+  const adx = adxInfo ? adxInfo.adx : null;
+  const plusDI = adxInfo ? adxInfo.plusDI : null;
+  const minusDI = adxInfo ? adxInfo.minusDI : null;
 
   let support1 = null;
   let support2 = null;
@@ -894,24 +1001,38 @@ function analyzeData(data) {
   let resistance2 = null;
 
   if (n >= 10) {
-    const start = Math.max(1, n - 80);
+    const start = Math.max(2, n - 80);
     const swingLows = [];
     const swingHighs = [];
 
-    for (let i = start; i < n - 1; i++) {
+    // 좌우 2봉씩 비교하는 5봉 피벗 — 예전엔 좌우 1봉(3봉)만 봐서 하루짜리 노이즈도 죄다
+    // "스윙 고점/저점"으로 잡혔음. 5봉 기준이 실제 스윙 트레이딩에서 쓰는 표준적인 폭.
+    for (let i = start; i < n - 2; i++) {
       const h = highs[i];
       const l = lows[i];
 
-      if (h > highs[i - 1] && h > highs[i + 1]) {
+      if (
+        h > highs[i - 1] && h > highs[i - 2] &&
+        h > highs[i + 1] && h > highs[i + 2]
+      ) {
         swingHighs.push({ price: h, idx: i });
       }
-      if (l < lows[i - 1] && l < lows[i + 1]) {
+      if (
+        l < lows[i - 1] && l < lows[i - 2] &&
+        l < lows[i + 1] && l < lows[i + 2]
+      ) {
         swingLows.push({ price: l, idx: i });
       }
     }
 
-    const lowClusters = clusterSwingLevels(swingLows, n);
-    const highClusters = clusterSwingLevels(swingHighs, n);
+    // 클러스터링 허용오차를 종목 변동성(ATR%)에 맞춰 조정 —
+    // 예전엔 변동성 큰 종목/작은 종목 구분 없이 무조건 ±3% 고정이었음
+    const swingTol = Number.isFinite(atrPct)
+      ? Math.max(0.015, Math.min(0.08, (atrPct * 1.5) / 100))
+      : 0.03;
+
+    const lowClusters = clusterSwingLevels(swingLows, n, swingTol);
+    const highClusters = clusterSwingLevels(swingHighs, n, swingTol);
 
     const supportLevels = pickSupportResistance(lowClusters, lastPrice, true);
     const resistanceLevels = pickSupportResistance(
@@ -926,62 +1047,61 @@ function analyzeData(data) {
     if (resistanceLevels.length > 0) resistance1 = resistanceLevels[0].price;
     if (resistanceLevels.length > 1) resistance2 = resistanceLevels[1].price;
 
+    // 오늘 봉 자체는 제외하고 계산 — 포함시키면 급등일에 "저항선"이 오늘 자신의 고점이 되어
+    // 목표가가 현재가보다 낮게 나오는 모순이 생김 (실제로 재현되는 걸 확인하고 고침)
     if (support1 === null) {
-      const recentLows = lows.slice(Math.max(0, n - 60));
-      const minLow = Math.min(...recentLows);
-      if (minLow < lastPrice) support1 = minLow;
+      const recentLows = lows.slice(Math.max(0, n - 60), n - 1);
+      if (recentLows.length) {
+        const minLow = Math.min(...recentLows);
+        if (minLow < lastPrice) support1 = minLow;
+      }
     }
     if (resistance1 === null) {
-      const recentHighs = highs.slice(Math.max(0, n - 60));
-      const maxHigh = Math.max(...recentHighs);
-      if (maxHigh > lastPrice) resistance1 = maxHigh;
+      const recentHighs = highs.slice(Math.max(0, n - 60), n - 1);
+      if (recentHighs.length) {
+        const maxHigh = Math.max(...recentHighs);
+        if (maxHigh > lastPrice) resistance1 = maxHigh;
+      }
     }
   }
 
   // R:R / 목표가·손절
-  let riskPct = null;
-  let rewardPct1 = null;
-  let rrRatio = null;
-
-  if (support1 && support1 < lastPrice) {
-    riskPct = ((lastPrice - support1) / lastPrice) * 100;
-  }
-  if (resistance1 && resistance1 > lastPrice) {
-    rewardPct1 = ((resistance1 - lastPrice) / lastPrice) * 100;
-  }
-  if (
-    typeof riskPct === "number" &&
-    typeof rewardPct1 === "number" &&
-    riskPct > 0
-  ) {
-    rrRatio = rewardPct1 / riskPct;
-  }
-
+  // 지지선이 없을 때 예전엔 종목 변동성과 무관하게 고정 -5%를 손절가로 썼음 →
+  // ATR(변동성) 기반 손절폭으로 대체. 저항선이 없을 때의 목표가도 고정 +5%/+15% 대신
+  // "손절폭 대비 R:R 1.5 / 3.0"으로 잡아서, 화면에 뜨는 R:R 숫자가 실제 손절·목표가와 항상 일치하도록 함
+  // (예전엔 R:R 표시가 원본 지지/저항 값 기준, 실제 손절/목표가는 버퍼 적용된 값 기준이라 서로 미묘하게 안 맞았음)
   const MAX_RISK_PCT = 25;
+  const ATR_STOP_MULT = 2; // 진입가 - 2×ATR : 변동성 기반 손절폭의 표준적인 배수
 
-  let stopBase = support1 ? support1 : lastPrice * 0.95;
+  let stopBase;
+  if (support1 && support1 < lastPrice) {
+    stopBase = support1;
+  } else if (typeof atr === "number" && atr > 0) {
+    stopBase = lastPrice - ATR_STOP_MULT * atr;
+  } else {
+    stopBase = lastPrice * 0.95;
+  }
 
-  let tmpRiskPct = ((lastPrice - stopBase) / lastPrice) * 100;
-  if (tmpRiskPct > MAX_RISK_PCT) {
+  let riskPct = ((lastPrice - stopBase) / lastPrice) * 100;
+  if (riskPct > MAX_RISK_PCT) {
     stopBase = lastPrice * (1 - MAX_RISK_PCT / 100);
-    tmpRiskPct = ((lastPrice - stopBase) / lastPrice) * 100;
-    riskPct = tmpRiskPct;
+    riskPct = MAX_RISK_PCT;
   }
 
   const stop = stopBase * 0.99;
-  let target1, target2;
+  const riskAmount = lastPrice - stopBase;
 
+  let target1, target2;
   if (resistance1) {
     target1 = resistance1 * 0.995;
-    if (resistance2) {
-      target2 = resistance2 * 0.99;
-    } else {
-      target2 = resistance1 * 1.05;
-    }
+    target2 = resistance2 ? resistance2 * 0.99 : resistance1 * 1.05;
   } else {
-    target1 = lastPrice * 1.05;
-    target2 = lastPrice * 1.15;
+    target1 = lastPrice + riskAmount * 1.5;
+    target2 = lastPrice + riskAmount * 3;
   }
+
+  const rewardPct1 = ((target1 - lastPrice) / lastPrice) * 100;
+  const rrRatio = riskPct > 0 ? rewardPct1 / riskPct : null;
 
   let dailyChangePct = null;
   if (n >= 2) {
@@ -1013,7 +1133,7 @@ function analyzeData(data) {
     volatility = Math.sqrt(varSum / rets.length) * 100;
   }
 
-  // Z-Score 느낌의 종합 점수
+  // RAVEN SCORE — 규칙 기반 가중합. 백테스트로 뽑은 가중치는 아니고, 각 항목은 아래 주석의 근거로 넣음.
   let score = 50;
   const len = closes.length;
 
@@ -1026,10 +1146,21 @@ function analyzeData(data) {
   }
   score += clamp(shortTrend * 1.5, -15, 15);
 
-  let midTrend = 0;
+  // 추세 강도 — 예전엔 MA20/60 스프레드만으로 "추세가 강한지"를 근사해서
+  // 강한 추세와 그냥 횡보 노이즈를 구분하지 못했음. 방향은 MA20 vs MA60로,
+  // 강도는 실제 ADX로 반영(ADX<15는 방향 신뢰도를 깎고, ADX>=25는 확대).
+  let midTrendDir = 0;
   if (ma20 && ma60) {
-    midTrend = ((ma20 - ma60) / ma60) * 100;
-    score += clamp(midTrend * 0.8, -12, 12);
+    if (ma20 > ma60) midTrendDir = 1;
+    else if (ma20 < ma60) midTrendDir = -1;
+  }
+  if (midTrendDir !== 0 && typeof adx === "number") {
+    const adxStrength = clamp((adx - 15) / 15, 0, 1.4);
+    score += midTrendDir * adxStrength * 12;
+  } else if (ma20 && ma60) {
+    // ADX 계산 불가(데이터 부족) 시에만 예전 방식(MA 스프레드 비율)으로 대체
+    const midTrendFallback = ((ma20 - ma60) / ma60) * 100;
+    score += clamp(midTrendFallback * 0.8, -12, 12);
   }
 
   if (rsi < 25) {
@@ -1060,6 +1191,17 @@ function analyzeData(data) {
     else if (rrRatio < 1) score -= 10;
   }
 
+  // MACD 골든/데드 크로스 — 오늘 막 발생한 신선한 신호에만 소폭 가점/감점
+  // (지속적인 방향성은 이미 위쪽 추세 강도(ADX) 항목에서 반영되므로 크로스오버는 "타이밍 보너스"로만 취급)
+  if (macdCrossover === "GOLDEN") score += 5;
+  else if (macdCrossover === "DEAD") score -= 5;
+
+  // 지수 대비 상대강도(RS) — 예전엔 개별 종목 지표만 봐서, 업종/시장 전체가 빠지는 중에도
+  // 종목만 보고 좋다고 오판할 수 있었음. 벤치마크(국내: KODEX200, 해외: SPY) 대비 20일 성과 격차를 반영.
+  if (rsInfo && Number.isFinite(rsInfo.rs20)) {
+    score += clamp(rsInfo.rs20 * 0.4, -8, 8);
+  }
+
   score = Math.round(Math.max(0, Math.min(99, score)));
 
   let rank = "C";
@@ -1076,6 +1218,15 @@ function analyzeData(data) {
     ma120,
     rsi,
     macd,
+    macdSignal,
+    macdHistogram,
+    macdCrossover,
+    atr,
+    atrPct,
+    adx,
+    plusDI,
+    minusDI,
+    rsInfo,
     score,
     rank,
     support1,
@@ -1097,6 +1248,43 @@ function analyzeData(data) {
 // ===============================
 // 수급 / Why-Today / 전략 시나리오 / 캔들 패턴
 // ===============================
+
+// OBV(누적 거래량) 기반 다일간 수급 다이버전스 감지
+// 예전 calcFlowSignal은 오늘 캔들 하나만 보고 수급을 판단해서, 진짜 여러 날에 걸친
+// 기관 매집/분산과 하루짜리 거래량 튐을 구분하지 못했음. OBV로 최근 N일 누적 방향을 따로 확인.
+function calcOBVSignal(closes, volumes, lookback = 10) {
+  const n = closes.length;
+  if (!Array.isArray(volumes) || volumes.length !== n || n < lookback + 1) return null;
+
+  const obv = new Array(n).fill(0);
+  for (let i = 1; i < n; i++) {
+    if (closes[i] > closes[i - 1]) obv[i] = obv[i - 1] + volumes[i];
+    else if (closes[i] < closes[i - 1]) obv[i] = obv[i - 1] - volumes[i];
+    else obv[i] = obv[i - 1];
+  }
+
+  const startIdx = n - 1 - lookback;
+  const priceStart = closes[startIdx];
+  const priceChangePct =
+    priceStart !== 0 ? ((closes[n - 1] - priceStart) / priceStart) * 100 : 0;
+
+  const obvStart = obv[startIdx];
+  const obvEnd = obv[n - 1];
+  const obvDelta = obvEnd - obvStart;
+  // OBV 자체는 절대값이 무의미(누적치)해서, 최근 구간 거래량 평균으로 정규화해 "며칠치 거래량만큼 순매수/순매도가 쌓였나"로 표현
+  const avgVol =
+    volumes.slice(startIdx, n).reduce((a, b) => a + b, 0) / (n - startIdx || 1);
+  const obvDeltaInVolDays = avgVol > 0 ? obvDelta / avgVol : 0;
+
+  let divergence = "NONE";
+  if (priceChangePct >= 1.5 && obvDeltaInVolDays <= -1.5) {
+    divergence = "BEARISH"; // 가격은 오르는데 누적 수급은 빠지는 중 — 분산(고점 매집 소진) 가능성
+  } else if (priceChangePct <= -1.5 && obvDeltaInVolDays >= 1.5) {
+    divergence = "BULLISH"; // 가격은 빠지는데 누적 수급은 느는 중 — 저점 매집 가능성
+  }
+
+  return { priceChangePct, obvDeltaInVolDays, divergence, lookback };
+}
 
 function calcFlowSignal(data, analysis) {
   const { closes, highs, lows, opens } = data;
@@ -1173,7 +1361,20 @@ function calcFlowSignal(data, analysis) {
     flowNote = "윗꼬리가 긴 음봉 — 저항선에서 매도 압력 강함.";
   }
 
-  return { flowType, flowLabel, flowNote, bodyRatio, volRatio };
+  const obvInfo = calcOBVSignal(closes, data.volumes, 10);
+  if (obvInfo && obvInfo.divergence !== "NONE") {
+    const divNote =
+      obvInfo.divergence === "BEARISH"
+        ? `\n\n※ 최근 ${obvInfo.lookback}일 다이버전스 주의: 가격은 +${obvInfo.priceChangePct.toFixed(
+            1
+          )}% 올랐는데 누적 거래량(OBV) 기준 수급은 오히려 빠지는 중입니다. 상승이 소수의 거래에 의존하고 있어, 고점 분산(매집 소진) 가능성을 염두에 둬야 합니다.`
+        : `\n\n※ 최근 ${obvInfo.lookback}일 다이버전스 포착: 가격은 ${obvInfo.priceChangePct.toFixed(
+            1
+          )}% 빠졌는데 누적 거래량(OBV) 기준 수급은 오히려 느는 중입니다. 저점에서 조용히 매집이 들어오고 있을 가능성이 있는 구간입니다.`;
+    flowNote += divNote;
+  }
+
+  return { flowType, flowLabel, flowNote, bodyRatio, volRatio, obvInfo };
 }
 
 function calcWhyTodaySignal(data, analysis, flowInfo) {
@@ -1224,57 +1425,30 @@ function calcWhyTodaySignal(data, analysis, flowInfo) {
   return { whyLabel, whyNote, gapPct: gap };
 }
 
-function buildScenarios(data, analysis, flowInfo) {
-  const { price, support1, resistance1, rsi, rrRatio, riskPct, rewardPct1 } =
+// ────────────────────────────────
+// 매수/매도/중립 최종 판정 — 배지·전략요약 공통 사용 (단일 기준, 중복 계산 금지)
+// ────────────────────────────────
+function computeVerdict(analysis) {
+  const { rewardPct1: upPctRaw, riskPct: downPctRaw, rrRatio: rrRaw, rank } =
     analysis;
 
-  const scenarios = [];
+  const isValid =
+    Number.isFinite(upPctRaw) &&
+    Number.isFinite(downPctRaw) &&
+    downPctRaw > 0 &&
+    Number.isFinite(rrRaw);
 
-  scenarios.push({
-    name: "1안) 추세/지지 기반 매수",
-    condition:
-      support1 &&
-      price &&
-      ((price - support1) / price) * 100 <= 5 &&
-      rsi >= 30 &&
-      rsi <= 65 &&
-      rrRatio &&
-      rrRatio >= 1.5,
-    entryHint: "주요 지지선 근처 분할 매수, 지지선 이탈 시 즉시 컷.",
-    comment:
-      "추세가 꺾이지 않은 상태에서 눌림이 나온 구간으로, 손절 폭 대비 위쪽 기대 수익이 유리한 구조일 때 활용하는 전략입니다."
-  });
+  let tier = "NEUTRAL";
+  if (isValid) {
+    if (rrRaw >= 2) tier = "BUY";
+    else if (rrRaw < 1) tier = "SELL";
+  } else if (rank === "S" || rank === "A") {
+    tier = "BUY";
+  } else if (rank === "D") {
+    tier = "SELL";
+  }
 
-  scenarios.push({
-    name: "2안) 저항 돌파 추세 추종",
-    condition:
-      resistance1 &&
-      price &&
-      ((resistance1 - price) / resistance1) * 100 <= 3 &&
-      rsi >= 55 &&
-      flowInfo.flowType === "BUY_DOMINANT",
-    entryHint: "저항 돌파 후 눌림 재진입 / 저항 상회 확정 시 소량 추종.",
-    comment:
-      "기관·큰손 매수가 동반된 돌파 구간일 때, 눌림을 기다리거나 소량 추세 추종으로 접근하는 전략입니다."
-  });
-
-  scenarios.push({
-    name: "3안) 역추세 저점 매수(고위험)",
-    condition: rsi < 30 && support1 && price && rrRatio && rrRatio >= 1.2,
-    entryHint:
-      "과매도 구간에서 분할, 소액 진입 위주. 지지선 이탈 시 재진입 포기.",
-    comment:
-      "명확한 하락 추세 안에서 기술적 반등만 노리는 고위험 전략으로, 손절 기준과 포지션 크기 관리가 핵심입니다."
-  });
-
-  return {
-    scenarios,
-    meta: {
-      rrRatio,
-      riskPct,
-      rewardPct1
-    }
-  };
+  return { tier, isValid, upPctRaw, downPctRaw, rrRaw };
 }
 
 // 4) 캔들 패턴 인식 (12종 확장)
@@ -1649,7 +1823,7 @@ function classifyTickerSymbol(symbol) {
 }
 
 // 7. UI 업데이트 (섹터/패턴/시나리오 포함)
-function updateUI(data, analysis, fxRate, profile, stockName) {
+function updateUI(data, analysis, fxRate, stockName) {
   const priceEl = $("ticker-price");
   const scoreEl = $("ai-score");
   const rankEl = $("ai-rank");
@@ -1712,13 +1886,7 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
 
     const labels = [];
 
-    // 1) 실제 섹터/업종 한국어 매핑
-    if (profile && (profile.sectorKR || profile.sector || profile.industry)) {
-      const main = profile.sectorKR || profile.sector || profile.industry;
-      if (main) labels.push(main);
-    }
-
-    // 2) 간단 심볼 분류 태그 (AI / Semi 등)
+    // 간단 심볼 분류 태그 (AI / Semi 등)
     const simpleLabels = classifyTickerSymbol(data.symbol);
     simpleLabels.forEach((t) => {
       if (!labels.includes(t)) labels.push(t);
@@ -1752,40 +1920,17 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
   }
 
   // ===== 3단계 판정 (매수 우위 / 중립·관망 / 매도 신중) =====
-  // R:R이 계산 가능하면 그걸 기준으로, 아니면 등급(rank)으로 대체 판정
-  const upPctRaw = analysis.rewardPct1;
-  const downPctRaw = analysis.riskPct;
-  const rrRaw = analysis.rrRatio;
+  // 배지·전략요약이 같은 판정을 공유하도록 computeVerdict() 하나로 통일 (중복 계산 금지)
+  const verdict = computeVerdict(analysis);
+  const { isValid, upPctRaw, downPctRaw, rrRaw, tier: verdictTier } = verdict;
 
-  const isValid =
-    Number.isFinite(upPctRaw) &&
-    Number.isFinite(downPctRaw) &&
-    downPctRaw > 0 &&
-    Number.isFinite(rrRaw);
-
-  let verdictLabel = "중립·관망";
-  let verdictColor = "#fbbf24";
-  let verdictBracket = "[중립]";
-
-  if (isValid) {
-    if (rrRaw >= 2) {
-      verdictLabel = "매수 우위";
-      verdictColor = "#10b981";
-      verdictBracket = "[매수]";
-    } else if (rrRaw < 1) {
-      verdictLabel = "매도 신중";
-      verdictColor = "#ef4444";
-      verdictBracket = "[주의]";
-    }
-  } else if (analysis.rank === "S" || analysis.rank === "A") {
-    verdictLabel = "매수 우위";
-    verdictColor = "#10b981";
-    verdictBracket = "[매수]";
-  } else if (analysis.rank === "D") {
-    verdictLabel = "매도 신중";
-    verdictColor = "#ef4444";
-    verdictBracket = "[주의]";
-  }
+  const VERDICT_STYLE = {
+    BUY: { label: "매수 우위", color: "#10b981", bracket: "[매수]" },
+    SELL: { label: "매도 신중", color: "#ef4444", bracket: "[주의]" },
+    NEUTRAL: { label: "중립·관망", color: "#fbbf24", bracket: "[중립]" }
+  };
+  const { label: verdictLabel, color: verdictColor, bracket: verdictBracket } =
+    VERDICT_STYLE[verdictTier];
 
   const badge = $("status-badge");
   if (badge) {
@@ -1835,7 +1980,11 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
     stop,
     dailyChangePct,
     volumeRatio,
-    volatility
+    volatility,
+    adx,
+    plusDI,
+    minusDI,
+    rsInfo
   } = analysis;
 
   // ==== 목표가/손절가 박스 (달러 + 현재가 대비 %) ====
@@ -1934,6 +2083,35 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
       txt = "이평선 데이터가 부족해 뚜렷한 추세 판단이 어렵습니다.";
     }
 
+    // ADX(추세 강도) 보강 — 이평선 배열만으로는 "강한 추세"와 "방향 없는 횡보"를 구분하지 못해서 추가.
+    // DI+/DI-까지 같이 표기해서 ADX 숫자만으론 알 수 없는 "강도가 어느 방향으로 쏠려있는지"도 보여줌.
+    if (typeof adx === "number") {
+      let diTxt = "";
+      if (typeof plusDI === "number" && typeof minusDI === "number") {
+        diTxt = plusDI > minusDI ? ", DI+ 우위(상승 압력)" : ", DI- 우위(하락 압력)";
+      }
+      if (adx >= 25) {
+        txt += ` (ADX ${adx.toFixed(1)} — 추세 강도 뚜렷${diTxt}, 방향성 매매 신뢰도 높음)`;
+      } else if (adx < 20) {
+        txt += ` (ADX ${adx.toFixed(1)} — 추세 강도 약함, 횡보/노이즈 구간일 가능성)`;
+      } else {
+        txt += ` (ADX ${adx.toFixed(1)} — 추세 강도 보통${diTxt})`;
+      }
+    }
+
+    // 지수 대비 상대강도(RS) — 개별 지표가 좋아도 시장 전체보다 못 가는 중이면 경고
+    if (rsInfo && (Number.isFinite(rsInfo.rs20) || Number.isFinite(rsInfo.rs60))) {
+      const fmtRs = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%p`;
+      const parts = [];
+      if (Number.isFinite(rsInfo.rs20)) parts.push(`20일 ${fmtRs(rsInfo.rs20)}`);
+      if (Number.isFinite(rsInfo.rs60)) parts.push(`60일 ${fmtRs(rsInfo.rs60)}`);
+      const primary = Number.isFinite(rsInfo.rs20) ? rsInfo.rs20 : rsInfo.rs60;
+      let verdict = "시장과 비슷한 흐름";
+      if (primary >= 5) verdict = "시장 대비 뚜렷한 아웃퍼폼";
+      else if (primary <= -5) verdict = "시장 대비 뚜렷한 언더퍼폼 — 개별 지표가 좋아도 주의";
+      txt += ` [지수 대비 상대강도: ${parts.join(" · ")} — ${verdict}]`;
+    }
+
     trendEl.textContent = txt;
   }
 
@@ -1971,10 +2149,9 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
     momentumEl.textContent = txt;
   }
 
-  // ===== Flow / WhyToday / 패턴·시나리오 계산 =====
+  // ===== Flow / WhyToday / 패턴 계산 =====
   const flowInfo = calcFlowSignal(data, analysis);
   const whyInfo = calcWhyTodaySignal(data, analysis, flowInfo);
-  const scenarioInfo = buildScenarios(data, analysis, flowInfo);
   const patterns = detectCandlePatterns(data, analysis);
 
   const { support1: s1, support2: s2, resistance1: r1, price: px, rsi: rsiVal } =
@@ -2112,27 +2289,12 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
       topName === "Dragonfly Doji" ||
       topName === "Gravestone Doji";
 
-    const nearSupportSig =
-      typeof s1 === "number" &&
-      typeof px === "number" &&
-      ((px - s1) / px) * 100 <= 4;
-
-    const nearResistanceSig =
-      typeof r1 === "number" &&
-      typeof px === "number" &&
-      ((r1 - px) / r1) * 100 <= 4;
-
-    const rrOkSig =
-      typeof rrRatio === "number" &&
-      rrRatio >= 1.3 &&
-      typeof riskPct === "number" &&
-      riskPct > 0;
 
     let txt = "";
 
     if (topName && isDojiLike) {
       // 도지 계열 패턴은 변곡 시나리오 위주
-      if (nearSupportSig) {
+      if (nearSupport) {
         txt =
           `지지선(${s1.toFixed(
             2
@@ -2141,7 +2303,7 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
           "   → 다음 캔들이 지지선 위에서 중/장대 양봉으로 마감하면, 단기 반등 파동이 시작될 가능성이 큽니다.\n\n" +
           "● 시나리오 2) 지지선 이탈 음봉 마감 → 반등 실패 + 하락 파동 재개\n" +
           "   → 지지선 아래로 종가가 밀리면 손절/관망이 유리한 구간입니다.";
-      } else if (nearResistanceSig) {
+      } else if (nearResistance) {
         txt =
           `저항선(${r1.toFixed(
             2
@@ -2164,7 +2326,7 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
 
       txt = baseIntro + "\n\n";
 
-      if (nearSupportSig) {
+      if (nearSupport) {
         txt +=
           `현재가는 주요 지지선(${s1 ? s1.toFixed(2) : "N/A"}) 근처에 위치한 눌림 구간입니다. `;
         if (flowType === "BUY_DOMINANT" || flowType === "REBOUND_BUY") {
@@ -2177,7 +2339,7 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
           txt +=
             "수급이 중립에 가까워, 추가 하락 후 진짜 매수세가 들어오는지 한 차례 더 지켜본 뒤 진입하는 편이 안전합니다.\n";
         }
-      } else if (nearResistanceSig) {
+      } else if (nearResistance) {
         txt +=
           `현재가는 주요 저항선(${r1 ? r1.toFixed(2) : "N/A"}) 근처 상단 파동 영역입니다. `;
         if (flowType === "BUY_DOMINANT") {
@@ -2199,7 +2361,7 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
           "→ 이 구간에서는 박스 상·하단(지지/저항)에 다시 접근할 때의 수급 패턴을 보면서 진입/청산 타이밍을 잡는 전략이 적합합니다.\n";
       }
 
-      if (rrOkSig) {
+      if (rrOk) {
         txt +=
           `\n현재 구조 기준 R:R ≈ ${rrRatio.toFixed(
             2
@@ -2220,52 +2382,47 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
   const stratDetail = $("strategy-detail");
 
   if (stratMain || stratDetail) {
+    // 위쪽 배지(status-badge)와 반드시 같은 판정을 쓰도록 verdict.tier 안에서만 세부 시나리오를 고름
+    // (전에는 여기서 R:R 임계값을 따로 재계산해서 배지와 반대되는 문구가 뜨는 버그가 있었음)
     let mainTxt = "중립 / 관망 구간";
     let detailTxt =
       "지지선·저항선·RSI·R:R를 종합했을 때 뚜렷한 매수/매도 우위가 아닌 구간입니다. 레버리지/단기 트레이딩보다는 관망 또는 소량만 대응하는 것을 권장합니다.";
 
-    if (
-      nearSupport &&
-      rrRatio &&
-      rrRatio >= 1.5 &&
-      typeof rsiVal === "number" &&
-      rsiVal >= 30 &&
-      rsiVal <= 65
-    ) {
-      mainTxt = "① 지지선 근처 눌림 매수 우위";
-      detailTxt =
-        `현재가가 1차 지지선(${
-          s1 ? s1.toFixed(2) : "N/A"
-        }) 근처에 위치하고, R:R ≈ ${rrRatio.toFixed(
-          2
-        )}:1로 손절 대비 기대 수익이 유리한 구조입니다. ` +
-        "지지선 이탈 시 빠른 손절을 전제로 한 분할 매수 전략이 1안입니다.";
-    } else if (nearResistance && rrRatio && rrRatio < 1) {
-      mainTxt = "② 저항선 근처 리스크 우위";
-      detailTxt =
-        `현재가가 1차 저항선(${
-          r1 ? r1.toFixed(2) : "N/A"
-        }) 근처 상단 파동에 위치해 있고, R:R이 1 미만으로 아래쪽 리스크가 더 큰 구조입니다. ` +
-        "신규 매수보다는 기존 보유 물량의 분할 청산/헤지 전략이 1순위입니다.";
-    } else if (
-      typeof rsiVal === "number" &&
-      rsiVal < 30 &&
-      rrRatio &&
-      rrRatio >= 1.2
-    ) {
-      mainTxt = "③ 과매도 역추세 (고위험)";
-      detailTxt =
-        `RSI가 ${rsiVal.toFixed(
-          1
-        )}로 과매도 구간에 진입한 상태입니다. 단기 기술적 반등 가능성은 있지만, 추세 자체가 약세라 고위험 역추세 전략입니다. ` +
-        "포지션 크기를 줄이고, 지지선 이탈 시 재진입을 포기하는 강한 손절 기준이 필요합니다.";
-    } else if (rrRatio && rrRatio < 1) {
-      mainTxt = "④ R:R 불리 (위험 대비 보상 부족)";
-      detailTxt =
-        `현재 R:R ≈ ${rrRatio.toFixed(
-          2
-        )}:1로, 손절 폭 대비 위쪽 기대 수익이 충분히 보상되지 않는 자리입니다. ` +
-        "추세·수급이 좋아 보여도 진입보다는 다음 더 유리한 R:R 구간을 기다리는 것이 효율적입니다.";
+    const rrTxt = Number.isFinite(rrRatio)
+      ? `R:R ≈ ${rrRatio.toFixed(2)}:1`
+      : "R:R 계산 불가(지지·저항 부족, 등급 기준 판정)";
+
+    if (verdict.tier === "BUY") {
+      if (typeof rsiVal === "number" && rsiVal < 30) {
+        mainTxt = "③ 과매도 역추세 (고위험)";
+        detailTxt =
+          `RSI가 ${rsiVal.toFixed(
+            1
+          )}로 과매도 구간에 진입한 상태입니다. 단기 기술적 반등 가능성은 있지만, 추세 자체가 약세라 고위험 역추세 전략입니다. ` +
+          "포지션 크기를 줄이고, 지지선 이탈 시 재진입을 포기하는 강한 손절 기준이 필요합니다.";
+      } else {
+        mainTxt = "① 지지선 근처 눌림 매수 우위";
+        detailTxt =
+          (nearSupport
+            ? `현재가가 1차 지지선(${s1 ? s1.toFixed(2) : "N/A"}) 근처에 위치하고, `
+            : "") +
+          `${rrTxt}로 손절 대비 기대 수익이 유리한 구조입니다. ` +
+          "지지선 이탈 시 빠른 손절을 전제로 한 분할 매수 전략이 1안입니다.";
+      }
+    } else if (verdict.tier === "SELL") {
+      if (nearResistance) {
+        mainTxt = "② 저항선 근처 리스크 우위";
+        detailTxt =
+          `현재가가 1차 저항선(${
+            r1 ? r1.toFixed(2) : "N/A"
+          }) 근처 상단 파동에 위치해 있고, ${rrTxt}로 아래쪽 리스크가 더 큰 구조입니다. ` +
+          "신규 매수보다는 기존 보유 물량의 분할 청산/헤지 전략이 1순위입니다.";
+      } else {
+        mainTxt = "④ R:R 불리 (위험 대비 보상 부족)";
+        detailTxt =
+          `현재 ${rrTxt}로, 손절 폭 대비 위쪽 기대 수익이 충분히 보상되지 않는 자리입니다. ` +
+          "추세·수급이 좋아 보여도 진입보다는 다음 더 유리한 R:R 구간을 기다리는 것이 효율적입니다.";
+      }
     }
 
     if (stratMain) stratMain.textContent = mainTxt;
@@ -2296,9 +2453,12 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
   if (macdBox) {
     if (typeof analysis.macd === "number") {
       const dir = analysis.macd >= 0 ? "상승 우위" : "하락 우위";
-      macdBox.textContent = `MACD (12-26) : ${
+      let crossTxt = "";
+      if (analysis.macdCrossover === "GOLDEN") crossTxt = " · 골든크로스(매수 신호)";
+      else if (analysis.macdCrossover === "DEAD") crossTxt = " · 데드크로스(매도 신호)";
+      macdBox.textContent = `MACD (12-26-9) : ${
         analysis.macd >= 0 ? "+" : ""
-      }${analysis.macd.toFixed(3)} (${dir})`;
+      }${analysis.macd.toFixed(3)} (${dir})${crossTxt}`;
     } else {
       macdBox.textContent = "MACD 계산을 위한 데이터가 부족합니다.";
     }
@@ -2309,11 +2469,9 @@ function updateUI(data, analysis, fxRate, profile, stockName) {
     data,
     analysis,
     fxRate,
-    profile,
     flowInfo,
     whyInfo,
-    patterns,
-    scenarioInfo
+    patterns
   };
 }
 
@@ -2531,16 +2689,17 @@ async function runAnalysisForTicker(rawSymbol) {
 
   try {
     const domestic = isDomesticTicker(symbol);
-    // 회사 프로필(섹터/업종)은 Yahoo 전용 정보라 국내 종목에는 조회하지 않음
-    const [data, fxRate, profile, stockName] = await Promise.all([
+    // 벤치마크(RS 비교용)도 여기서 같이 병렬 조회 — RS가 이제 RAVEN SCORE 계산에 직접 들어가서
+    // analyzeData()가 실행되기 전에 준비돼 있어야 함 (예전엔 렌더링 끝난 뒤 텍스트만 나중에 덧붙였음)
+    const [data, fxRate, stockName, benchmarkData] = await Promise.all([
       fetchStockData(symbol),
       fetchFxRate(),
-      domestic ? Promise.resolve(null) : fetchCompanyProfile(symbol),
-      domestic ? fetchDomesticStockName(symbol) : fetchOverseasStockName(symbol)
+      domestic ? fetchDomesticStockName(symbol) : fetchOverseasStockName(symbol),
+      fetchBenchmarkData(domestic)
     ]);
 
-    const analysis = analyzeData(data);
-    updateUI(data, analysis, fxRate, profile, stockName);
+    const analysis = analyzeData(data, benchmarkData);
+    updateUI(data, analysis, fxRate, stockName);
     preparePositionCalculator(domestic, analysis.price);
 
     // 차트 위젯 렌더
