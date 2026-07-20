@@ -132,9 +132,26 @@
 - [x] "전일 수급 → 오늘 해석 + 내일 예상" 코멘트 로직 — `server/src/lib/supplyDemandInterpreter.js` (규칙기반). 캐시 없는 종목은 그 자리에서 KIS 즉시조회+캐싱하는 폴백 포함, 어떤 국내 티커든 동작. `GET /api/kis/supply-demand`로 노출, 결과화면 "수급" 탭에 연결 완료(해외 종목은 박스 자체를 숨김). Claude API 서술 결합은 Phase 4(진짜 AI 분석)에서 진행 예정 — 지금은 순수 규칙기반 문장
 
 > ⚠️ KIS API 운영 시 주의: ①토큰 발급은 1분당 1회 제한 — 서버가 자주 재시작되면 걸릴 수 있음(정상 운영 중엔 문제 없음, 캐시된 토큰 재사용). ②데이터 조회는 "초당 거래건수" 제한이 빡빡해서 4종을 연속 호출하면 걸릴 수 있음 — 호출 사이 600ms 딜레이 + 1회 재시도로 대응. ③KIS는 HTTP 200이어도 응답 바디의 `rt_cd`로 성공/실패를 알려줘서, 이걸 체크 안 하면 레이트리밋 에러가 "0건 수집"으로 조용히 묻힘 (실제로 이 버그를 겪고 수정함).
-- [ ] 프론트 결과 화면의 "Supply (수급)" 섹션을 지금의 거래량 기반 추정 로직 → 실제 KIS 수급데이터 기반으로 교체
+- [x] 프론트 결과 화면의 "수급" 탭 — 기존 거래량 기반 추정 로직(Supply 박스)은 그대로 두고, 그 아래 실제 KIS 수급데이터 해석 박스를 추가하는 방식으로 결합 (완전 교체가 아니라 병기)
 
 > ⚠️ KRX 정보데이터시스템 직접 스크레이핑 방식은 폐기 — "KRX Data Marketplace" 리뉴얼 후 로그인 필요로 확인되어(2026-07-15), 대신 KIS Developers의 종목별/일별 전용 엔드포인트로 대체 확정.
+
+---
+
+## 📌 다음 세션 시작 시 우선 처리 (2026-07-19 사용자 요청, 컨텍스트 한도로 이번 세션에서 미착수)
+
+1. **배포 (모바일 접속용, 급함 — 내일 회사에서 접속 원함)**
+   - 백엔드(`server/`) → Render.com 배포, 고정 URL 발급
+   - 프론트엔드(`index.html`/`app.js`/`style.css`) → GitHub Pages 배포, 고정 URL 발급
+   - Render 서버의 고정 아웃바운드 IP를 토스증권 WTS "허용 IP"에 등록 (안 하면 토스 API 호출 전부 막힘)
+   - `server/.env`의 키들을 Render 대시보드 환경변수에 입력 (KIS_APP_KEY, TOSS_CLIENT_ID/SECRET, SUPABASE_URL/KEY, RAVEN_PIN, TELEGRAM_* 등)
+   - 프론트 `app.js`의 `API_BASE`를 로컬(`http://localhost:3001`) → 배포된 Render URL로 교체
+   - 배포 후 CORS(`FRONTEND_ORIGIN`)도 GitHub Pages 주소로 갱신 필요
+
+2. **RAVEN 분석 엔진 전체 재검토 (사용자가 GPT 엔진과 비교해달라고 요청, Claude 기준으로 개선/삭제 판단)**
+   - 예시로 든 항목: 매수/매도 시그널 판단 기준, 지지/저항선(목표가·손절가) 산정 로직, 캔들·보조지표 패턴 해석, RAVEN SCORE/RANK 산정 기준
+   - 사용자 요청: 이 예시들에 한정하지 말고 전체적으로 엔진을 검토해서 "클로드 버전의 멋진 RAVEN 엔진"으로 업그레이드
+   - 참고: 2026-07-19에 이미 1차 검토(죽은 코드 제거, Wave/Signal/전략요약 중복 정리, 캔들패턴 13→18종 확대)를 했지만, 이번 요청은 그보다 더 근본적인 "판단 기준 자체"에 대한 재검토임 — `analyzeData()`(점수/등급 산정), `calcFlowSignal`/`calcWhyTodaySignal`/`buildScenarios`(수급·시나리오), `pickSupportResistance`/`clusterSwingLevels`(지지·저항 산정) 등 핵심 계산 로직부터 다시 볼 것
 
 ### Phase 3. 매수/매도 타점 시그널 + 관심종목
 - [ ] 골든크로스/데드크로스 감지 로직 신규 추가
