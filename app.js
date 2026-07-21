@@ -735,6 +735,22 @@ function calcRSI_Wilder(closes, period = 14) {
   return rsi;
 }
 
+// RSI가 과매도(30)/과열(70) 기준선을 "오늘 막" 넘었는지 감지 — MACD 크로스오버와 같은 개념을
+// RSI에도 적용. Wilder 스무딩은 과거를 안 돌아보는 방식이라, 어제까지의 종가만으로 다시 계산하면
+// 그게 곧 "어제자 RSI"가 됨.
+function detectRSICross(closes, period = 14) {
+  const n = closes.length;
+  if (n < period + 3) return "NONE";
+
+  const todayRSI = calcRSI_Wilder(closes, period);
+  const prevRSI = calcRSI_Wilder(closes.slice(0, n - 1), period);
+  if (todayRSI == null || prevRSI == null) return "NONE";
+
+  if (prevRSI <= 30 && todayRSI > 30) return "BUY";
+  if (prevRSI >= 70 && todayRSI < 70) return "SELL";
+  return "NONE";
+}
+
 // EMA "시리즈"(각 시점별 값) — calcEMA는 마지막 값 하나만 주기 때문에
 // MACD 시그널선(=MACD의 9-EMA)을 만들려면 MACD 자체의 시계열이 필요해서 별도로 둠
 function calcEMASeries(values, period) {
@@ -980,6 +996,7 @@ function analyzeData(data, benchmarkData) {
   if (rsi == null) {
     rsi = 50;
   }
+  const rsiCross = detectRSICross(closes, 14);
 
   const macdFull = calcMACDFull(closes);
   const macd = macdFull ? macdFull.macd : null;
@@ -1217,6 +1234,7 @@ function analyzeData(data, benchmarkData) {
     ma60,
     ma120,
     rsi,
+    rsiCross,
     macd,
     macdSignal,
     macdHistogram,
@@ -1361,18 +1379,9 @@ function calcFlowSignal(data, analysis) {
     flowNote = "윗꼬리가 긴 음봉 — 저항선에서 매도 압력 강함.";
   }
 
+  // OBV 다이버전스는 "오늘 하루" 얘기인 flowNote에 억지로 끼워넣지 않고,
+  // 수급 탭의 별도 박스(obv-txt)에서 렌더링하도록 obvInfo만 그대로 반환함
   const obvInfo = calcOBVSignal(closes, data.volumes, 10);
-  if (obvInfo && obvInfo.divergence !== "NONE") {
-    const divNote =
-      obvInfo.divergence === "BEARISH"
-        ? `\n\n※ 최근 ${obvInfo.lookback}일 다이버전스 주의: 가격은 +${obvInfo.priceChangePct.toFixed(
-            1
-          )}% 올랐는데 누적 거래량(OBV) 기준 수급은 오히려 빠지는 중입니다. 상승이 소수의 거래에 의존하고 있어, 고점 분산(매집 소진) 가능성을 염두에 둬야 합니다.`
-        : `\n\n※ 최근 ${obvInfo.lookback}일 다이버전스 포착: 가격은 ${obvInfo.priceChangePct.toFixed(
-            1
-          )}% 빠졌는데 누적 거래량(OBV) 기준 수급은 오히려 느는 중입니다. 저점에서 조용히 매집이 들어오고 있을 가능성이 있는 구간입니다.`;
-    flowNote += divNote;
-  }
 
   return { flowType, flowLabel, flowNote, bodyRatio, volRatio, obvInfo };
 }
@@ -1449,6 +1458,81 @@ function computeVerdict(analysis) {
   }
 
   return { tier, isValid, upPctRaw, downPctRaw, rrRaw };
+}
+
+// ────────────────────────────────
+// 탭 하단 종합 요약 — 각 탭 안의 여러 해석을 한 문장 결론으로 묶음.
+// 상단 RAVEN 전략요약(computeVerdict 기반)이 "지금 진입해도 되는 자리인가"를 답한다면,
+// 이 요약들은 "추세는/수급은/패턴은 각각 어떤 쪽을 가리키는가"를 답하는 역할 분담.
+// ────────────────────────────────
+function summarizeTrendMomentum(analysis) {
+  const { ma20, ma60, ma120, rsi, macd, adx, rsiCross, macdCrossover, rsInfo } = analysis;
+
+  let bullPoints = 0;
+  let bearPoints = 0;
+
+  if (ma20 && ma60 && ma120) {
+    if (ma20 > ma60 && ma60 > ma120) bullPoints++;
+    else if (ma20 < ma60 && ma60 < ma120) bearPoints++;
+  }
+  if (typeof rsi === "number") {
+    if (rsi >= 55) bullPoints++;
+    else if (rsi <= 45) bearPoints++;
+  }
+  if (typeof macd === "number") {
+    if (macd >= 0) bullPoints++;
+    else bearPoints++;
+  }
+  if (rsInfo && Number.isFinite(rsInfo.rs20)) {
+    if (rsInfo.rs20 >= 2) bullPoints++;
+    else if (rsInfo.rs20 <= -2) bearPoints++;
+  }
+
+  let verdictWord = "혼조/중립";
+  if (bullPoints - bearPoints >= 2) verdictWord = "상승 우위";
+  else if (bearPoints - bullPoints >= 2) verdictWord = "하락 우위";
+
+  let txt = `종합하면 추세·모멘텀은 ${verdictWord} 구간입니다.`;
+
+  if (typeof adx === "number") {
+    txt +=
+      adx >= 25
+        ? " 추세 강도(ADX)까지 뚜렷해 신뢰도가 높은 신호입니다."
+        : " 다만 ADX 기준 추세 강도는 약해 큰 확신을 갖기는 이릅니다.";
+  }
+
+  if (macdCrossover === "GOLDEN") txt += " MACD 골든크로스도 함께 발생했습니다.";
+  else if (macdCrossover === "DEAD") txt += " MACD 데드크로스도 함께 발생했습니다.";
+  else if (rsiCross === "BUY") txt += " RSI가 과매도 구간을 막 벗어났습니다.";
+  else if (rsiCross === "SELL") txt += " RSI가 과열 구간에서 이탈했습니다.";
+
+  return txt;
+}
+
+function summarizeSupply(flowInfo) {
+  const { flowLabel, obvInfo } = flowInfo;
+  let txt = `종합하면 수급은 [${flowLabel}] 상태입니다.`;
+
+  if (obvInfo && obvInfo.divergence === "BEARISH") {
+    txt += " 다만 최근 10일 OBV 다이버전스가 나와, 상승 동력이 약해지고 있을 가능성을 함께 감안해야 합니다.";
+  } else if (obvInfo && obvInfo.divergence === "BULLISH") {
+    txt += " 최근 10일 OBV 기준으로는 저점 매집 신호도 함께 감지됩니다.";
+  } else if (obvInfo) {
+    txt += " 최근 10일 누적 수급(OBV) 방향도 대체로 같은 쪽을 가리키고 있습니다.";
+  }
+
+  return txt;
+}
+
+function summarizePattern(patterns, verdict) {
+  const top = patterns && patterns[0];
+  const tierWord =
+    verdict.tier === "BUY" ? "매수 우위" : verdict.tier === "SELL" ? "매도 신중" : "중립·관망";
+
+  if (top) {
+    return `종합하면 대표 패턴은 [${top.name}]이고, R:R 기준 판정은 [${tierWord}]입니다. 패턴과 R:R이 같은 방향을 가리키는지 함께 확인하는 것이 좋습니다.`;
+  }
+  return `뚜렷한 캔들 패턴은 감지되지 않았고, R:R 기준 판정은 [${tierWord}]입니다.`;
 }
 
 // 4) 캔들 패턴 인식 (12종 확장)
@@ -1801,27 +1885,6 @@ function detectCandlePatterns(data, analysis) {
 }
 
 // 6-2. 종목 라벨 / 섹터 태깅 (간단 버전 보조)
-function classifyTickerSymbol(symbol) {
-  const s = (symbol || "").toUpperCase();
-  const labels = [];
-
-  if (["AAPL", "MSFT", "GOOGL", "META", "AMZN", "NVDA", "TSLA"].includes(s)) {
-    labels.push("Mega Tech");
-  }
-  if (["NVDA", "AMD", "AVGO", "ASML", "TSM", "SMH", "SOXX"].includes(s)) {
-    labels.push("Semi / AI");
-  }
-
-  if (s.endsWith("USD")) {
-    labels.push("Crypto");
-  }
-  if (["QQQ", "SPY", "VOO", "DIA"].includes(s)) {
-    labels.push("Index ETF");
-  }
-
-  return labels;
-}
-
 // 7. UI 업데이트 (섹터/패턴/시나리오 포함)
 function updateUI(data, analysis, fxRate, stockName) {
   const priceEl = $("ticker-price");
@@ -1832,13 +1895,15 @@ function updateUI(data, analysis, fxRate, stockName) {
   const momentumEl = $("momentum-txt");
   const waveEl = $("wave-txt");
   const supplyEl = $("supply-txt");
+  const obvEl = $("obv-txt");
   const patternEl = $("pattern-txt"); // 패턴 카드
   const signalEl = $("signal-txt"); // 시그널 카드
   const fundEl = $("fund-txt");
 
   const rsiBox = $("rsi-txt");
   const macdBox = $("macd-txt");
-  const labelBox = $("ticker-labels") || $("ticker-tags");
+  const adxBox = $("adx-txt");
+  const atrBox = $("atr-txt");
 
   // 목표가/손절 박스: id 우선순위 정리 (target1/2/stoploss 우선)
   const target1Box =
@@ -1856,12 +1921,18 @@ function updateUI(data, analysis, fxRate, stockName) {
   const isDomestic = isDomesticTicker(data.symbol);
   const formatPrice = isDomestic ? formatKRW : formatUSD;
 
-  let priceText = formatPrice(analysis.price);
-  if (!isDomestic && typeof fxRate === "number") {
-    const krw = analysis.price * fxRate;
-    priceText += " / ₩" + Math.round(krw).toLocaleString("ko-KR");
+  if (priceEl) priceEl.textContent = formatPrice(analysis.price);
+
+  // 원화 환산가는 메인 가격과 무게감을 다르게 — 작은 보조 표기로 분리
+  const priceFxEl = $("ticker-price-fx");
+  if (priceFxEl) {
+    if (!isDomestic && typeof fxRate === "number") {
+      const krw = analysis.price * fxRate;
+      priceFxEl.textContent = "≈ ₩" + Math.round(krw).toLocaleString("ko-KR");
+    } else {
+      priceFxEl.textContent = "";
+    }
   }
-  if (priceEl) priceEl.textContent = priceText;
 
   // 전일 대비 등락률 (주식앱처럼 ▲/▼ 표시)
   const changeEl = $("ticker-change");
@@ -1878,26 +1949,6 @@ function updateUI(data, analysis, fxRate, stockName) {
       changeEl.classList.remove("positive", "negative");
       changeEl.classList.add("neutral");
     }
-  }
-
-  // 라벨/섹터 태깅 (실제 섹터 + 보조 태그)
-  if (labelBox) {
-    labelBox.innerHTML = "";
-
-    const labels = [];
-
-    // 간단 심볼 분류 태그 (AI / Semi 등)
-    const simpleLabels = classifyTickerSymbol(data.symbol);
-    simpleLabels.forEach((t) => {
-      if (!labels.includes(t)) labels.push(t);
-    });
-
-    labels.forEach((text) => {
-      const span = document.createElement("span");
-      span.className = "tag-pill label-pill";
-      span.textContent = text;
-      labelBox.appendChild(span);
-    });
   }
 
   // 점수 / 랭크
@@ -1984,6 +2035,8 @@ function updateUI(data, analysis, fxRate, stockName) {
     adx,
     plusDI,
     minusDI,
+    atr,
+    atrPct,
     rsInfo
   } = analysis;
 
@@ -2024,36 +2077,6 @@ function updateUI(data, analysis, fxRate, stockName) {
     }
   }
 
-  // ==== 상단 Trend / Momentum / Vol / R:R 뱃지 텍스트 ====
-  const rrBadge = $("factor-rr");
-
-  // 팩터 뱃지 색상(강세/약세/중립) 적용
-  const setFactorPill = (el, text, state) => {
-    if (!el) return;
-    el.textContent = text;
-    el.classList.remove("factor-bull", "factor-bear", "factor-neutral");
-    el.classList.add(
-      state === "bull" ? "factor-bull" : state === "bear" ? "factor-bear" : "factor-neutral"
-    );
-  };
-
-  if (rrBadge) {
-    let rrTxt = "-";
-    let rrState = "neutral";
-    if (Number.isFinite(rrRatio) && Number.isFinite(riskPct)) {
-      if (rrRatio >= 2) {
-        rrTxt = "우위(매수)";
-        rrState = "bull";
-      } else if (rrRatio < 1) {
-        rrTxt = "불리(주의)";
-        rrState = "bear";
-      } else {
-        rrTxt = "중립";
-      }
-    }
-    setFactorPill(rrBadge, `R:R: ${rrTxt}`, rrState);
-  }
-
   // ==== Trend 카드 텍스트 ====
   if (trendEl) {
     let txt = "단기/중기 이평선 기준으로 추세를 평가합니다.";
@@ -2083,36 +2106,35 @@ function updateUI(data, analysis, fxRate, stockName) {
       txt = "이평선 데이터가 부족해 뚜렷한 추세 판단이 어렵습니다.";
     }
 
-    // ADX(추세 강도) 보강 — 이평선 배열만으로는 "강한 추세"와 "방향 없는 횡보"를 구분하지 못해서 추가.
-    // DI+/DI-까지 같이 표기해서 ADX 숫자만으론 알 수 없는 "강도가 어느 방향으로 쏠려있는지"도 보여줌.
-    if (typeof adx === "number") {
-      let diTxt = "";
-      if (typeof plusDI === "number" && typeof minusDI === "number") {
-        diTxt = plusDI > minusDI ? ", DI+ 우위(상승 압력)" : ", DI- 우위(하락 압력)";
-      }
-      if (adx >= 25) {
-        txt += ` (ADX ${adx.toFixed(1)} — 추세 강도 뚜렷${diTxt}, 방향성 매매 신뢰도 높음)`;
-      } else if (adx < 20) {
-        txt += ` (ADX ${adx.toFixed(1)} — 추세 강도 약함, 횡보/노이즈 구간일 가능성)`;
-      } else {
-        txt += ` (ADX ${adx.toFixed(1)} — 추세 강도 보통${diTxt})`;
-      }
-    }
+    trendEl.textContent = txt;
+  }
 
-    // 지수 대비 상대강도(RS) — 개별 지표가 좋아도 시장 전체보다 못 가는 중이면 경고
+  // ==== 상대강도(RS) — 추세 박스 하단의 작은 보조 줄 ====
+  // 예전엔 추세 문단 안에 억지로 끼워넣었는데, "이평선 배열이 어떤지"와 "시장 대비 잘 가는지"는
+  // 서로 다른 질문이라 별도 줄로 분리함. 개별 지표가 좋아도 시장 전체보다 못 가는 중이면 경고 색으로 표시.
+  const rsEl = $("rs-txt");
+  if (rsEl) {
+    rsEl.classList.remove("rs-outperform", "rs-underperform");
+
     if (rsInfo && (Number.isFinite(rsInfo.rs20) || Number.isFinite(rsInfo.rs60))) {
       const fmtRs = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%p`;
       const parts = [];
       if (Number.isFinite(rsInfo.rs20)) parts.push(`20일 ${fmtRs(rsInfo.rs20)}`);
       if (Number.isFinite(rsInfo.rs60)) parts.push(`60일 ${fmtRs(rsInfo.rs60)}`);
       const primary = Number.isFinite(rsInfo.rs20) ? rsInfo.rs20 : rsInfo.rs60;
-      let verdict = "시장과 비슷한 흐름";
-      if (primary >= 5) verdict = "시장 대비 뚜렷한 아웃퍼폼";
-      else if (primary <= -5) verdict = "시장 대비 뚜렷한 언더퍼폼 — 개별 지표가 좋아도 주의";
-      txt += ` [지수 대비 상대강도: ${parts.join(" · ")} — ${verdict}]`;
-    }
 
-    trendEl.textContent = txt;
+      let verdict = "시장과 비슷한 흐름";
+      if (primary >= 5) {
+        verdict = "시장 대비 아웃퍼폼";
+        rsEl.classList.add("rs-outperform");
+      } else if (primary <= -5) {
+        verdict = "시장 대비 언더퍼폼 — 개별 지표가 좋아도 주의";
+        rsEl.classList.add("rs-underperform");
+      }
+      rsEl.textContent = `지수 대비 상대강도: ${parts.join(" · ")} — ${verdict}`;
+    } else {
+      rsEl.textContent = "";
+    }
   }
 
   // ==== Momentum 카드 텍스트 ====
@@ -2154,7 +2176,7 @@ function updateUI(data, analysis, fxRate, stockName) {
   const whyInfo = calcWhyTodaySignal(data, analysis, flowInfo);
   const patterns = detectCandlePatterns(data, analysis);
 
-  const { support1: s1, support2: s2, resistance1: r1, price: px, rsi: rsiVal } =
+  const { support1: s1, support2: s2, resistance1: r1, resistance2: r2, price: px, rsi: rsiVal } =
     analysis;
 
   const nearSupport =
@@ -2173,36 +2195,56 @@ function updateUI(data, analysis, fxRate, stockName) {
     typeof riskPct === "number" &&
     riskPct > 0;
 
-  // ==== Wave: 현재가 + S1/S2 + R1 퍼센트 한 방에 요약 ====
-  if (waveEl) {
-    const parts = [];
-
-    const fmtLevelLine = (label, lv) => {
-      if (!Number.isFinite(lv) || !Number.isFinite(px) || px === 0) return null;
+  // ==== CHECK POINT: 지지/저항 시각 사다리 + 구조 설명 ====
+  // 예전엔 "1차 지지선 $x (-y%) · 2차 지지선 $z (-w%) ..."처럼 텍스트로만 쭉 나열해서
+  // 한눈에 위치 관계를 파악하기 어려웠음 — 항상 5칸(2차지지/1차지지/현재가/1차저항/2차저항)
+  // 고정 순서·동일 폭으로 배치. 값이 없는 칸은 자리만 유지한 채 빈 칩으로 표시.
+  const waveLadderEl = $("wave-ladder");
+  if (waveLadderEl) {
+    const fmtChip = (label, lv, type) => {
+      if (!Number.isFinite(lv) || !Number.isFinite(px) || px === 0) {
+        return { label, price: null, pctText: "", type };
+      }
       const pct = ((lv - px) / px) * 100;
       const sign = pct >= 0 ? "+" : "";
-      return `${label} ${formatPrice(lv)} (${sign}${pct.toFixed(1)}%)`;
+      return { label, price: lv, pctText: `${sign}${pct.toFixed(1)}%`, type };
     };
 
-    const s1Line = fmtLevelLine("1차 지지선", s1);
-    const s2Line = fmtLevelLine("2차 지지선", s2);
-    const r1Line = fmtLevelLine("1차 저항선", r1);
+    const slots = [
+      fmtChip("2차 지지", s2, "support"),
+      fmtChip("1차 지지", s1, "support"),
+      { label: "현재가", price: Number.isFinite(px) ? px : null, pctText: "", type: "current" },
+      fmtChip("1차 저항", r1, "resistance"),
+      fmtChip("2차 저항", r2, "resistance")
+    ];
 
-    if (s1Line) parts.push(s1Line);
-    if (s2Line) parts.push(s2Line);
-    if (r1Line) parts.push(r1Line);
+    waveLadderEl.innerHTML = "";
+    slots.forEach((c) => {
+      const chip = document.createElement("div");
+      chip.className = `wave-chip ${c.type}${c.price == null ? " empty" : ""}`;
 
-    let summaryLine = "";
-    if (parts.length) {
-      summaryLine = `현재가 ${formatPrice(px)} 기준, ${parts.join(
-        " · "
-      )} 구간에 위치한 파동입니다.`;
-    } else {
-      summaryLine = `현재가 ${formatPrice(
-        px
-      )} 기준, 최근 스윙 고점·저점을 기준으로 한 명확한 지지·저항 레벨이 부족한 파동 구간입니다.`;
-    }
+      const labelDiv = document.createElement("div");
+      labelDiv.className = "wave-chip-label";
+      labelDiv.textContent = c.label;
+      chip.appendChild(labelDiv);
 
+      const priceDiv = document.createElement("div");
+      priceDiv.className = "wave-chip-price";
+      priceDiv.textContent = c.price == null ? "—" : formatPrice(c.price);
+      chip.appendChild(priceDiv);
+
+      if (c.pctText) {
+        const pctDiv = document.createElement("div");
+        pctDiv.className = "wave-chip-pct";
+        pctDiv.textContent = c.pctText;
+        chip.appendChild(pctDiv);
+      }
+
+      waveLadderEl.appendChild(chip);
+    });
+  }
+
+  if (waveEl) {
     // Wave는 "지금 구조가 어떻게 생겼는지"만 순수하게 설명함 —
     // 매수/매도 전략 판단은 위쪽 RAVEN 전략요약(strategy-main/detail)에 이미 있어서 여기서 안 겹치게 함
     let detail =
@@ -2238,7 +2280,7 @@ function updateUI(data, analysis, fxRate, stockName) {
         "이 경우에는 이평선·RSI 등 모멘텀 지표와 상위 타임프레임 차트를 함께 보고 파동 위치를 판단하는 것이 좋습니다.";
     }
 
-    waveEl.textContent = `${summaryLine}\n\n${detail}`;
+    waveEl.textContent = detail;
   }
 
   // ==== Supply: 수급 + 왜 오늘 이런 흐름인가 ====
@@ -2255,6 +2297,36 @@ function updateUI(data, analysis, fxRate, stockName) {
 
     supplyEl.textContent = txt;
   }
+
+  // ==== OBV: 최근 10일 누적 거래량 vs 가격 다이버전스 ====
+  // (오늘 캔들 하나만 보던 수급 박스와 달리, 여러 날에 걸친 매집/분산 신호라 별도 박스로 분리)
+  if (obvEl) {
+    const obvInfo = flowInfo.obvInfo;
+    if (!obvInfo) {
+      obvEl.textContent = "OBV 계산을 위한 데이터가 부족합니다.";
+    } else if (obvInfo.divergence === "BEARISH") {
+      obvEl.textContent =
+        `최근 ${obvInfo.lookback}일간 가격은 +${obvInfo.priceChangePct.toFixed(
+          1
+        )}% 올랐는데, 누적 거래량(OBV) 기준 수급은 오히려 빠지는 다이버전스가 나타났습니다. ` +
+        "상승이 소수의 거래에 의존하고 있다는 신호로, 고점 분산(매집 소진) 가능성을 염두에 둬야 합니다.";
+    } else if (obvInfo.divergence === "BULLISH") {
+      obvEl.textContent =
+        `최근 ${obvInfo.lookback}일간 가격은 ${obvInfo.priceChangePct.toFixed(
+          1
+        )}% 빠졌는데, 누적 거래량(OBV) 기준 수급은 오히려 느는 다이버전스가 나타났습니다. ` +
+        "저점에서 조용히 매집이 들어오고 있을 가능성이 있는 구간입니다.";
+    } else {
+      obvEl.textContent =
+        `최근 ${obvInfo.lookback}일간 가격 흐름(${
+          obvInfo.priceChangePct >= 0 ? "+" : ""
+        }${obvInfo.priceChangePct.toFixed(1)}%)과 누적 거래량(OBV) 방향이 대체로 일치합니다. ` +
+        "뚜렷한 매집·분산 다이버전스 신호는 없는 구간입니다.";
+    }
+  }
+
+  const supplySummaryEl = $("supply-summary-txt");
+  if (supplySummaryEl) supplySummaryEl.textContent = summarizeSupply(flowInfo);
 
   // ==== Pattern 카드 ====
   if (patternEl) {
@@ -2384,48 +2456,131 @@ function updateUI(data, analysis, fxRate, stockName) {
   if (stratMain || stratDetail) {
     // 위쪽 배지(status-badge)와 반드시 같은 판정을 쓰도록 verdict.tier 안에서만 세부 시나리오를 고름
     // (전에는 여기서 R:R 임계값을 따로 재계산해서 배지와 반대되는 문구가 뜨는 버그가 있었음)
-    let mainTxt = "중립 / 관망 구간";
-    let detailTxt =
-      "지지선·저항선·RSI·R:R를 종합했을 때 뚜렷한 매수/매도 우위가 아닌 구간입니다. 레버리지/단기 트레이딩보다는 관망 또는 소량만 대응하는 것을 권장합니다.";
-
     const rrTxt = Number.isFinite(rrRatio)
       ? `R:R ≈ ${rrRatio.toFixed(2)}:1`
       : "R:R 계산 불가(지지·저항 부족, 등급 기준 판정)";
 
+    const fmtLevelPct = (level) => {
+      if (!Number.isFinite(level) || !Number.isFinite(px) || px === 0) return null;
+      const pct = ((level - px) / px) * 100;
+      return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
+    };
+
+    // 목표가/손절가를 숫자만 보여주고 끝내지 않고, 구체적인 실행 기준(몇 %에서 뭘 할지)까지 문장으로 제시
+    const buildActionLines = (target1Note, target2Note, stopNote) => {
+      const lines = [];
+      if (Number.isFinite(target1)) {
+        lines.push(`🎯 1차 목표가 ${formatPrice(target1)}(${fmtLevelPct(target1)}) — ${target1Note}`);
+      }
+      if (Number.isFinite(target2) && target2Note) {
+        lines.push(`🎯 2차 목표가 ${formatPrice(target2)}(${fmtLevelPct(target2)}) — ${target2Note}`);
+      }
+      if (Number.isFinite(stop)) {
+        lines.push(`🛑 손절가 ${formatPrice(stop)}(${fmtLevelPct(stop)}) — ${stopNote}`);
+      }
+      return lines;
+    };
+
+    // 위쪽 "수급"/"패턴" 탭에서 이미 계산해둔 신호를 전략요약에도 반영 —
+    // 예전엔 지지·저항·R:R만 보고 판단해서 같은 화면 안의 수급/패턴 정보와 따로 놀았음
+    const buildContextLine = () => {
+      const bits = [];
+      if (flowInfo && flowInfo.flowLabel) bits.push(`수급은 [${flowInfo.flowLabel}]`);
+      const topPattern = patterns && patterns[0];
+      if (topPattern) bits.push(`대표 캔들 패턴은 [${topPattern.name}]`);
+      return bits.length ? `참고로 현재 ${bits.join(", ")} 상태입니다.` : "";
+    };
+
+    let mainTxt = "중립 / 관망 구간";
+    let detailTxt =
+      "지지선·저항선·RSI·R:R를 종합했을 때 뚜렷한 매수/매도 우위가 아닌 구간입니다. 레버리지/단기 트레이딩보다는 관망 또는 소량만 대응하는 것을 권장합니다.";
+    if (typeof adx === "number" && adx < 20) {
+      detailTxt += ` ADX ${adx.toFixed(1)}로 추세 강도 자체가 약해, 지금은 방향성 베팅보다 관망이 더 유리한 구간입니다.`;
+    }
+    const neutralActions = buildActionLines(
+      "여기까지 오르면 돌파 여부를 보고 추종 매수 재검토",
+      null,
+      "여기까지 빠지면 지지 여부를 보고 매수 재검토"
+    );
+    if (neutralActions.length) detailTxt += "\n\n" + neutralActions.join("\n");
+
     if (verdict.tier === "BUY") {
       if (typeof rsiVal === "number" && rsiVal < 30) {
-        mainTxt = "③ 과매도 역추세 (고위험)";
+        mainTxt = "과매도 역추세 (고위험)";
         detailTxt =
           `RSI가 ${rsiVal.toFixed(
             1
           )}로 과매도 구간에 진입한 상태입니다. 단기 기술적 반등 가능성은 있지만, 추세 자체가 약세라 고위험 역추세 전략입니다. ` +
           "포지션 크기를 줄이고, 지지선 이탈 시 재진입을 포기하는 강한 손절 기준이 필요합니다.";
+        const actions = buildActionLines(
+          "반등 목표가 — 추세가 약하므로 도달 시 빠른 분할 익절 권장",
+          null,
+          "역추세 전략은 손절이 생명 — 이탈 시 미련 없이 즉시 손절"
+        );
+        if (actions.length) detailTxt += "\n\n" + actions.join("\n");
       } else {
-        mainTxt = "① 지지선 근처 눌림 매수 우위";
+        mainTxt = "지지선 근처 눌림 매수 우위";
+        const bits = [];
+        if (nearSupport) bits.push(`1차 지지선(${s1 ? s1.toFixed(2) : "N/A"}) 근처`);
+        if (typeof adx === "number" && adx >= 25) bits.push(`ADX ${adx.toFixed(1)}로 추세 강도까지 뚜렷`);
+        if (analysis.macdCrossover === "GOLDEN") bits.push("MACD 골든크로스 동반");
+        if (rsInfo && Number.isFinite(rsInfo.rs20) && rsInfo.rs20 >= 5) bits.push("지수 대비 아웃퍼폼 중");
+
         detailTxt =
-          (nearSupport
-            ? `현재가가 1차 지지선(${s1 ? s1.toFixed(2) : "N/A"}) 근처에 위치하고, `
-            : "") +
+          (bits.length ? `현재가가 ${bits.join(", ")}이고, ` : "") +
           `${rrTxt}로 손절 대비 기대 수익이 유리한 구조입니다. ` +
           "지지선 이탈 시 빠른 손절을 전제로 한 분할 매수 전략이 1안입니다.";
+        const actions = buildActionLines(
+          "도달 시 절반 익절 후 나머지는 2차 목표가까지 홀딩 고려",
+          "추세 지속 시 최종 목표가",
+          "지지선 이탈 확정 시(종가 기준) 미련 없이 손절"
+        );
+        if (actions.length) detailTxt += "\n\n" + actions.join("\n");
       }
     } else if (verdict.tier === "SELL") {
       if (nearResistance) {
-        mainTxt = "② 저항선 근처 리스크 우위";
+        mainTxt = "저항선 근처 리스크 우위";
+        const bits = [`1차 저항선(${r1 ? r1.toFixed(2) : "N/A"}) 근처 상단 파동`];
+        if (analysis.macdCrossover === "DEAD") bits.push("MACD 데드크로스 동반");
+        if (typeof adx === "number" && adx < 20) bits.push(`ADX ${adx.toFixed(1)}로 추세 신뢰도 낮음`);
+
         detailTxt =
-          `현재가가 1차 저항선(${
-            r1 ? r1.toFixed(2) : "N/A"
-          }) 근처 상단 파동에 위치해 있고, ${rrTxt}로 아래쪽 리스크가 더 큰 구조입니다. ` +
+          `현재가가 ${bits.join(", ")}에 위치해 있고, ${rrTxt}로 아래쪽 리스크가 더 큰 구조입니다. ` +
           "신규 매수보다는 기존 보유 물량의 분할 청산/헤지 전략이 1순위입니다.";
+        const actions = buildActionLines(
+          "저항 돌파 실패 시(반등 후 재하락) 기존 보유 물량 분할 청산 구간",
+          null,
+          "저항 부근에서도 밀리면서 이 가격대까지 빠지면 손절 검토"
+        );
+        if (actions.length) detailTxt += "\n\n" + actions.join("\n");
       } else {
-        mainTxt = "④ R:R 불리 (위험 대비 보상 부족)";
+        mainTxt = "R:R 불리 (위험 대비 보상 부족)";
+        const extra = analysis.macdCrossover === "DEAD"
+          ? " MACD 데드크로스까지 겹쳐 있어 더 보수적으로 접근해야 합니다."
+          : "";
         detailTxt =
           `현재 ${rrTxt}로, 손절 폭 대비 위쪽 기대 수익이 충분히 보상되지 않는 자리입니다. ` +
-          "추세·수급이 좋아 보여도 진입보다는 다음 더 유리한 R:R 구간을 기다리는 것이 효율적입니다.";
+          "추세·수급이 좋아 보여도 진입보다는 다음 더 유리한 R:R 구간을 기다리는 것이 효율적입니다." +
+          extra;
+        const actions = buildActionLines(
+          "여기까지 오르면 R:R이 개선되니 그때 재검토",
+          null,
+          "이 가격대까지 밀리면 추가 하락 리스크가 커지는 구간"
+        );
+        if (actions.length) detailTxt += "\n\n" + actions.join("\n");
       }
     }
 
-    if (stratMain) stratMain.textContent = mainTxt;
+    const ctx = buildContextLine();
+    if (ctx) detailTxt += "\n\n" + ctx;
+
+    if (stratMain) {
+      stratMain.textContent = mainTxt;
+      stratMain.classList.remove("tier-buy", "tier-sell", "tier-neutral");
+      stratMain.classList.add(
+        verdict.tier === "BUY" ? "tier-buy" : verdict.tier === "SELL" ? "tier-sell" : "tier-neutral"
+      );
+    }
     if (stratDetail) stratDetail.textContent = detailTxt;
   }
 
@@ -2444,9 +2599,14 @@ function updateUI(data, analysis, fxRate, stockName) {
       else if (rsi >= 60) rsiNote = "상승 우위";
       else if (rsi <= 30) rsiNote = "과매도";
       else if (rsi <= 40) rsiNote = "약세";
-      rsiBox.textContent = `RSI(14) : ${rsi.toFixed(1)} (${rsiNote})`;
+
+      let crossTxt = "";
+      if (analysis.rsiCross === "BUY") crossTxt = " · 과매도 탈출(반등 신호)";
+      else if (analysis.rsiCross === "SELL") crossTxt = " · 과열 이탈(조정 신호)";
+
+      rsiBox.textContent = `${rsi.toFixed(1)} = ${rsiNote}${crossTxt}`;
     } else {
-      rsiBox.textContent = "RSI 데이터 부족";
+      rsiBox.textContent = "데이터 부족";
     }
   }
 
@@ -2456,13 +2616,44 @@ function updateUI(data, analysis, fxRate, stockName) {
       let crossTxt = "";
       if (analysis.macdCrossover === "GOLDEN") crossTxt = " · 골든크로스(매수 신호)";
       else if (analysis.macdCrossover === "DEAD") crossTxt = " · 데드크로스(매도 신호)";
-      macdBox.textContent = `MACD (12-26-9) : ${
+      macdBox.textContent = `${
         analysis.macd >= 0 ? "+" : ""
-      }${analysis.macd.toFixed(3)} (${dir})${crossTxt}`;
+      }${analysis.macd.toFixed(3)} = ${dir}${crossTxt}`;
     } else {
-      macdBox.textContent = "MACD 계산을 위한 데이터가 부족합니다.";
+      macdBox.textContent = "데이터 부족";
     }
   }
+
+  if (adxBox) {
+    if (typeof adx === "number") {
+      let strengthNote = "보통";
+      if (adx >= 25) strengthNote = "뚜렷함";
+      else if (adx < 20) strengthNote = "약함(횡보 가능성)";
+
+      let diTxt = "";
+      if (typeof plusDI === "number" && typeof minusDI === "number") {
+        diTxt = plusDI > minusDI ? ", DI+ 우위" : ", DI- 우위";
+      }
+      adxBox.textContent = `${adx.toFixed(1)} = 추세 ${strengthNote}${diTxt}`;
+    } else {
+      adxBox.textContent = "데이터 부족";
+    }
+  }
+
+  if (atrBox) {
+    if (typeof atr === "number") {
+      const atrPctTxt = typeof atrPct === "number" ? ` (${atrPct.toFixed(1)}%)` : "";
+      atrBox.textContent = `${formatPrice(atr)}${atrPctTxt} = 손절폭 산정 기준`;
+    } else {
+      atrBox.textContent = "데이터 부족";
+    }
+  }
+
+  const trendSummaryEl = $("trend-summary-txt");
+  if (trendSummaryEl) trendSummaryEl.textContent = summarizeTrendMomentum(analysis);
+
+  const patternSummaryEl = $("pattern-summary-txt");
+  if (patternSummaryEl) patternSummaryEl.textContent = summarizePattern(patterns, verdict);
 
   // 마지막 분석 결과 저장
   lastAnalysis = {
@@ -2581,68 +2772,6 @@ function initResultTabs() {
 }
 
 // ===============================
-// 📏 포지션 사이즈 계산기
-// ===============================
-
-// 분석 완료 시 통화 라벨과 진입가(현재가) 자동 입력
-function preparePositionCalculator(isDomestic, currentPrice) {
-  const capitalLabel = document.querySelector('label[for="pos-capital"]');
-  if (capitalLabel) {
-    capitalLabel.textContent = isDomestic ? "총 자본 (KRW 기준)" : "총 자본 (USD 기준)";
-  }
-
-  const entryEl = $("pos-entry");
-  if (entryEl && Number.isFinite(currentPrice)) {
-    entryEl.value = isDomestic ? Math.round(currentPrice) : currentPrice.toFixed(2);
-  }
-}
-
-// 총 자본 · 리스크(%) · 진입가/손절가 기준으로 매수 수량과 손실 한도 계산
-function calcPositionSize() {
-  if (!lastAnalysis) {
-    showToast("먼저 종목을 분석해 주세요.");
-    return;
-  }
-
-  const { data, analysis } = lastAnalysis;
-  const domestic = isDomesticTicker(data.symbol);
-  const formatPrice = domestic ? formatKRW : formatUSD;
-
-  const capital = Number($("pos-capital")?.value);
-  const riskPct = Number($("pos-risk")?.value);
-  const entryPrice = Number($("pos-entry")?.value) || analysis.price;
-  const stopPrice = analysis.stop;
-
-  const sizeEl = $("pos-size");
-  const riskAmountEl = $("pos-risk-amount");
-
-  if (!Number.isFinite(capital) || capital <= 0) {
-    showToast("총 자본을 입력해 주세요.");
-    return;
-  }
-  if (!Number.isFinite(riskPct) || riskPct <= 0) {
-    showToast("트레이드당 리스크(%)를 입력해 주세요.");
-    return;
-  }
-  if (!Number.isFinite(entryPrice) || !Number.isFinite(stopPrice)) {
-    showToast("진입가/손절가 정보가 부족해 계산할 수 없습니다.");
-    return;
-  }
-
-  const riskPerShare = Math.abs(entryPrice - stopPrice);
-  if (riskPerShare <= 0) {
-    showToast("진입가와 손절가가 같아 계산할 수 없습니다.");
-    return;
-  }
-
-  const riskAmount = capital * (riskPct / 100);
-  const quantity = Math.floor(riskAmount / riskPerShare);
-  const actualLoss = quantity * riskPerShare;
-
-  if (sizeEl) sizeEl.textContent = `수량: ${quantity.toLocaleString()}주`;
-  if (riskAmountEl) riskAmountEl.textContent = `손실 한도: ${formatPrice(actualLoss)}`;
-}
-
 // 전일 수급 해석 박스 렌더링 (국내 종목 전용, 결과 카드 표시 후 비동기로 채워짐)
 function renderSupplyDemandBox(data) {
   const box = $("supply-kis-box");
@@ -2669,6 +2798,12 @@ function renderSupplyDemandBox(data) {
   if (outlookEl) outlookEl.textContent = data.outlook || "";
 
   box.classList.remove("hidden");
+
+  // 전일 수급(KIS)은 메인 렌더링보다 늦게 도착하므로, 이미 채워진 수급 종합 문장에 덧붙임
+  const supplySummaryEl = $("supply-summary-txt");
+  if (supplySummaryEl && data.outlook) {
+    supplySummaryEl.textContent += ` 전일 프로그램매매·공매도·신용·대차 기준 코멘트: "${data.outlook}"`;
+  }
 }
 
 // ===============================
@@ -2731,6 +2866,11 @@ function renderWatchlistPills(list) {
   list.forEach((item) => {
     const pill = document.createElement("span");
     pill.className = "watchlist-pill";
+
+    const star = document.createElement("span");
+    star.className = "watchlist-pill-star";
+    star.textContent = "★";
+    pill.appendChild(star);
 
     const label = document.createElement("span");
     label.textContent = item.symbol;
@@ -2838,7 +2978,6 @@ async function runAnalysisForTicker(rawSymbol) {
 
     const analysis = analyzeData(data, benchmarkData);
     updateUI(data, analysis, fxRate, stockName);
-    preparePositionCalculator(domestic, analysis.price);
     updateWatchlistStarState();
 
     // 차트 위젯 렌더
@@ -2875,10 +3014,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // 국내 종목명 자동완성 (엔트리 화면 + 메인 검색창)
   attachTickerAutocomplete($("entry-ticker"));
   attachTickerAutocomplete($("ticker-input"));
-
-  // 📏 포지션 사이즈 계산기 CALC 버튼
-  const posCalcBtn = $("pos-calc-btn");
-  if (posCalcBtn) posCalcBtn.addEventListener("click", calcPositionSize);
 
   // ★ 관심종목 — 헤더 패널 초기 로드 + 별표 토글 버튼
   refreshWatchlistPanel();

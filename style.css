@@ -145,6 +145,12 @@ body.raven-result-bg {
   background: rgba(30, 64, 175, 0.3);
 }
 
+/* 종목마다 글자수가 달라도 항상 별표가 같은 위치에서 시작하도록 라벨 앞에 고정 배치 */
+.watchlist-pill-star {
+  color: var(--macro-note);
+  font-size: 11px;
+}
+
 .watchlist-pill-remove {
   border: none;
   background: transparent;
@@ -349,18 +355,31 @@ body.raven-result-bg {
 .ticker-price-row {
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 0.6rem;
 }
 
 .ticker-price {
-  font-size: 1.7rem;
-  font-weight: 700;
+  font-size: 2.5rem;
+  font-weight: 800;
   color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+/* 원화 환산가 — 메인 가격보다 무게감을 낮춰서 "환산값"이라는 게 한눈에 보이게 분리 (가격과의 비율은 유지) */
+.ticker-price-fx {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-sub);
+}
+
+.ticker-price-fx:empty {
+  display: none;
 }
 
 .ticker-change {
-  font-size: 1rem;
-  font-weight: 700;
+  font-size: 1.6rem;
+  font-weight: 800;
 }
 
 .ticker-change.positive {
@@ -483,19 +502,40 @@ body.raven-result-bg {
 }
 
 .section-box h3 {
-  margin: 0 0 0.5rem 0;
-  font-size: 0.9rem;
+  margin: 0 0 0.6rem 0;
+  font-size: 0.98rem;
   color: var(--accent);
 }
 
 .section-box p {
   margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.5;
+  font-size: 1.02rem;
+  line-height: 1.65;
+  white-space: pre-line;
 }
 
 .section-box.wide {
   grid-column: span 2;
+}
+
+/* 추세 박스 하단의 보조 지표 한 줄 (예: 지수 대비 상대강도) */
+.section-subnote {
+  margin: 0.6rem 0 0 0 !important;
+  font-size: 0.82rem !important;
+  color: var(--text-sub);
+  line-height: 1.4;
+}
+
+.section-subnote:empty {
+  display: none;
+}
+
+.section-subnote.rs-outperform {
+  color: var(--success);
+}
+
+.section-subnote.rs-underperform {
+  color: var(--danger);
 }
 
 .supply-kis-date {
@@ -521,37 +561,128 @@ body.raven-result-bg {
   margin: 0 !important;
   font-size: 0.92rem !important;
   line-height: 1.5;
-  color: var(--accent);
-  font-weight: 600;
+  color: var(--macro-note);
+  font-weight: 700;
 }
 
 
-/* 지표 박스 */
+/* CHECK POINT: 지지/저항 시각 사다리 — 항상 5칸(2차지지/1차지지/현재가/1차저항/2차저항)을
+   동일한 폭으로 배치. 예전엔 "1차 지지선 $x (-y%) · 2차 지지선 ..." 텍스트 나열이었음 */
+
+.wave-ladder {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin-bottom: 1.1rem;
+}
+
+.wave-ladder:empty {
+  display: none;
+}
+
+.wave-chip {
+  padding: 0.9rem 0.5rem;
+  border-radius: 14px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.wave-chip.empty {
+  opacity: 0.4;
+}
+
+.wave-chip-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-sub);
+  margin-bottom: 5px;
+}
+
+.wave-chip-price {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #f1f5f9;
+}
+
+.wave-chip-pct {
+  margin-top: 3px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.wave-chip.support {
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.wave-chip.support .wave-chip-pct {
+  color: var(--success);
+}
+
+.wave-chip.resistance {
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.wave-chip.resistance .wave-chip-pct {
+  color: var(--danger);
+}
+
+.wave-chip.current {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: var(--accent);
+}
+
+.wave-chip.current .wave-chip-price {
+  color: #fff;
+  font-size: 1.1rem;
+}
+
+
+/* 지표 박스 — 위쪽 서술형 카드(.section-box)와 시각적으로 구분되는 "통계 카드" 느낌 */
 
 .indicator-row {
   display: flex;
   gap: 1rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1.25rem;
   grid-column: span 2;
 }
 
 .indicator-box {
   flex: 1;
-  background: rgba(255,255,255,0.03);
-  padding: 1.5rem;
-  border-radius: 16px;
+  background: linear-gradient(160deg, rgba(59, 130, 246, 0.12), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  padding: 1.1rem 1.25rem;
+  border-radius: 14px;
 }
 
 .indicator-box h4 {
-  margin: 0 0 0.5rem 0;
-  font-size: 0.9rem;
-  color: var(--accent);
+  margin: 0 0 0.55rem 0;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #cbd5f5;
 }
 
 .indicator-box p {
   margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.5;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.45;
+  color: #f1f5f9;
+}
+
+/* 탭 하단 종합 요약 — 노란색으로 "여러 해석을 합쳤을 때의 결론"임을 표시 */
+.tab-summary-box {
+  border: 1px solid rgba(250, 204, 21, 0.3);
+  background: rgba(250, 204, 21, 0.06);
+}
+
+.tab-summary-box h3 {
+  color: var(--macro-note);
+}
+
+.tab-summary-box p {
+  color: var(--macro-note);
+  font-weight: 700;
 }
 
 
@@ -625,8 +756,9 @@ body.raven-result-bg {
 
 .target-box h4 {
   margin: 0 0 0.5rem 0;
-  color: var(--text-sub);
-  font-size: 0.9rem;
+  color: #f1f5f9;
+  font-size: 1rem;
+  font-weight: 700;
 }
 
 .target-box p {
@@ -727,7 +859,7 @@ body.raven-result-bg {
   margin: 0 0 0.75rem 0;
   font-size: 1rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--macro-note);
   letter-spacing: 0.02em;
 }
 
@@ -735,190 +867,64 @@ body.raven-result-bg {
   margin: 0;
   font-size: 0.95rem;
   line-height: 1.6;
+  white-space: pre-line;
+}
+
+/* 헤드라인(짧은 판정 한 줄)은 크고 굵게, 판정 방향(매수/매도/중립)에 따라 색이 바뀜 —
+   배지(status-badge)와 같은 색 체계를 써서 위아래가 항상 같은 신호를 주도록 함 */
+.strategy-main {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #f1f5f9;
+}
+
+.strategy-main.tier-buy {
+  color: var(--success);
+}
+
+.strategy-main.tier-sell {
+  color: var(--danger);
+}
+
+.strategy-main.tier-neutral {
   color: var(--macro-note);
 }
 
 .strategy-detail {
-  margin-top: 0.35rem;
-  font-size: 0.9rem;
-  opacity: 0.95;
-}
-
-/* 포지션 사이즈 계산기 */
-
-.position-box {
-  margin-top: 1.75rem;
-  padding: 1.5rem 1.75rem;
-  border-radius: 18px;
-  background: rgba(15, 23, 42, 0.9);
-  border: 1px solid rgba(148, 163, 184, 0.4);
-}
-
-.position-box h3 {
-  margin: 0 0 0.9rem 0;
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--accent);
-}
-
-.pos-row {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 0.9rem;
-  flex-wrap: wrap;
-}
-
-.pos-field {
-  flex: 1;
-  min-width: 180px;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.pos-field label {
-  font-size: 0.8rem;
-  color: var(--text-sub);
-}
-
-.pos-field input {
-  padding: 0.55rem 0.7rem;
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.5);
-  background: rgba(15, 23, 42, 0.9);
-  color: var(--text-main);
-  font-size: 0.9rem;
-  outline: none;
-}
-
-.pos-field input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
-}
-
-.pos-result-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-top: 0.3rem;
-}
-
-.pos-btn {
-  padding-inline: 1.5rem;
-  white-space: nowrap;
-}
-
-.pos-result {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  font-size: 0.9rem;
-}
-
-#pos-size {
-  font-weight: 700;
-  color: #22c55e;
-}
-
-#pos-risk-amount {
-  font-weight: 600;
-  color: #f97316;
-}
-
-.pos-hint {
-  margin-top: 0.55rem;
-  font-size: 0.8rem;
-  color: var(--text-sub);
-  opacity: 0.9;
-}
-
-
-/* Z-Factor Chips */
-
-.factor-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 0 0 1rem 0;
-}
-
-.factor-pill {
-  padding: 0.25rem 0.7rem;
-  border-radius: 9999px;
-  font-size: 0.78rem;
-  border: 1px solid rgba(148, 163, 184, 0.6);
-  background: rgba(15, 23, 42, 0.9);
-  color: #e5e7eb;
-  white-space: nowrap;
-}
-
-.factor-bull {
-  border-color: #22c55e;
-  background: rgba(34, 197, 94, 0.16);
-  color: #bbf7d0;
-}
-
-.factor-bear {
-  border-color: #f97316;
-  background: rgba(248, 113, 113, 0.18);
-  color: #fed7aa;
-}
-
-.factor-neutral {
-  opacity: 0.9;
-}
-
-/* 섹터/테마 태그 pill 스타일 */
-#ticker-labels .label-pill {
-  display: inline-block;
-  padding: 0.25rem 0.6rem;
-  margin-right: 6px;
-  margin-bottom: 4px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  background: rgba(30, 64, 175, 0.15);
-  border: 1px solid rgba(129, 140, 248, 0.6);
-  color: #e5e7eb;
-  white-space: nowrap;
-}
-
-/* 필터 버튼 */
-.factor-filter-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  justify-content: flex-end;
-}
-
-.factor-filter-btn {
-  padding: 0.25rem 0.8rem;
-  border-radius: 9999px;
-  border: 1px solid rgba(148, 163, 184, 0.6);
-  background: rgba(15, 23, 42, 0.9);
-  color: #e5e7eb;
-  font-size: 0.78rem;
-  cursor: pointer;
-  transition: 0.2s ease;
-  opacity: 0.85;
-}
-
-.factor-filter-btn:hover {
-  opacity: 1;
-  border-color: var(--accent);
-}
-
-.factor-filter-btn.active {
-  border-color: var(--accent);
-  background: rgba(59, 130, 246, 0.16);
-  color: #bfdbfe;
-  opacity: 1;
+  margin-top: 0.5rem;
+  font-size: 0.92rem;
+  color: #f1f5f9;
 }
 
 /* ───────── Mobile (<= 768px) ───────── */
 
 @media (max-width: 768px) {
+
+  /* CHECK POINT 사다리는 좁은 화면에서도 5칸을 유지하되 여백/폰트만 축소 */
+  .wave-ladder {
+    gap: 4px;
+  }
+
+  .wave-chip {
+    padding: 0.6rem 0.25rem;
+    border-radius: 10px;
+  }
+
+  .wave-chip-label {
+    font-size: 0.62rem;
+  }
+
+  .wave-chip-price {
+    font-size: 0.78rem;
+  }
+
+  .wave-chip.current .wave-chip-price {
+    font-size: 0.85rem;
+  }
+
+  .wave-chip-pct {
+    font-size: 0.66rem;
+  }
 
   /* GOOD DAY SIR! – 모바일에서 한 줄 유지 (ID까지 붙여서 데스크탑 공통보다 우선) */
   #intro-screen .intro-title {
@@ -990,19 +996,6 @@ body.raven-result-bg {
   }
 
   .z-metrics-column {
-    align-items: flex-start;
-  }
-
-  .factor-filter-row {
-    justify-content: flex-start;
-  }
-
-  .pos-row {
-    flex-direction: column;
-  }
-
-  .pos-result-row {
-    flex-direction: column;
     align-items: flex-start;
   }
 
