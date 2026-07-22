@@ -147,14 +147,17 @@
 
 ## 📌 다음 세션 시작 시 우선 처리
 
-1. **배포 (모바일 접속용) — 아직 미착수, 다음 세션 최우선 과제**
-   - 백엔드(`server/`) → Render.com 배포, 고정 URL 발급
-   - 프론트엔드(`index.html`/`app.js`/`style.css`) → GitHub Pages 배포, 고정 URL 발급
-   - Render 서버의 고정 아웃바운드 IP를 토스증권 WTS "허용 IP"에 등록 (안 하면 토스 API 호출 전부 막힘)
-   - `server/.env`의 키들을 Render 대시보드 환경변수에 입력 (KIS_APP_KEY, TOSS_CLIENT_ID/SECRET, SUPABASE_URL/KEY, RAVEN_PIN, TELEGRAM_* 등)
-   - 프론트 `app.js`의 `API_BASE`를 로컬(`http://localhost:3001`) → 배포된 Render URL로 교체
-   - 배포 후 CORS(`FRONTEND_ORIGIN`)도 GitHub Pages 주소로 갱신 필요
-   - ⚠️ Render/GitHub Pages 대시보드 가입·설정, 시크릿 키 입력은 사용자 계정에서 직접 해야 하는 부분이 많음 — Claude Code가 대신 클릭할 수 없는 단계가 섞여 있으니 세션 시작 시 "내가 할 일 / 같이 할 일"부터 나눠서 진행할 것
+1. **배포 (모바일 접속용) — 백엔드 Render 배포 완료(2026-07-22), 토스 IP 문제로 막힌 상태**
+   - [x] 백엔드(`server/`) → Render.com 배포 완료. `render.yaml`(repo 루트)로 Blueprint 배포, 서비스명 `raven-backend`, URL: `https://raven-backend-z5uc.onrender.com`. `/health`, Supabase(`/api/watchlist`), KIS(`/api/kis/program-trade`) 전부 실제 호출 검증 완료(정상 응답).
+   - [ ] **토스증권만 막힘** — Render 무료 요금제 아웃바운드 IP가 리전 공유 대역(`74.220.48.0/24`, `74.220.56.0/24`, 2개 확인함)이라 토스 WTS "허용 IP"(정확한 IP 1개만 받는 단일 입력 필드, CIDR 대역 입력 시 "IP주소가 맞는지 확인" 에러로 거부됨)에 등록 불가. Render의 "고정 아웃바운드 IP" 애드온은 워크스페이스 Pro 플랜($25/월) + IP 세트당 $100/월로 개인 프로젝트엔 과함 — 포기.
+   - [ ] **진행 중인 대안**: Oracle Cloud "Always Free" VM에 경량 프록시(tinyproxy/squid)만 얹어서 토스 호출만 그 고정 IP로 우회시키는 방법 시도 중. **가입 단계에서 막힘** — "등록을 완료할 수 없습니다"(위치/ID 마스킹 또는 다중계정 시도 추정) 에러가 반복 발생, 같은 이메일로 짧은 간격 재시도가 오히려 의심 신호로 잡힐 수 있어 다음 세션에 시간 두고 재시도하거나 저가 VPS(DigitalOcean/Vultr 등 월 $5선, 가입 문턱 낮음)로 전환 예정.
+   - [ ] **더 근본적인 대안(백업 플랜)**: 애초에 시세/차트/환율을 토스 대신 **KIS로 통합**하는 방법 — KIS는 이미 실증 확인(IP 등록 전혀 없이 Render에서 정상 호출됨, 프로그램매매 수급 데이터로 검증). KIS Developers 문서상 국내주식 현재가/일자별/기간별(일주월년) 시세, 해외주식 시세 조회 API 모두 존재 확인(공식 GitHub 저장소로 카테고리 확인). 단, **환율(USD/KRW) 전용 엔드포인트는 미확인** — 필요시 Yahoo나 별도 소스로 대체 가능(사용자 승인함). 이 통합 자체는 인프라 설정이 아니라 실제 코드 작업(응답 포맷 차이, KIS의 더 빡빡한 초당 호출 제한 대응)이 필요해서 별도 세션으로 진행 예정.
+   - ⚠️ **KIS 토큰 발급 관련 신규 발견(2026-07-22)**: 실제 계좌로 문자 알림이 왔는데 "접근 토큰은 1일 1회 발급 원칙, 잦은 재발급 시 이용 제한 가능"이라고 명시됨 — 기존 메모의 "1분당 1회"보다 엄격한 기준. 지금 코드(`kisAuth.js`)는 토큰을 메모리에 캐싱하는데, **Render 무료 요금제는 비활성 시 서버가 완전히 꺼졌다가 재시작되면서 메모리 캐시가 초기화됨** — 실사용(스케줄러+평소 조회)이 늘면 재시작될 때마다 재발급이 일어나 하루에도 여러 번 발급될 위험이 있음. KIS 의존도를 늘리기로 하면(위 백업 플랜 채택 시 특히) 토큰을 Supabase 등 DB에 영구 저장하는 방식으로 고쳐야 함 — 아직 미수정.
+   - [ ] 프론트엔드(`index.html`/`app.js`/`style.css`) → GitHub Pages 배포, 고정 URL 발급 (미착수)
+   - [ ] `server/.env`의 나머지 키들은 이미 Render 환경변수에 입력 완료(사용자가 직접 함)
+   - [ ] 프론트 `app.js`의 `API_BASE`를 로컬 → Render URL로 교체 (GitHub Pages 배포와 함께 진행 예정)
+   - [ ] 배포 후 CORS(`FRONTEND_ORIGIN`)도 GitHub Pages 주소로 갱신 필요 (지금은 임시값)
+   - ⚠️ Render 가입·환경변수 입력은 이미 완료. Oracle/GitHub Pages 등 남은 계정 관련 단계도 사용자가 직접 해야 하는 부분이 많음 — 세션 시작 시 "내가 할 일 / 같이 할 일"부터 나눠서 진행할 것
 
 2. **RAVEN 분석 엔진 전체 재검토 — ✅ 완료 (2026-07-20)**
    - GPT 엔진과 비교해서 Claude 기준으로 판단 기준 자체(시그널/지지저항/캔들·보조지표/SCORE·RANK)를 재검토하는 작업. 아래 "Phase 1.5 — 분석 엔진 퀀트 업그레이드" 섹션에 상세 기록.
