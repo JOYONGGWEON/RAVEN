@@ -225,6 +225,15 @@
       </div>
     </div>
 
+    <!-- 🤖 AI 서술 분석 (버튼 클릭 시에만 호출 — 호출당 비용 발생하므로 자동 실행 안 함) -->
+    <div class="ai-analysis-box">
+      <button type="button" id="ai-analyze-btn" class="ai-analyze-btn">🤖 AI 분석 요청</button>
+      <div id="ai-analysis-result" class="ai-analysis-result hidden">
+        <h3>🤖 AI 서술 분석</h3>
+        <p id="ai-analysis-txt"></p>
+      </div>
+    </div>
+
     <!-- ===== 탭 영역: 추세·모멘텀 / 수급 / 패턴·신호 / 실적 ===== -->
     <div class="tabs-bar" role="tablist">
       <button type="button" class="tab-btn active" data-tab="trend">📈 추세·모멘텀</button>
@@ -239,7 +248,6 @@
           <div class="section-box">
             <h3>📈 추세</h3>
             <p id="trend-txt">분석 중...</p>
-            <p id="rs-txt" class="section-subnote"></p>
           </div>
           <div class="section-box">
             <h3>🔔 모멘텀</h3>
@@ -266,6 +274,10 @@
             <div class="indicator-box">
               <h4>🔸 ATR(14) · 변동성</h4>
               <p id="atr-txt">—</p>
+            </div>
+            <div class="indicator-box">
+              <h4>🔸 RS · 지수 대비 강도</h4>
+              <p id="rs-txt">—</p>
             </div>
           </div>
           <div class="section-box wide tab-summary-box">

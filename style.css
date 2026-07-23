@@ -518,26 +518,6 @@ body.raven-result-bg {
   grid-column: span 2;
 }
 
-/* 추세 박스 하단의 보조 지표 한 줄 (예: 지수 대비 상대강도) */
-.section-subnote {
-  margin: 0.6rem 0 0 0 !important;
-  font-size: 0.82rem !important;
-  color: var(--text-sub);
-  line-height: 1.4;
-}
-
-.section-subnote:empty {
-  display: none;
-}
-
-.section-subnote.rs-outperform {
-  color: var(--success);
-}
-
-.section-subnote.rs-underperform {
-  color: var(--danger);
-}
-
 .supply-kis-date {
   margin: 0 0 0.6rem 0 !important;
   font-size: 0.78rem !important;
@@ -641,14 +621,14 @@ body.raven-result-bg {
 /* 지표 박스 — 위쪽 서술형 카드(.section-box)와 시각적으로 구분되는 "통계 카드" 느낌 */
 
 .indicator-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
   gap: 1rem;
   margin-bottom: 1.25rem;
   grid-column: span 2;
 }
 
 .indicator-box {
-  flex: 1;
   background: linear-gradient(160deg, rgba(59, 130, 246, 0.12), rgba(255, 255, 255, 0.02));
   border: 1px solid rgba(59, 130, 246, 0.2);
   padding: 1.1rem 1.25rem;
@@ -683,6 +663,61 @@ body.raven-result-bg {
 .tab-summary-box p {
   color: var(--macro-note);
   font-weight: 700;
+}
+
+
+/* ───────── AI 서술 분석 (Phase 4) ───────── */
+
+.ai-analysis-box {
+  margin-top: 1.5rem;
+}
+
+.ai-analyze-btn {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+
+.ai-analyze-btn:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.2);
+  transform: translateY(-1px);
+}
+
+.ai-analyze-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+.ai-analysis-result {
+  margin-top: 1rem;
+  padding: 1.5rem 1.75rem;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+}
+
+.ai-analysis-result h3 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--macro-note);
+  letter-spacing: 0.02em;
+}
+
+.ai-analysis-result p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  white-space: pre-line;
+  color: #f1f5f9;
 }
 
 
@@ -962,7 +997,7 @@ body.raven-result-bg {
   }
 
   .indicator-row {
-    flex-direction: column;
+    grid-template-columns: 1fr;
     grid-column: span 1;
   }
 

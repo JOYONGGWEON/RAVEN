@@ -2109,13 +2109,11 @@ function updateUI(data, analysis, fxRate, stockName) {
     trendEl.textContent = txt;
   }
 
-  // ==== 상대강도(RS) — 추세 박스 하단의 작은 보조 줄 ====
-  // 예전엔 추세 문단 안에 억지로 끼워넣었는데, "이평선 배열이 어떤지"와 "시장 대비 잘 가는지"는
-  // 서로 다른 질문이라 별도 줄로 분리함. 개별 지표가 좋아도 시장 전체보다 못 가는 중이면 경고 색으로 표시.
+  // ==== 상대강도(RS) — RSI/MACD/ADX/ATR과 같은 지표 박스로 통일 ====
+  // 예전엔 추세 문단 하단의 작은 보조 줄이라 눈에 잘 안 띄었음. "이평선 배열이 어떤지"와
+  // "시장 대비 잘 가는지"는 서로 다른 질문이라 별도 지표 박스로 승격.
   const rsEl = $("rs-txt");
   if (rsEl) {
-    rsEl.classList.remove("rs-outperform", "rs-underperform");
-
     if (rsInfo && (Number.isFinite(rsInfo.rs20) || Number.isFinite(rsInfo.rs60))) {
       const fmtRs = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%p`;
       const parts = [];
@@ -2124,16 +2122,12 @@ function updateUI(data, analysis, fxRate, stockName) {
       const primary = Number.isFinite(rsInfo.rs20) ? rsInfo.rs20 : rsInfo.rs60;
 
       let verdict = "시장과 비슷한 흐름";
-      if (primary >= 5) {
-        verdict = "시장 대비 아웃퍼폼";
-        rsEl.classList.add("rs-outperform");
-      } else if (primary <= -5) {
-        verdict = "시장 대비 언더퍼폼 — 개별 지표가 좋아도 주의";
-        rsEl.classList.add("rs-underperform");
-      }
-      rsEl.textContent = `지수 대비 상대강도: ${parts.join(" · ")} — ${verdict}`;
+      if (primary >= 5) verdict = "시장 대비 아웃퍼폼";
+      else if (primary <= -5) verdict = "시장 대비 언더퍼폼 — 개별 지표가 좋아도 주의";
+
+      rsEl.textContent = `${parts.join(" / ")} = ${verdict}`;
     } else {
-      rsEl.textContent = "";
+      rsEl.textContent = "데이터 부족";
     }
   }
 
@@ -2655,14 +2649,16 @@ function updateUI(data, analysis, fxRate, stockName) {
   const patternSummaryEl = $("pattern-summary-txt");
   if (patternSummaryEl) patternSummaryEl.textContent = summarizePattern(patterns, verdict);
 
-  // 마지막 분석 결과 저장
+  // 마지막 분석 결과 저장 (AI 서술 분석 요청 시 이 값을 그대로 서버에 전달)
   lastAnalysis = {
     data,
     analysis,
     fxRate,
     flowInfo,
     whyInfo,
-    patterns
+    patterns,
+    stockName,
+    supplyDemand: null
   };
 }
 
@@ -2962,6 +2958,10 @@ async function runAnalysisForTicker(rawSymbol) {
   // 🔹 새 실행 시: 이전 결과 카드 잠깐 숨기기
   hideResultCard();
 
+  // 새 종목 분석 시작 시 이전 티커의 AI 서술 분석 결과는 더 이상 유효하지 않으므로 숨김
+  const prevAiResult = $("ai-analysis-result");
+  if (prevAiResult) prevAiResult.classList.add("hidden");
+
   // 🔹 로딩 스피너 ON
   showLoading(true);
 
@@ -2993,7 +2993,10 @@ async function runAnalysisForTicker(rawSymbol) {
     const supplyKisBox = $("supply-kis-box");
     if (domestic) {
       if (supplyKisBox) supplyKisBox.classList.add("hidden");
-      fetchSupplyDemandComment(symbol).then(renderSupplyDemandBox);
+      fetchSupplyDemandComment(symbol).then((sdData) => {
+        renderSupplyDemandBox(sdData);
+        if (lastAnalysis) lastAnalysis.supplyDemand = sdData;
+      });
     } else if (supplyKisBox) {
       supplyKisBox.classList.add("hidden");
     }
@@ -3004,6 +3007,99 @@ async function runAnalysisForTicker(rawSymbol) {
   } finally {
     // 🔹 로딩 스피너 OFF
     showLoading(false);
+  }
+}
+
+// ===============================
+// 🤖 AI 서술 분석 (Phase 4) — 버튼 클릭 시에만 호출 (API 호출당 비용 발생하므로 자동 실행 안 함)
+// ===============================
+async function requestAiAnalysis() {
+  if (!lastAnalysis) {
+    showToast("먼저 티커를 검색해서 분석을 실행해 주세요.");
+    return;
+  }
+
+  const btn = $("ai-analyze-btn");
+  const resultBox = $("ai-analysis-result");
+  const txtEl = $("ai-analysis-txt");
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "🤖 분석 중...";
+  }
+
+  try {
+    const { data, analysis, patterns, stockName, supplyDemand } = lastAnalysis;
+    const verdict = computeVerdict(analysis);
+    const domestic = isDomesticTicker(data.symbol);
+
+    const payload = {
+      ticker: data.symbol,
+      displayName: stockName || data.symbol,
+      isDomestic: domestic,
+      price: analysis.price,
+      currency: domestic ? "KRW" : "USD",
+      score: analysis.score,
+      rank: analysis.rank,
+      verdict: {
+        tier: verdict.tier,
+        rrRaw: verdict.rrRaw,
+        upPctRaw: verdict.upPctRaw,
+        downPctRaw: verdict.downPctRaw
+      },
+      indicators: {
+        rsi: analysis.rsi,
+        rsiCross: analysis.rsiCross,
+        macd: analysis.macd,
+        macdSignal: analysis.macdSignal,
+        macdHistogram: analysis.macdHistogram,
+        macdCrossover: analysis.macdCrossover,
+        adx: analysis.adx,
+        plusDI: analysis.plusDI,
+        minusDI: analysis.minusDI,
+        atr: analysis.atr,
+        atrPct: analysis.atrPct,
+        volatility: analysis.volatility,
+        dailyChangePct: analysis.dailyChangePct,
+        volumeRatio: analysis.volumeRatio,
+        rsInfo: analysis.rsInfo
+      },
+      levels: {
+        support1: analysis.support1,
+        support2: analysis.support2,
+        resistance1: analysis.resistance1,
+        resistance2: analysis.resistance2,
+        target1: analysis.target1,
+        target2: analysis.target2,
+        stop: analysis.stop
+      },
+      patterns: (patterns || []).map((p) => ({
+        name: p.name,
+        strength: p.strength,
+        comment: p.comment
+      })),
+      supplyDemandText: supplyDemand && supplyDemand.outlook ? supplyDemand.outlook : null
+    };
+
+    const res = await fetch(`${API_BASE}/api/ai/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) throw new Error(`AI 분석 요청 실패 (status ${res.status})`);
+    const json = await res.json();
+
+    if (txtEl) txtEl.textContent = json.narrative || "분석 결과를 받아오지 못했습니다.";
+    if (resultBox) resultBox.classList.remove("hidden");
+  } catch (err) {
+    console.error("[RAVEN] AI 분석 오류:", err);
+    showToast("AI 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "🤖 AI 분석 요청";
+    }
   }
 }
 
@@ -3020,6 +3116,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const watchlistStarBtn = $("watchlist-toggle-btn");
   if (watchlistStarBtn) {
     watchlistStarBtn.addEventListener("click", toggleWatchlistForCurrentTicker);
+  }
+
+  // 🤖 AI 서술 분석 요청 버튼
+  const aiAnalyzeBtn = $("ai-analyze-btn");
+  if (aiAnalyzeBtn) {
+    aiAnalyzeBtn.addEventListener("click", requestAiAnalysis);
   }
 
   // 📑 상세 탭 (추세·모멘텀 / 수급 / 패턴·신호 / 실적)
