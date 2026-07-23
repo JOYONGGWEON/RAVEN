@@ -31,16 +31,16 @@ router.get("/prices", async (req, res) => {
 });
 
 // 종목 캔들(OHLCV) 차트 조회 (국내/해외 공용)
+// ⚠️ interval은 "1m"/"1d"만 지원 확인됨(다른 값은 API가 allowedValues로 알려줌).
+// 응답에 nextBefore 커서가 있어서 페이지네이션 파라미터(before 등)를 추정 테스트해봤으나
+// 어떤 이름으로 넘겨도 조용히 무시되고 최신 구간만 반환됨 — 여러 날치 1분봉을 이어붙여
+// 진짜 "60분봉"을 합성하는 건 현재 불가능함(app.js의 fetchIntradayCandles 참고).
 router.get("/candles", async (req, res) => {
   const { symbol, interval = "1d", count = 180 } = req.query;
   if (!symbol) return res.status(400).json({ error: "symbol query param required" });
 
   try {
-    const { ok, status, json } = await tossGet("/api/v1/candles", {
-      symbol,
-      interval,
-      count,
-    });
+    const { ok, status, json } = await tossGet("/api/v1/candles", { symbol, interval, count });
     if (!ok) return res.status(status).json(json);
     res.json(json);
   } catch (e) {

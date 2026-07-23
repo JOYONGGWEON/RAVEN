@@ -558,6 +558,58 @@ async function fetchBenchmarkData(domestic) {
   }
 }
 
+// 장중 초단기 흐름(1분봉, 최대 200개 ≈ 3~4시간) — 토스 캔들 API는 "1m"/"1d"만 지원하고
+// (다른 interval 값을 넣으면 API가 직접 allowedValues로 알려줌), 페이지네이션 커서도 확인되지
+// 않아 여러 날치 진짜 "60분봉"을 합성할 방법은 없음. 대신 가장 최근 1분봉 구간을 그대로 써서
+// "지금 장중 흐름이 일봉 추세와 같은 방향인지"를 보는 초단기 보조 지표로 활용함.
+// 실패해도(휴장/데이터 부족 등) 메인 분석은 그대로 진행 — 조용히 null 반환.
+async function fetchIntradayCandles(symbol) {
+  const finalUrl = `${API_BASE}/api/toss/candles?symbol=${encodeURIComponent(
+    symbol
+  )}&interval=1m&count=200`;
+
+  try {
+    const response = await fetch(finalUrl);
+    if (!response.ok) throw new Error("Network Error");
+    const json = await response.json();
+
+    const candles = json?.result?.candles;
+    if (!candles || candles.length < 30) throw new Error("Not enough intraday candles");
+
+    const chronological = [...candles].reverse();
+    const closes = [];
+    for (const c of chronological) {
+      const cl = Number(c.closePrice);
+      if (!Number.isNaN(cl)) closes.push(cl);
+    }
+    if (closes.length < 30) throw new Error("Not enough clean intraday closes");
+
+    return closes;
+  } catch (e) {
+    console.warn("[RAVEN] 장중 초단기 데이터 조회 실패:", e);
+    return null;
+  }
+}
+
+// 1분봉 종가 배열로 초단기 모멘텀 해석 — RSI(14, 1분봉 기준) + 구간 전반부 대비 후반부 가격 가속도
+function calcIntradayMomentum(closes) {
+  if (!Array.isArray(closes) || closes.length < 30) return null;
+
+  const n = closes.length;
+  const rsi = calcRSI_Wilder(closes, 14);
+
+  const half = Math.floor(n / 2);
+  const firstAvg = closes.slice(0, half).reduce((a, b) => a + b, 0) / half;
+  const secondAvg = closes.slice(half).reduce((a, b) => a + b, 0) / (n - half);
+  const changePct = firstAvg !== 0 ? ((secondAvg - firstAvg) / firstAvg) * 100 : 0;
+
+  let direction = "NEUTRAL";
+  if (changePct >= 0.3) direction = "UP";
+  else if (changePct <= -0.3) direction = "DOWN";
+
+  return { rsi, changePct, direction, minutes: n };
+}
+
 // 개별 종목 vs 벤치마크의 20일/60일 수익률 격차 — "시장 대비 잘 가는지"를 직접 비교
 // (예전엔 개별 종목 지표만 봐서, 업종/지수 전체가 빠지는 중에도 종목만 보고 좋다고 오판할 수 있었음)
 function calcRelativeStrength(stockData, benchmarkData) {
@@ -819,7 +871,38 @@ function calcMACDFull(closes) {
     else if (prevDiff >= 0 && currDiff < 0) crossover = "DEAD";
   }
 
-  return { macd, signal, histogram, crossover };
+  return { macd, signal, histogram, crossover, macdSeries };
+}
+
+// MACD 다이버전스 — 가격은 오르는데 MACD 모멘텀은 꺾이는(또는 그 반대) 구간 감지.
+// OBV 다이버전스와 같은 방식(구간 시작 vs 끝 비교)으로, MACD 라인 값 자체는 가격 스케일에 따라
+// 절대값이 들쭉날쭉해서 구간 내 값 범위 대비 상대적인 변화폭(%)으로 정규화함.
+function detectMacdDivergence(closes, macdSeries, lookback = 20) {
+  const n = closes.length;
+  if (!Array.isArray(macdSeries) || n < lookback + 1) return null;
+
+  const startIdx = n - 1 - lookback;
+  if (macdSeries[startIdx] == null || macdSeries[n - 1] == null) return null;
+
+  const priceStart = closes[startIdx];
+  const priceChangePct =
+    priceStart !== 0 ? ((closes[n - 1] - priceStart) / priceStart) * 100 : 0;
+
+  const macdSlice = macdSeries.slice(startIdx, n).filter((v) => v != null);
+  const macdRange = macdSlice.length
+    ? Math.max(...macdSlice) - Math.min(...macdSlice) || 1e-9
+    : 1e-9;
+  const macdDeltaPct =
+    ((macdSeries[n - 1] - macdSeries[startIdx]) / macdRange) * 100;
+
+  let divergence = "NONE";
+  if (priceChangePct >= 1.5 && macdDeltaPct <= -15) {
+    divergence = "BEARISH"; // 가격은 오르는데 MACD 모멘텀은 이미 꺾이는 중 — 상승 동력 약화
+  } else if (priceChangePct <= -1.5 && macdDeltaPct >= 15) {
+    divergence = "BULLISH"; // 가격은 빠지는데 MACD 모멘텀은 개선되는 중 — 하락 동력 약화
+  }
+
+  return { priceChangePct, macdDeltaPct, divergence, lookback };
 }
 
 // ATR(14, Wilder) — 변동성 기반 손절폭 계산용
@@ -905,16 +988,33 @@ function calcADX(highs, lows, closes, period = 14) {
   const validDx = dxList.filter((v) => v != null);
   if (validDx.length < period) return null;
 
+  // adxSeries를 남겨서 "지금 ADX가 몇인지"뿐 아니라 "최근 며칠 사이 강해지는지/약해지는지"도
+  // 판단할 수 있게 함 — 예전엔 마지막 값 하나만 남겨서 숫자가 같아도 강화/약화 국면을 구분 못 했음.
+  const adxSeries = [];
   let adx = validDx.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  adxSeries.push(adx);
   for (let i = period; i < validDx.length; i++) {
     adx = (adx * (period - 1) + validDx[i]) / period;
+    adxSeries.push(adx);
   }
 
   const lastTR = trSmoothed[trSmoothed.length - 1];
   const plusDI = (plusDMSmoothed[plusDMSmoothed.length - 1] / lastTR) * 100;
   const minusDI = (minusDMSmoothed[minusDMSmoothed.length - 1] / lastTR) * 100;
 
-  return { adx, plusDI, minusDI };
+  return { adx, plusDI, minusDI, adxSeries };
+}
+
+// ADX 시리즈로 "추세 강도가 강해지는 중인지 약해지는 중인지" 판단 —
+// ADX 숫자 자체는 25로 같아도, 15에서 올라오는 중인지 35에서 내려오는 중인지는 완전히 다른 국면임
+function detectAdxTrend(adxSeries, lookback = 5) {
+  if (!Array.isArray(adxSeries) || adxSeries.length < lookback + 1) return "FLAT";
+  const last = adxSeries[adxSeries.length - 1];
+  const prev = adxSeries[adxSeries.length - 1 - lookback];
+  const delta = last - prev;
+  if (delta >= 3) return "RISING";
+  if (delta <= -3) return "FALLING";
+  return "FLAT";
 }
 
 // ────────────────────────────────
@@ -959,10 +1059,12 @@ function clusterSwingLevels(levels, totalBars, tol = 0.03) {
   return clusters;
 }
 
-function pickSupportResistance(clusters, lastPrice, isSupport) {
-  const filtered = clusters.filter((c) =>
-    isSupport ? c.price < lastPrice : c.price > lastPrice
-  );
+function pickSupportResistance(clusters, lastPrice, isSupport, maxDistPct = 0.3) {
+  const filtered = clusters.filter((c) => {
+    if (isSupport ? c.price >= lastPrice : c.price <= lastPrice) return false;
+    const distPct = Math.abs(lastPrice - c.price) / lastPrice;
+    return distPct <= maxDistPct;
+  });
   if (!filtered.length) return [];
 
   filtered.sort((a, b) => b.score - a.score);
@@ -976,7 +1078,7 @@ function pickSupportResistance(clusters, lastPrice, isSupport) {
 }
 
 // 5. 지표 계산 엔진
-function analyzeData(data, benchmarkData) {
+function analyzeData(data, benchmarkData, intradayCloses) {
   const closes = data.closes;
   const highs = data.highs;
   const lows = data.lows;
@@ -986,6 +1088,7 @@ function analyzeData(data, benchmarkData) {
   const lastPrice = data.price || closes[n - 1];
 
   const rsInfo = benchmarkData ? calcRelativeStrength(data, benchmarkData) : null;
+  const intradayInfo = calcIntradayMomentum(intradayCloses);
 
   const ma5 = calcEMA(closes, 5);
   const ma20 = calcEMA(closes, 20);
@@ -1003,6 +1106,9 @@ function analyzeData(data, benchmarkData) {
   const macdSignal = macdFull ? macdFull.signal : null;
   const macdHistogram = macdFull ? macdFull.histogram : null;
   const macdCrossover = macdFull ? macdFull.crossover : "NONE";
+  const macdDivergence = macdFull
+    ? detectMacdDivergence(closes, macdFull.macdSeries, 20)
+    : null;
 
   const atr = calcATR(highs, lows, closes, 14);
   const atrPct = typeof atr === "number" && lastPrice > 0 ? (atr / lastPrice) * 100 : null;
@@ -1011,6 +1117,7 @@ function analyzeData(data, benchmarkData) {
   const adx = adxInfo ? adxInfo.adx : null;
   const plusDI = adxInfo ? adxInfo.plusDI : null;
   const minusDI = adxInfo ? adxInfo.minusDI : null;
+  const adxTrend = adxInfo ? detectAdxTrend(adxInfo.adxSeries) : "FLAT";
 
   let support1 = null;
   let support2 = null;
@@ -1051,11 +1158,21 @@ function analyzeData(data, benchmarkData) {
     const lowClusters = clusterSwingLevels(swingLows, n, swingTol);
     const highClusters = clusterSwingLevels(swingHighs, n, swingTol);
 
-    const supportLevels = pickSupportResistance(lowClusters, lastPrice, true);
+    // 지지/저항 후보의 최대 허용 거리 — 예전엔 터치 횟수(score)만으로 순위를 매겨서,
+    // 몇 달 전 오래된 고점/저점이 지금 가격과 20~50%+ 떨어져 있어도 "1차/2차"로 뽑히는 문제가 있었음
+    // (실제로 재현: 지지 -20.6%, 저항 +56.2% 같은 비현실적인 레벨이 나온 걸 확인함).
+    // ATR% 기반으로 "지금 실제로 의미 있는 거리"만 후보로 남기고, 그 안에 없으면 그냥 없는 걸로 처리
+    // (아래 60봉 fallback 로직이 대신 더 가까운 값을 잡아줌).
+    const srMaxDist = Number.isFinite(atrPct)
+      ? Math.max(0.12, Math.min(0.3, (atrPct * 6) / 100))
+      : 0.18;
+
+    const supportLevels = pickSupportResistance(lowClusters, lastPrice, true, srMaxDist);
     const resistanceLevels = pickSupportResistance(
       highClusters,
       lastPrice,
-      false
+      false,
+      srMaxDist
     );
 
     if (supportLevels.length > 0) support1 = supportLevels[0].price;
@@ -1066,18 +1183,25 @@ function analyzeData(data, benchmarkData) {
 
     // 오늘 봉 자체는 제외하고 계산 — 포함시키면 급등일에 "저항선"이 오늘 자신의 고점이 되어
     // 목표가가 현재가보다 낮게 나오는 모순이 생김 (실제로 재현되는 걸 확인하고 고침)
+    //
+    // ⚠️ 이 fallback도 위 클러스터링 픽과 똑같이 srMaxDist(최대 허용 거리)를 적용해야 함 —
+    // 처음엔 클러스터링 쪽만 고쳤는데, 실제 종목(삼성전기)에서 60봉 최고가가 현재가 대비 +64%나
+    // 떨어져 있는데도 그대로 저항선/목표가로 잡히는 게 재현됨. 여기서도 벗어나면 그냥 null로 두고
+    // 아래 ATR 기반 R:R 배수 fallback이 대신 잡도록 함.
     if (support1 === null) {
       const recentLows = lows.slice(Math.max(0, n - 60), n - 1);
       if (recentLows.length) {
         const minLow = Math.min(...recentLows);
-        if (minLow < lastPrice) support1 = minLow;
+        const distPct = (lastPrice - minLow) / lastPrice;
+        if (minLow < lastPrice && distPct <= srMaxDist) support1 = minLow;
       }
     }
     if (resistance1 === null) {
       const recentHighs = highs.slice(Math.max(0, n - 60), n - 1);
       if (recentHighs.length) {
         const maxHigh = Math.max(...recentHighs);
-        if (maxHigh > lastPrice) resistance1 = maxHigh;
+        const distPct = (maxHigh - lastPrice) / lastPrice;
+        if (maxHigh > lastPrice && distPct <= srMaxDist) resistance1 = maxHigh;
       }
     }
   }
@@ -1239,12 +1363,15 @@ function analyzeData(data, benchmarkData) {
     macdSignal,
     macdHistogram,
     macdCrossover,
+    macdDivergence,
     atr,
     atrPct,
     adx,
     plusDI,
     minusDI,
+    adxTrend,
     rsInfo,
+    intradayInfo,
     score,
     rank,
     support1,
@@ -1466,7 +1593,7 @@ function computeVerdict(analysis) {
 // 이 요약들은 "추세는/수급은/패턴은 각각 어떤 쪽을 가리키는가"를 답하는 역할 분담.
 // ────────────────────────────────
 function summarizeTrendMomentum(analysis) {
-  const { ma20, ma60, ma120, rsi, macd, adx, rsiCross, macdCrossover, rsInfo } = analysis;
+  const { ma20, ma60, ma120, rsi, macd, adx, adxTrend, rsiCross, macdCrossover, rsInfo, macdDivergence, intradayInfo } = analysis;
 
   let bullPoints = 0;
   let bearPoints = 0;
@@ -1500,12 +1627,48 @@ function summarizeTrendMomentum(analysis) {
         ? "추세 강도(ADX)까지 뚜렷해 신뢰도가 높은 신호입니다."
         : "다만 ADX 기준 추세 강도는 약해 큰 확신을 갖기는 이릅니다."
     );
+    // ADX 값 자체보다 방향(강화/약화)이 다른 신호를 줄 때만 추가로 언급 —
+    // 예: 숫자는 낮아도(약함) 최근 올라오는 중이면 추세가 막 시작되는 신호일 수 있음
+    if (adxTrend === "RISING" && adx < 25) {
+      bullets.push("다만 ADX가 최근 상승 중이라, 추세가 이제 막 형성되기 시작하는 초기 국면일 수 있습니다.");
+    } else if (adxTrend === "FALLING" && adx >= 25) {
+      bullets.push("다만 ADX가 최근 하락 중이라, 뚜렷했던 추세 강도가 식어가고 있을 가능성이 있습니다.");
+    }
   }
 
   if (macdCrossover === "GOLDEN") bullets.push("MACD 골든크로스도 함께 발생했습니다.");
   else if (macdCrossover === "DEAD") bullets.push("MACD 데드크로스도 함께 발생했습니다.");
   else if (rsiCross === "BUY") bullets.push("RSI가 과매도 구간을 막 벗어났습니다.");
   else if (rsiCross === "SELL") bullets.push("RSI가 과열 구간에서 이탈했습니다.");
+
+  if (macdDivergence && macdDivergence.divergence === "BEARISH") {
+    bullets.push("다만 MACD 약세 다이버전스가 나와, 상승 동력이 소진되고 있을 가능성도 함께 감안해야 합니다.");
+  } else if (macdDivergence && macdDivergence.divergence === "BULLISH") {
+    bullets.push("MACD 강세 다이버전스도 감지되어, 하락 동력이 약해지고 있을 가능성이 있습니다.");
+  }
+
+  // 장중 초단기(1분봉 기준) 흐름 — 일봉 추세와 같은 방향인지 엇갈리는지 확인
+  // (토스 API가 60분봉을 지원하지 않아 1분봉 최근 구간으로 대체 — app.js 상단 fetchIntradayCandles 참고)
+  if (intradayInfo) {
+    const dailyUp = verdictWord === "상승 우위";
+    const dailyDown = verdictWord === "하락 우위";
+
+    if (intradayInfo.direction === "UP" && dailyDown) {
+      bullets.push(
+        `다만 장중(최근 약 ${intradayInfo.minutes}분, 1분봉 기준) 흐름은 반등 시도 중이라 일봉 추세와 엇갈립니다 — 단기 눌림/저점 매수 시그널일 수 있으니 확인이 필요합니다.`
+      );
+    } else if (intradayInfo.direction === "DOWN" && dailyUp) {
+      bullets.push(
+        `다만 장중(최근 약 ${intradayInfo.minutes}분, 1분봉 기준) 흐름은 눌리는 중이라 일봉 추세와 엇갈립니다 — 단기 조정 가능성을 함께 감안해야 합니다.`
+      );
+    } else if (intradayInfo.direction === "UP" || intradayInfo.direction === "DOWN") {
+      bullets.push(
+        `장중(최근 약 ${intradayInfo.minutes}분, 1분봉 기준) 흐름도 일봉 추세와 같은 방향으로 진행 중입니다(1분봉 RSI ${intradayInfo.rsi.toFixed(
+          1
+        )}).`
+      );
+    }
+  }
 
   return bullets;
 }
@@ -1548,6 +1711,24 @@ function renderBulletList(el, bullets) {
     li.textContent = line;
     el.appendChild(li);
   });
+}
+
+// 지표 박스(RSI/MACD/ADX/ATR/RS) 값 줄을 "숫자값" + "▶ 해석" 두 줄로 분리 렌더링
+function setIndicatorBox(el, valueText, interpText) {
+  if (!el) return;
+  el.innerHTML = "";
+
+  const valueSpan = document.createElement("span");
+  valueSpan.className = "indicator-value";
+  valueSpan.textContent = valueText;
+  el.appendChild(valueSpan);
+
+  if (interpText) {
+    const interpSpan = document.createElement("span");
+    interpSpan.className = "indicator-interp";
+    interpSpan.textContent = `▶ ${interpText}`;
+    el.appendChild(interpSpan);
+  }
 }
 
 // 4) 캔들 패턴 인식 (12종 확장)
@@ -1692,6 +1873,28 @@ function detectCandlePatterns(data, analysis) {
         strength: 1,
         comment:
           "시가와 종가가 거의 같은 십자형 캔들로, 매수·매도 힘이 팽팽하게 맞선 변곡 신호입니다. 이후 봉의 방향성이 중요합니다."
+      });
+    }
+  }
+
+  // 4-5-1) Doji 반전 확인 — 어제 방향성 없는 Doji가 나온 뒤, 오늘 그 레인지를 상당폭 뛰어넘는
+  // 확실한 방향성 캔들이 나오면 "관망(도지)"이 끝나고 다음 파동이 시작됐다고 볼 수 있는 확인 패턴.
+  // 예전엔 Doji 자체는 당일 하나만 보고 판정해서, 다음날 확인 캔들이 나와도 아무 신호가 안 잡혔음.
+  const isDoji1 = body1 / (range1 || 1e-9) < 0.1;
+  if (isDoji1 && bodyRatio > 0.5 && body > range1 * 0.8) {
+    if (isBull) {
+      patterns.push({
+        name: "Doji 반전 확인(상승)",
+        strength: 4,
+        comment:
+          "전일 방향성 없는 Doji 이후, 오늘 그 범위를 상당폭 뛰어넘는 강한 양봉이 나와 매수 우위로 방향이 확인된 패턴입니다."
+      });
+    } else if (isBear) {
+      patterns.push({
+        name: "Doji 반전 확인(하락)",
+        strength: 4,
+        comment:
+          "전일 방향성 없는 Doji 이후, 오늘 그 범위를 상당폭 뛰어넘는 강한 음봉이 나와 매도 우위로 방향이 확인된 패턴입니다."
       });
     }
   }
@@ -2050,6 +2253,7 @@ function updateUI(data, analysis, fxRate, stockName) {
     adx,
     plusDI,
     minusDI,
+    adxTrend,
     atr,
     atrPct,
     rsInfo
@@ -2140,9 +2344,9 @@ function updateUI(data, analysis, fxRate, stockName) {
       if (primary >= 5) verdict = "시장 대비 아웃퍼폼";
       else if (primary <= -5) verdict = "시장 대비 언더퍼폼 — 개별 지표가 좋아도 주의";
 
-      rsEl.textContent = `${parts.join(" / ")} → ${verdict}`;
+      setIndicatorBox(rsEl, parts.join(" / "), verdict);
     } else {
-      rsEl.textContent = "데이터 부족";
+      setIndicatorBox(rsEl, "데이터 부족");
     }
   }
 
@@ -2175,6 +2379,15 @@ function updateUI(data, analysis, fxRate, stockName) {
         `RSI ${rsi.toFixed(
           1
         )}로 모멘텀은 중립 구간입니다. 뚜렷한 과열/과매도 신호보다는 추세와 지지·저항에서 방향성을 확인하는 편이 좋습니다.`;
+    }
+
+    // MACD 다이버전스 — 가격과 모멘텀 지표가 서로 다른 말을 하는 구간이라 별도로 경고
+    if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BEARISH") {
+      txt +=
+        ` 최근 ${analysis.macdDivergence.lookback}일간 가격은 올랐지만 MACD 모멘텀은 오히려 꺾이는 약세 다이버전스가 나타나, 상승 동력이 소진되고 있을 가능성이 있습니다.`;
+    } else if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BULLISH") {
+      txt +=
+        ` 최근 ${analysis.macdDivergence.lookback}일간 가격은 빠졌지만 MACD 모멘텀은 오히려 개선되는 강세 다이버전스가 나타나, 하락 동력이 약해지고 있을 가능성이 있습니다.`;
     }
 
     momentumEl.textContent = txt;
@@ -2292,19 +2505,13 @@ function updateUI(data, analysis, fxRate, stockName) {
     waveEl.textContent = detail;
   }
 
-  // ==== Supply: 수급 + 왜 오늘 이런 흐름인가 ====
+  // ==== Supply: 오늘 캔들·거래량 기준 매수/매도 압력 해석 ====
+  // 예전엔 여기에 calcWhyTodaySignal(왜 오늘 이런 흐름인가 — "이벤트/맥락 측면")까지 합쳐서 보여줬는데,
+  // ①"이벤트/맥락"이라는 말 자체가 무슨 뜻인지 알기 어렵고 ②평이한 날엔 "평범한 범위 안"이라는
+  // 사실상 빈 내용이 대부분이라 오히려 수급 탭이 부실해 보인다는 피드백을 받아 제거함.
+  // 특이하게 강한 재료/악재 가능성이 있을 때만 신호(signal-txt) 쪽에 짧게 덧붙이도록 이동함.
   if (supplyEl) {
-    const { flowLabel, flowNote } = flowInfo;
-    const { whyLabel, whyNote } = whyInfo;
-
-    let txt =
-      `[${flowLabel}] · [${whyLabel}] ` +
-      "두 관점을 합쳐보면, 오늘 흐름은 다음과 같이 정리할 수 있습니다.\n\n";
-
-    txt += `① 수급 측면: ${flowNote}\n\n`;
-    txt += `② 이벤트/맥락 측면: ${whyNote}`;
-
-    supplyEl.textContent = txt;
+    supplyEl.textContent = flowInfo.flowNote;
   }
 
   // ==== OBV: 최근 10일 누적 거래량 vs 가격 다이버전스 ====
@@ -2362,7 +2569,7 @@ function updateUI(data, analysis, fxRate, stockName) {
 
   // ==== Signal: 패턴 + 파동 + 수급 종합 ====
   if (signalEl) {
-    const { flowType, flowLabel } = flowInfo;
+    const { flowType } = flowInfo;
     const top = patterns && patterns[0] ? patterns[0] : null;
     const topName = top ? top.name : null;
     const isDojiLike =
@@ -2379,7 +2586,7 @@ function updateUI(data, analysis, fxRate, stockName) {
         txt =
           `지지선(${s1.toFixed(
             2
-          )}) 바로 위에서 ${topName} 패턴과 함께 [${flowLabel}] 수급이 나온 상태입니다.\n\n` +
+          )}) 바로 위에서 ${topName} 패턴이 나타난 상태입니다.\n\n` +
           "● 시나리오 1) 지지선 위 양봉 마감 → 지지선 방어 확인 + 반등 시그널 강화\n" +
           "   → 다음 캔들이 지지선 위에서 중/장대 양봉으로 마감하면, 단기 반등 파동이 시작될 가능성이 큽니다.\n\n" +
           "● 시나리오 2) 지지선 이탈 음봉 마감 → 반등 실패 + 하락 파동 재개\n" +
@@ -2388,7 +2595,7 @@ function updateUI(data, analysis, fxRate, stockName) {
         txt =
           `저항선(${r1.toFixed(
             2
-          )}) 바로 아래에서 ${topName} 패턴이 출현했고, 수급은 [${flowLabel}] 상태입니다.\n\n` +
+          )}) 바로 아래에서 ${topName} 패턴이 출현했습니다.\n\n` +
           "● 시나리오 1) 저항 돌파 양봉 마감 → 추세 연장/상단 돌파 신호\n" +
           "   → 다음 캔들이 저항선을 명확히 돌파한 양봉이면, 돌파 후 눌림 구간까지 단기 추세 추종 전략이 유리할 수 있습니다.\n\n" +
           "● 시나리오 2) 저항 맞고 음봉 마감 → 피크 아웃·조정 가능성\n" +
@@ -2402,8 +2609,8 @@ function updateUI(data, analysis, fxRate, stockName) {
       }
     } else {
       const baseIntro = topName
-        ? `대표 패턴 [${topName}]과(와) [${flowLabel}] 수급이 동시에 관찰됩니다. `
-        : `[${flowLabel}] 수급을 기준으로 파동과 지지·저항을 종합 평가합니다. `;
+        ? `대표 패턴 [${topName}]을 기준으로 파동과 지지·저항을 종합 평가합니다. `
+        : "수급 탭의 흐름을 참고해 파동과 지지·저항을 종합 평가합니다. ";
 
       txt = baseIntro + "\n\n";
 
@@ -2453,6 +2660,14 @@ function updateUI(data, analysis, fxRate, stockName) {
           )}%)로 계산됩니다. ` +
           "손절 폭 대비 기대 수익이 충분히 유리한지(≥ 1.5:1)를 기준으로 진입 여부를 판단하는 것을 권장합니다.";
       }
+    }
+
+    // 오늘 변동이 단순 일상적 수급이 아니라 실제 재료(뉴스/이벤트)가 있었을 가능성이 높을 때만
+    // 짧게 덧붙임 — "평이한 세션" 같은 평범한 날까지 매번 언급하면 내용 없는 문장만 늘어나서
+    // 특이한 날에만 노출되도록 제한함 (예전엔 이 판단이 수급 탭에 "이벤트/맥락 측면"이라는
+    // 불명확한 이름으로 항상 붙어 있어서 무슨 뜻인지 알기 어렵고 중복도 심했음).
+    if (whyInfo.whyLabel === "강한 재료 가능성" || whyInfo.whyLabel === "악재/청산 가능성") {
+      txt += `\n\n📰 ${whyInfo.whyNote}`;
     }
 
     signalEl.textContent = txt;
@@ -2613,9 +2828,9 @@ function updateUI(data, analysis, fxRate, stockName) {
       if (analysis.rsiCross === "BUY") crossTxt = " · 과매도 탈출(반등 신호)";
       else if (analysis.rsiCross === "SELL") crossTxt = " · 과열 이탈(조정 신호)";
 
-      rsiBox.textContent = `${rsi.toFixed(1)} → ${rsiNote}${crossTxt}`;
+      setIndicatorBox(rsiBox, rsi.toFixed(1), `${rsiNote}${crossTxt}`);
     } else {
-      rsiBox.textContent = "데이터 부족";
+      setIndicatorBox(rsiBox, "데이터 부족");
     }
   }
 
@@ -2625,11 +2840,12 @@ function updateUI(data, analysis, fxRate, stockName) {
       let crossTxt = "";
       if (analysis.macdCrossover === "GOLDEN") crossTxt = " · 골든크로스(매수 신호)";
       else if (analysis.macdCrossover === "DEAD") crossTxt = " · 데드크로스(매도 신호)";
-      macdBox.textContent = `${
+      const macdValueText = `${
         analysis.macd >= 0 ? "+" : ""
-      }${analysis.macd.toFixed(3)} → ${dir}${crossTxt}`;
+      }${analysis.macd.toFixed(3)}`;
+      setIndicatorBox(macdBox, macdValueText, `${dir}${crossTxt}`);
     } else {
-      macdBox.textContent = "데이터 부족";
+      setIndicatorBox(macdBox, "데이터 부족");
     }
   }
 
@@ -2643,18 +2859,30 @@ function updateUI(data, analysis, fxRate, stockName) {
       if (typeof plusDI === "number" && typeof minusDI === "number") {
         diTxt = plusDI > minusDI ? ", DI+ 우위" : ", DI- 우위";
       }
-      adxBox.textContent = `${adx.toFixed(1)} → 추세 ${strengthNote}${diTxt}`;
+      // ADX 숫자가 같아도 강해지는 중인지 약해지는 중인지에 따라 의미가 다름
+      // (예: 15→25는 추세가 막 시작되는 신호, 35→25는 추세가 식어가는 신호 — 둘 다 "25"지만 정반대 국면)
+      let adxTrendTxt = "";
+      if (adxTrend === "RISING") adxTrendTxt = ", 강도 강화 중";
+      else if (adxTrend === "FALLING") adxTrendTxt = ", 강도 약화 중";
+      setIndicatorBox(adxBox, adx.toFixed(1), `추세 ${strengthNote}${diTxt}${adxTrendTxt}`);
     } else {
-      adxBox.textContent = "데이터 부족";
+      setIndicatorBox(adxBox, "데이터 부족");
     }
   }
 
   if (atrBox) {
     if (typeof atr === "number") {
       const atrPctTxt = typeof atrPct === "number" ? ` (${atrPct.toFixed(1)}%)` : "";
-      atrBox.textContent = `${formatPrice(atr)}${atrPctTxt} → 손절폭 산정 기준`;
+      // 20일 변동성(volatility)은 RAVEN SCORE에 감점/가점으로 이미 반영되고 있는데
+      // 정작 화면 어디에도 안 보여서 "왜 이 종목만 점수가 깎였는지" 알 수 없었음 — 여기 노출.
+      let volTxt = "";
+      if (typeof volatility === "number") {
+        if (volatility > 6) volTxt = " · 20일 변동성 높음(점수 감점 요인)";
+        else if (volatility > 0 && volatility < 2) volTxt = " · 20일 변동성 매우 낮음(점수 감점 요인)";
+      }
+      setIndicatorBox(atrBox, `${formatPrice(atr)}${atrPctTxt}`, `손절폭 산정 기준${volTxt}`);
     } else {
-      atrBox.textContent = "데이터 부족";
+      setIndicatorBox(atrBox, "데이터 부족");
     }
   }
 
@@ -2986,14 +3214,15 @@ async function runAnalysisForTicker(rawSymbol) {
     const domestic = isDomesticTicker(symbol);
     // 벤치마크(RS 비교용)도 여기서 같이 병렬 조회 — RS가 이제 RAVEN SCORE 계산에 직접 들어가서
     // analyzeData()가 실행되기 전에 준비돼 있어야 함 (예전엔 렌더링 끝난 뒤 텍스트만 나중에 덧붙였음)
-    const [data, fxRate, stockName, benchmarkData] = await Promise.all([
+    const [data, fxRate, stockName, benchmarkData, intradayCloses] = await Promise.all([
       fetchStockData(symbol),
       fetchFxRate(),
       domestic ? fetchDomesticStockName(symbol) : fetchOverseasStockName(symbol),
-      fetchBenchmarkData(domestic)
+      fetchBenchmarkData(domestic),
+      fetchIntradayCandles(symbol)
     ]);
 
-    const analysis = analyzeData(data, benchmarkData);
+    const analysis = analyzeData(data, benchmarkData, intradayCloses);
     updateUI(data, analysis, fxRate, stockName);
     updateWatchlistStarState();
 

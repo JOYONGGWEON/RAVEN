@@ -656,10 +656,23 @@ body.raven-result-bg {
 
 .indicator-box p {
   margin: 0;
-  font-size: 1rem;
-  font-weight: 700;
-  line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.indicator-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.3;
   color: #f1f5f9;
+}
+
+.indicator-interp {
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--text-sub);
 }
 
 /* 탭 하단 종합 요약 — 노란색으로 "여러 해석을 합쳤을 때의 결론"임을 표시 */
