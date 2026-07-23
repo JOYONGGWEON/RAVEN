@@ -1,5 +1,5 @@
 // =======================
-// RAVEN v6.6 - Pattern / Signal / Target / Chart 통합 버전
+// RAVEN v7.0 - Pattern / Signal / Target / Chart 통합 버전
 // =======================
 
 // Trend / Momentum / Vol / R:R 카테고리 상태 (추후 버튼화용)
@@ -7,8 +7,13 @@ let activeCategory = "trend";
 
 // 1. 설정
 // corsproxy.io 공개 프록시 의존 제거 — 이제 백엔드 서버가 Yahoo Finance를 직접 호출함.
-// TODO: Render 배포 후 실제 서버 주소로 교체
-const API_BASE = "http://localhost:3001";
+// 로컬(localhost/127.0.0.1)에서 열면 로컬 백엔드를, GitHub Pages 등 배포된 곳에서 열면
+// Render 백엔드를 자동으로 쓰도록 분기 — 정적 사이트라 빌드 시점 환경변수 주입이 없어서
+// 접속 호스트로 판단함.
+const API_BASE =
+  window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "http://localhost:3001"
+    : "https://raven-backend-z5uc.onrender.com";
 
 // FX 캐시 & 마지막 분석 결과(포지션 계산용)
 let fxRateKRW = null;

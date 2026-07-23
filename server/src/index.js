@@ -15,7 +15,24 @@ const { startScheduler } = require("./scheduler");
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors({ origin: process.env.FRONTEND_ORIGIN || "*" }));
+// FRONTEND_ORIGIN은 콤마로 여러 origin을 받을 수 있음 (로컬 개발용 localhost:5500 +
+// 실제 배포된 GitHub Pages 주소를 동시에 허용하기 위함)
+const allowedOrigins = (process.env.FRONTEND_ORIGIN || "*")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin:
+      allowedOrigins.includes("*")
+        ? "*"
+        : (origin, callback) => {
+            if (!origin || allowedOrigins.includes(origin)) callback(null, true);
+            else callback(new Error("Not allowed by CORS"));
+          },
+  })
+);
 app.use(express.json());
 
 app.get("/health", (req, res) => res.json({ ok: true }));
