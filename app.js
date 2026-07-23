@@ -1492,36 +1492,37 @@ function summarizeTrendMomentum(analysis) {
   if (bullPoints - bearPoints >= 2) verdictWord = "상승 우위";
   else if (bearPoints - bullPoints >= 2) verdictWord = "하락 우위";
 
-  let txt = `종합하면 추세·모멘텀은 ${verdictWord} 구간입니다.`;
+  const bullets = [`추세·모멘텀은 ${verdictWord} 구간입니다.`];
 
   if (typeof adx === "number") {
-    txt +=
+    bullets.push(
       adx >= 25
-        ? " 추세 강도(ADX)까지 뚜렷해 신뢰도가 높은 신호입니다."
-        : " 다만 ADX 기준 추세 강도는 약해 큰 확신을 갖기는 이릅니다.";
+        ? "추세 강도(ADX)까지 뚜렷해 신뢰도가 높은 신호입니다."
+        : "다만 ADX 기준 추세 강도는 약해 큰 확신을 갖기는 이릅니다."
+    );
   }
 
-  if (macdCrossover === "GOLDEN") txt += " MACD 골든크로스도 함께 발생했습니다.";
-  else if (macdCrossover === "DEAD") txt += " MACD 데드크로스도 함께 발생했습니다.";
-  else if (rsiCross === "BUY") txt += " RSI가 과매도 구간을 막 벗어났습니다.";
-  else if (rsiCross === "SELL") txt += " RSI가 과열 구간에서 이탈했습니다.";
+  if (macdCrossover === "GOLDEN") bullets.push("MACD 골든크로스도 함께 발생했습니다.");
+  else if (macdCrossover === "DEAD") bullets.push("MACD 데드크로스도 함께 발생했습니다.");
+  else if (rsiCross === "BUY") bullets.push("RSI가 과매도 구간을 막 벗어났습니다.");
+  else if (rsiCross === "SELL") bullets.push("RSI가 과열 구간에서 이탈했습니다.");
 
-  return txt;
+  return bullets;
 }
 
 function summarizeSupply(flowInfo) {
   const { flowLabel, obvInfo } = flowInfo;
-  let txt = `종합하면 수급은 [${flowLabel}] 상태입니다.`;
+  const bullets = [`수급은 [${flowLabel}] 상태입니다.`];
 
   if (obvInfo && obvInfo.divergence === "BEARISH") {
-    txt += " 다만 최근 10일 OBV 다이버전스가 나와, 상승 동력이 약해지고 있을 가능성을 함께 감안해야 합니다.";
+    bullets.push("다만 최근 10일 OBV 다이버전스가 나와, 상승 동력이 약해지고 있을 가능성을 함께 감안해야 합니다.");
   } else if (obvInfo && obvInfo.divergence === "BULLISH") {
-    txt += " 최근 10일 OBV 기준으로는 저점 매집 신호도 함께 감지됩니다.";
+    bullets.push("최근 10일 OBV 기준으로는 저점 매집 신호도 함께 감지됩니다.");
   } else if (obvInfo) {
-    txt += " 최근 10일 누적 수급(OBV) 방향도 대체로 같은 쪽을 가리키고 있습니다.";
+    bullets.push("최근 10일 누적 수급(OBV) 방향도 대체로 같은 쪽을 가리키고 있습니다.");
   }
 
-  return txt;
+  return bullets;
 }
 
 function summarizePattern(patterns, verdict) {
@@ -1530,9 +1531,23 @@ function summarizePattern(patterns, verdict) {
     verdict.tier === "BUY" ? "매수 우위" : verdict.tier === "SELL" ? "매도 신중" : "중립·관망";
 
   if (top) {
-    return `종합하면 대표 패턴은 [${top.name}]이고, R:R 기준 판정은 [${tierWord}]입니다. 패턴과 R:R이 같은 방향을 가리키는지 함께 확인하는 것이 좋습니다.`;
+    return [
+      `대표 패턴은 [${top.name}]이고, R:R 기준 판정은 [${tierWord}]입니다.`,
+      "패턴과 R:R이 같은 방향을 가리키는지 함께 확인하는 것이 좋습니다."
+    ];
   }
-  return `뚜렷한 캔들 패턴은 감지되지 않았고, R:R 기준 판정은 [${tierWord}]입니다.`;
+  return [`뚜렷한 캔들 패턴은 감지되지 않았고, R:R 기준 판정은 [${tierWord}]입니다.`];
+}
+
+// 탭 하단 종합 요약(불릿 리스트)을 <ul> 요소에 렌더링
+function renderBulletList(el, bullets) {
+  if (!el) return;
+  el.innerHTML = "";
+  (bullets || []).forEach((line) => {
+    const li = document.createElement("li");
+    li.textContent = line;
+    el.appendChild(li);
+  });
 }
 
 // 4) 캔들 패턴 인식 (12종 확장)
@@ -2125,7 +2140,7 @@ function updateUI(data, analysis, fxRate, stockName) {
       if (primary >= 5) verdict = "시장 대비 아웃퍼폼";
       else if (primary <= -5) verdict = "시장 대비 언더퍼폼 — 개별 지표가 좋아도 주의";
 
-      rsEl.textContent = `${parts.join(" / ")} = ${verdict}`;
+      rsEl.textContent = `${parts.join(" / ")} → ${verdict}`;
     } else {
       rsEl.textContent = "데이터 부족";
     }
@@ -2320,7 +2335,7 @@ function updateUI(data, analysis, fxRate, stockName) {
   }
 
   const supplySummaryEl = $("supply-summary-txt");
-  if (supplySummaryEl) supplySummaryEl.textContent = summarizeSupply(flowInfo);
+  renderBulletList(supplySummaryEl, summarizeSupply(flowInfo));
 
   // ==== Pattern 카드 ====
   if (patternEl) {
@@ -2598,7 +2613,7 @@ function updateUI(data, analysis, fxRate, stockName) {
       if (analysis.rsiCross === "BUY") crossTxt = " · 과매도 탈출(반등 신호)";
       else if (analysis.rsiCross === "SELL") crossTxt = " · 과열 이탈(조정 신호)";
 
-      rsiBox.textContent = `${rsi.toFixed(1)} = ${rsiNote}${crossTxt}`;
+      rsiBox.textContent = `${rsi.toFixed(1)} → ${rsiNote}${crossTxt}`;
     } else {
       rsiBox.textContent = "데이터 부족";
     }
@@ -2612,7 +2627,7 @@ function updateUI(data, analysis, fxRate, stockName) {
       else if (analysis.macdCrossover === "DEAD") crossTxt = " · 데드크로스(매도 신호)";
       macdBox.textContent = `${
         analysis.macd >= 0 ? "+" : ""
-      }${analysis.macd.toFixed(3)} = ${dir}${crossTxt}`;
+      }${analysis.macd.toFixed(3)} → ${dir}${crossTxt}`;
     } else {
       macdBox.textContent = "데이터 부족";
     }
@@ -2628,7 +2643,7 @@ function updateUI(data, analysis, fxRate, stockName) {
       if (typeof plusDI === "number" && typeof minusDI === "number") {
         diTxt = plusDI > minusDI ? ", DI+ 우위" : ", DI- 우위";
       }
-      adxBox.textContent = `${adx.toFixed(1)} = 추세 ${strengthNote}${diTxt}`;
+      adxBox.textContent = `${adx.toFixed(1)} → 추세 ${strengthNote}${diTxt}`;
     } else {
       adxBox.textContent = "데이터 부족";
     }
@@ -2637,17 +2652,17 @@ function updateUI(data, analysis, fxRate, stockName) {
   if (atrBox) {
     if (typeof atr === "number") {
       const atrPctTxt = typeof atrPct === "number" ? ` (${atrPct.toFixed(1)}%)` : "";
-      atrBox.textContent = `${formatPrice(atr)}${atrPctTxt} = 손절폭 산정 기준`;
+      atrBox.textContent = `${formatPrice(atr)}${atrPctTxt} → 손절폭 산정 기준`;
     } else {
       atrBox.textContent = "데이터 부족";
     }
   }
 
   const trendSummaryEl = $("trend-summary-txt");
-  if (trendSummaryEl) trendSummaryEl.textContent = summarizeTrendMomentum(analysis);
+  renderBulletList(trendSummaryEl, summarizeTrendMomentum(analysis));
 
   const patternSummaryEl = $("pattern-summary-txt");
-  if (patternSummaryEl) patternSummaryEl.textContent = summarizePattern(patterns, verdict);
+  renderBulletList(patternSummaryEl, summarizePattern(patterns, verdict));
 
   // 마지막 분석 결과 저장 (AI 서술 분석 요청 시 이 값을 그대로 서버에 전달)
   lastAnalysis = {
@@ -2795,10 +2810,12 @@ function renderSupplyDemandBox(data) {
 
   box.classList.remove("hidden");
 
-  // 전일 수급(KIS)은 메인 렌더링보다 늦게 도착하므로, 이미 채워진 수급 종합 문장에 덧붙임
+  // 전일 수급(KIS)은 메인 렌더링보다 늦게 도착하므로, 이미 채워진 수급 종합 리스트에 항목 추가
   const supplySummaryEl = $("supply-summary-txt");
   if (supplySummaryEl && data.outlook) {
-    supplySummaryEl.textContent += ` 전일 프로그램매매·공매도·신용·대차 기준 코멘트: "${data.outlook}"`;
+    const li = document.createElement("li");
+    li.textContent = `전일 프로그램매매·공매도·신용·대차 기준 코멘트: "${data.outlook}"`;
+    supplySummaryEl.appendChild(li);
   }
 }
 

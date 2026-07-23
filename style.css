@@ -637,9 +637,21 @@ body.raven-result-bg {
 
 .indicator-box h4 {
   margin: 0 0 0.55rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.indicator-title {
   font-size: 0.86rem;
   font-weight: 700;
   color: #cbd5f5;
+}
+
+.indicator-sub {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-sub);
 }
 
 .indicator-box p {
@@ -660,9 +672,23 @@ body.raven-result-bg {
   color: var(--macro-note);
 }
 
-.tab-summary-box p {
+.tab-summary-box ul {
+  margin: 0;
+  padding-left: 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.tab-summary-box li {
   color: var(--macro-note);
   font-weight: 700;
+  font-size: 1.02rem;
+  line-height: 1.5;
+}
+
+.tab-summary-box li::marker {
+  color: var(--macro-note);
 }
 
 
