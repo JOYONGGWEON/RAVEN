@@ -372,17 +372,11 @@ async function fetchDomesticStockName(code) {
   }
 }
 
-// 해외 티커 → 한글 종목명 조회 (결과 화면 타이틀 표시용, 토스 종목 마스터 정보 사용)
+// 해외 티커 → 한글 종목명 조회 (결과 화면 타이틀 표시용)
+// KIS에는 토스 종목마스터 같은 간단한 이름조회 엔드포인트가 없어서 보류 — 티커 그대로 표시(예: "AAPL").
+// updateUI()의 stockName || data.symbol 폴백이 이미 처리하므로 null을 반환하면 됨.
 async function fetchOverseasStockName(symbol) {
-  try {
-    const res = await fetch(`${API_BASE}/api/toss/stock-info?symbol=${encodeURIComponent(symbol)}`);
-    if (!res.ok) return null;
-    const json = await res.json();
-    return json?.result?.[0]?.name || null;
-  } catch (e) {
-    console.warn("[RAVEN] 해외 종목명 조회 실패:", e);
-    return null;
-  }
+  return null;
 }
 
 // 전일 수급(프로그램매매/공매도/신용/대차) 해석 코멘트 조회 (국내 종목 전용)
@@ -482,11 +476,11 @@ function attachTickerAutocomplete(inputEl) {
   });
 }
 
-// 3-1. 개별 종목 데이터 (OHLC + Volume) — 국내/해외 모두 토스증권 API로 통합
-// (매크로 지표(VIX/10년물/BTC)만 Yahoo에 남아있음 — 토스는 지수/암호화폐를 다루지 않음)
-// 토스 캔들 API 공통 호출 — 개별 종목 조회(fetchStockData)와 벤치마크(RS 비교용) 조회가 공유
+// 3-1. 개별 종목 데이터 (OHLC + Volume) — 국내/해외 모두 KIS Developers API로 통합
+// (매크로 지표(VIX/10년물/유가)는 Yahoo에 남아있음 — KIS는 지수/원자재를 다루지 않음)
+// KIS 캔들 API 공통 호출 — 개별 종목 조회(fetchStockData)와 벤치마크(RS 비교용) 조회가 공유
 async function fetchCandleData(symbol) {
-  const finalUrl = `${API_BASE}/api/toss/candles?symbol=${encodeURIComponent(
+  const finalUrl = `${API_BASE}/api/kis/candles?symbol=${encodeURIComponent(
     symbol
   )}&interval=1d&count=180`;
 
@@ -497,7 +491,7 @@ async function fetchCandleData(symbol) {
   const candles = json?.result?.candles;
   if (!candles || !candles.length) throw new Error("No candle result");
 
-  // 토스 캔들은 최신순으로 내려오므로 오래된 순으로 뒤집음
+  // KIS 캔들은 최신순으로 내려오므로 오래된 순으로 뒤집음
   const chronological = [...candles].reverse();
 
   const opens = [];
@@ -563,13 +557,11 @@ async function fetchBenchmarkData(domestic) {
   }
 }
 
-// 장중 초단기 흐름(1분봉, 최대 200개 ≈ 3~4시간) — 토스 캔들 API는 "1m"/"1d"만 지원하고
-// (다른 interval 값을 넣으면 API가 직접 allowedValues로 알려줌), 페이지네이션 커서도 확인되지
-// 않아 여러 날치 진짜 "60분봉"을 합성할 방법은 없음. 대신 가장 최근 1분봉 구간을 그대로 써서
-// "지금 장중 흐름이 일봉 추세와 같은 방향인지"를 보는 초단기 보조 지표로 활용함.
-// 실패해도(휴장/데이터 부족 등) 메인 분석은 그대로 진행 — 조용히 null 반환.
+// 장중 초단기 흐름(1분봉) — KIS 전환 시 분봉은 미구현(서버가 일부러 400을 줌, kis.js 참고)이라
+// 이 호출은 항상 실패하고 아래 catch에서 조용히 null을 반환함. "지금 장중 흐름이 일봉 추세와
+// 같은 방향인지" 보는 보조 지표였는데, 실패해도 메인 분석에는 영향 없음(원래도 soft-fail 설계).
 async function fetchIntradayCandles(symbol) {
-  const finalUrl = `${API_BASE}/api/toss/candles?symbol=${encodeURIComponent(
+  const finalUrl = `${API_BASE}/api/kis/candles?symbol=${encodeURIComponent(
     symbol
   )}&interval=1m&count=200`;
 
@@ -642,16 +634,16 @@ function calcRelativeStrength(stockData, benchmarkData) {
   };
 }
 
-// 3-2. 환율(USD/KRW) — 토스증권 API
-async function fetchTossFxRate() {
+// 3-2. 환율(USD/KRW) — Yahoo Finance(KRW=X). 지연시세지만 환율은 장중 변동폭이 작아 영향 미미.
+async function fetchYahooFxRate() {
   try {
-    const res = await fetch(`${API_BASE}/api/toss/exchange-rate?base=USD&quote=KRW`);
+    const res = await fetch(`${API_BASE}/api/yahoo/exchange-rate`);
     if (!res.ok) return null;
     const json = await res.json();
     const rate = Number(json?.result?.rate);
     return Number.isFinite(rate) ? rate : null;
   } catch (e) {
-    console.warn("[RAVEN] 토스 환율 조회 실패:", e);
+    console.warn("[RAVEN] 환율 조회 실패:", e);
     return null;
   }
 }
@@ -659,7 +651,7 @@ async function fetchTossFxRate() {
 async function fetchFxRate() {
   if (typeof fxRateKRW === "number") return fxRateKRW;
 
-  const rate = await fetchTossFxRate();
+  const rate = await fetchYahooFxRate();
   if (typeof rate === "number") {
     fxRateKRW = rate;
     return fxRateKRW;
@@ -670,11 +662,11 @@ async function fetchFxRate() {
 // 3-3. 매크로 바 데이터 (+ Regime 태그)
 async function fetchMacroData() {
   try {
-    const [tnx, vix, krwRate, btc] = await Promise.all([
+    const [tnx, vix, krwRate, oil] = await Promise.all([
       fetchYahooChart("^TNX", "1d", "1d").catch(() => null),
       fetchYahooChart("^VIX", "1d", "1d").catch(() => null),
-      fetchTossFxRate().catch(() => null),
-      fetchYahooChart("BTC-USD", "1d", "1d").catch(() => null)
+      fetchYahooFxRate().catch(() => null),
+      fetchYahooChart("CL=F", "1d", "1d").catch(() => null)
     ]);
 
     // 미국10년물
@@ -719,19 +711,19 @@ async function fetchMacroData() {
       $("macro-krw-note").textContent = "데이터 수신 실패";
     }
 
-    // BTC
-    let btcVal = null;
-    if (btc) {
-      btcVal = btc.lastClose;
-      if ($("macro-btc"))
-        $("macro-btc").textContent =
-          "$" + Math.round(btcVal).toLocaleString("en-US");
-      let note = "중립/보통";
-      if (btcVal > 80000) note = "Crypto 고점권, 변동 주의";
-      else if (btcVal < 40000) note = "Crypto 저점/조정 구간";
-      if ($("macro-btc-note")) $("macro-btc-note").textContent = note;
-    } else if ($("macro-btc-note")) {
-      $("macro-btc-note").textContent = "데이터 수신 실패";
+    // 유가 (WTI 원유 선물)
+    let oilVal = null;
+    if (oil) {
+      oilVal = oil.lastClose;
+      if ($("macro-oil"))
+        $("macro-oil").textContent =
+          "$" + oilVal.toFixed(2);
+      let note = "중립 구간";
+      if (oilVal > 90) note = "고유가, 인플레이션 압력 주의";
+      else if (oilVal < 60) note = "저유가, 에너지주 부담";
+      if ($("macro-oil-note")) $("macro-oil-note").textContent = note;
+    } else if ($("macro-oil-note")) {
+      $("macro-oil-note").textContent = "데이터 수신 실패";
     }
 
   } catch (e) {
@@ -1653,7 +1645,7 @@ function summarizeTrendMomentum(analysis) {
   }
 
   // 장중 초단기(1분봉 기준) 흐름 — 일봉 추세와 같은 방향인지 엇갈리는지 확인
-  // (토스 API가 60분봉을 지원하지 않아 1분봉 최근 구간으로 대체 — app.js 상단 fetchIntradayCandles 참고)
+  // (KIS 전환 후 분봉은 미구현이라 현재는 항상 null — app.js 상단 fetchIntradayCandles 참고)
   if (intradayInfo) {
     const dailyUp = verdictWord === "상승 우위";
     const dailyDown = verdictWord === "하락 우위";

@@ -5,7 +5,6 @@ const cors = require("cors");
 
 const yahooRoutes = require("./routes/yahoo");
 const authRoutes = require("./routes/auth");
-const tossRoutes = require("./routes/toss");
 const stocksRoutes = require("./routes/stocks");
 const kisRoutes = require("./routes/kis");
 const watchlistRoutes = require("./routes/watchlist");
@@ -39,7 +38,6 @@ app.get("/health", (req, res) => res.json({ ok: true }));
 
 app.use("/api/yahoo", yahooRoutes);
 app.use("/api/auth", authRoutes);
-app.use("/api/toss", tossRoutes);
 app.use("/api/stocks", stocksRoutes);
 app.use("/api/kis", kisRoutes);
 app.use("/api/watchlist", watchlistRoutes);

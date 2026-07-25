@@ -3,6 +3,7 @@ const router = express.Router();
 const { getKisAccessToken } = require("../lib/kisAuth");
 const { collectSupplyDemandForSymbol } = require("../lib/supplyDemandCollector");
 const { interpretSupplyDemand } = require("../lib/supplyDemandInterpreter");
+const { fetchCandles } = require("../lib/kisMarket");
 
 const KIS_API_BASE = "https://openapi.koreainvestment.com:9443";
 
@@ -119,6 +120,25 @@ router.get("/loan-trans", async (req, res) => {
   } catch (e) {
     console.error("[RAVEN] /api/kis/loan-trans error:", e);
     res.status(502).json({ error: "KIS loan-trans proxy error" });
+  }
+});
+
+// 종목 캔들(OHLCV) 일봉 조회 — 국내(6자리 코드)/해외(티커) 자동 판별, 토스 응답과 같은 형태로 반환
+// ⚠️ 일봉(1d)만 지원. 분봉은 KIS 쪽 미검증이라 일부러 400을 줘서 호출측(app.js)의 기존
+// 실패시 null 폴백 로직을 그대로 타게 함 — 다른 데이터를 분봉인 것처럼 잘못 주는 것보단 안전.
+router.get("/candles", async (req, res) => {
+  const { symbol, count = 180, interval = "1d" } = req.query;
+  if (!symbol) return res.status(400).json({ error: "symbol query param required" });
+  if (interval !== "1d") {
+    return res.status(400).json({ error: "only interval=1d is supported" });
+  }
+
+  try {
+    const candles = await fetchCandles(symbol, Number(count) || 180);
+    res.json({ result: { candles } });
+  } catch (e) {
+    console.error("[RAVEN] /api/kis/candles error:", e);
+    res.status(502).json({ error: "KIS candles proxy error" });
   }
 });
 

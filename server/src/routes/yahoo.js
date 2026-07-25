@@ -29,4 +29,23 @@ router.get("/chart", async (req, res) => {
   }
 });
 
+// 환율(USD/KRW) — Yahoo KRW=X. 지연/무료 데이터라 매크로 지표와 동일한 성격(장중 실시간 트레이딩용 아님)
+router.get("/exchange-rate", async (req, res) => {
+  try {
+    const url = `${YAHOO_CHART_BASE}KRW=X?range=1d&interval=1d`;
+    const response = await fetch(url, { headers: YAHOO_HEADERS });
+    if (!response.ok) {
+      return res.status(response.status).json({ error: "Yahoo exchange-rate request failed" });
+    }
+    const json = await response.json();
+    const meta = json?.chart?.result?.[0]?.meta;
+    const rate = typeof meta?.regularMarketPrice === "number" ? meta.regularMarketPrice : null;
+    if (rate == null) return res.status(502).json({ error: "No exchange rate in Yahoo response" });
+    res.json({ result: { rate } });
+  } catch (e) {
+    console.error("[RAVEN] /api/yahoo/exchange-rate error:", e);
+    res.status(502).json({ error: "Yahoo exchange-rate proxy error" });
+  }
+});
+
 module.exports = router;

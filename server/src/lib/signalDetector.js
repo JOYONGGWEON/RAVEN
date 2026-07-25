@@ -1,20 +1,9 @@
-const { getTossAccessToken } = require("./tossAuth");
-
-const TOSS_API_BASE = "https://openapi.tossinvest.com";
+const { fetchCandles: fetchKisCandles } = require("./kisMarket");
 
 // 관심종목 알림 전용 캔들 조회 — 프론트(app.js)의 fetchCandleData와 같은 응답 구조를 다루지만,
-// 서버 스케줄러에서 직접 Toss를 호출해야 해서(브라우저 전용 app.js는 require 불가) 별도로 둠.
+// 서버 스케줄러에서 직접 KIS를 호출해야 해서(브라우저 전용 app.js는 require 불가) 별도로 둠.
 async function fetchCandles(symbol) {
-  const token = await getTossAccessToken();
-  const qs = new URLSearchParams({ symbol, interval: "1d", count: "180" }).toString();
-  const res = await fetch(`${TOSS_API_BASE}/api/v1/candles?${qs}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error(`Toss candles request failed: ${res.status}`);
-  const json = await res.json();
-
-  const candles = json?.result?.candles;
-  if (!candles || !candles.length) throw new Error("No candle result");
+  const candles = await fetchKisCandles(symbol, 180);
 
   const chronological = [...candles].reverse();
   const opens = [];
