@@ -3243,6 +3243,10 @@ async function runAnalysisForTicker(rawSymbol) {
   const prevAiResult = $("ai-analysis-result");
   if (prevAiResult) prevAiResult.classList.add("hidden");
 
+  // 🔹 엔트리(검색) 화면을 벗어나는 시점부터 보라색 배경 유지 — 예전엔 분석 "성공" 시에만
+  // 켜져서, 첫 검색이 실패하면 헤더/에러 안내 뒤가 기본 검은 배경으로 남아 이질감이 있었음
+  document.body.classList.add("raven-result-bg");
+
   // 🔹 로딩 스피너 ON
   showLoading(true);
 
@@ -3264,9 +3268,6 @@ async function runAnalysisForTicker(rawSymbol) {
 
     // 차트 위젯 렌더
     renderTradingViewChart(symbol);
-
-    // 🔹분석 성공 → 메인 화면도 보라 배경 유지
-    document.body.classList.add("raven-result-bg");
 
     // 🔹 모든 세팅이 끝난 뒤 결과 카드 페이드인
     showResultCard();

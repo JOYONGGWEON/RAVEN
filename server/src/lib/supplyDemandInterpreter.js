@@ -165,8 +165,12 @@ function interpretInvestorTrend(row) {
 async function interpretSupplyDemand(symbol) {
   let rows = await getLatestRows(symbol);
 
-  const hasAnyData = Object.values(rows).some((r) => r !== null);
-  if (!hasAnyData) {
+  // ⚠️ "하나라도 있으면 스킵"(hasAnyData)이었을 때 실제로 겪은 버그: investor_trend를 5번째
+  // 타입으로 추가한 뒤, 이미 다른 4종 캐시가 있던 종목은 hasAnyData가 true라 재수집이 통째로
+  // 스킵되면서 investor_trend만 영영 채워지지 않았음(실측으로 재현·확인함). 5종 전부 있는지로 바꿔서
+  // 타입 하나라도 비어있으면(신규 타입 추가/일시적 수집 실패 등) 다시 채워지도록 함.
+  const hasAllData = Object.values(rows).every((r) => r !== null);
+  if (!hasAllData) {
     await collectSupplyDemandForSymbol(symbol);
     rows = await getLatestRows(symbol);
   }

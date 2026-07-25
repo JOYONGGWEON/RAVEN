@@ -21,6 +21,14 @@
   box-sizing: border-box;
 }
 
+/* 안드로이드 Chrome의 "글자 자동 확대(font boosting)"를 꺼서, 화면 전환 시 레이아웃이
+   갑자기 확대돼 보이던 문제를 해결 — 실기기(안드로이드)에서 실제로 재현·확인된 원인.
+   (iOS Safari의 "포커스 시 확대"는 각 input의 font-size:16px로 별도 대응돼 있음) */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 /* body 기본값 */
 body {
   background: var(--bg-dark);
