@@ -55,6 +55,9 @@ body.raven-result-bg {
   position: relative;   /* ⬅ 링 위치 기준 */
 }
 
+/* ⚠️ .raven-smoke-orb(로그인 전 3개 화면용 링)와 시각적으로 같은 링이어야 하는데 별도 규칙임 —
+   전에 .raven-smoke-orb만 리디자인하고 이쪽을 빠뜨려서 색상·속도가 따로 놀던 버그가 있었음.
+   그라디언트/box-shadow/animation은 항상 .raven-smoke-orb와 동일하게 맞출 것(크기·위치만 다름). */
 .top-header::before {
   content: '';
   position: absolute;
@@ -68,20 +71,23 @@ body.raven-result-bg {
 
   background:
     radial-gradient(circle at center,
-      transparent 55%,
-      rgba(56, 189, 248, 0.0) 56%,
-      rgba(56, 189, 248, 0.9) 62%,
-      rgba(244, 114, 182, 0.9) 72%,
-      transparent 78%);
+      transparent 54%,
+      rgba(45, 212, 191, 0) 55%,
+      rgba(45, 212, 191, 0.55) 59%,
+      rgba(56, 189, 248, 0.85) 64%,
+      rgba(99, 102, 241, 0.9) 69%,
+      rgba(167, 139, 250, 0.7) 74%,
+      rgba(45, 212, 191, 0.3) 78%,
+      transparent 81%);
   box-shadow:
-    0 0 30px rgba(56, 189, 248, 0.6),
-    0 0 60px rgba(168, 85, 247, 0.6);
+    0 0 30px rgba(56, 189, 248, 0.45),
+    0 0 60px rgba(139, 92, 246, 0.45);
 
   opacity: 0.95;
   mix-blend-mode: screen;
   pointer-events: none;
   z-index: -1;
-  animation: ravenRing 16s linear infinite;
+  animation: ravenRing 5s ease-in-out infinite;
 }
 
 /* 최상단 텍스트(타이틀/서브타이틀)는 항상 흰색 */
