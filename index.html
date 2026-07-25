@@ -54,7 +54,7 @@
         <div class="raven-smoke-orb"></div>
       </div>
       <div class="z-screen-content">
-        <h1 id="intro-title" class="intro-title">AT YOUR SERVICE, SIR</h1>
+        <h1 id="intro-title" class="intro-title">GOOD DAY TODAY :)</h1>
         <p id="intro-sub" class="intro-sub">RAVEN is online</p>
       </div>
     </div>
@@ -81,7 +81,7 @@
         </div>
         
         <!-- 🔹 NEW: 엔트리 크레딧 텍스트 -->
-        <div class="entry-credit">🚀Launched by Rayben Jo</div>
+        <div class="entry-credit">🚀Launched by JYG</div>
 
         <!-- 실행 시에만 표시 -->
         <p id="entry-message" class="entry-message hidden">
@@ -97,7 +97,7 @@
   <!-- 상단 헤더 -->
   <header class="top-header">
     <h1 class="app-title">R A V E N</h1>
-    <p class="app-sub">🔥Created from Rayben Jo</p>
+    <p class="app-sub">🚀Launched by JYG</p>
     <p class="app-sub app-sub-engine">Ai Stock Analysis Engine v7.0 • Stable Build</p>
 
     <!-- 매크로 바 -->
@@ -155,6 +155,14 @@
   <div id="loading-indicator" class="loading-container hidden">
     <div class="loading-spinner"></div>
     <p class="loading-text">데이터 수신 및 분석 중...</p>
+  </div>
+
+  <!-- 검색/분석 실패 시 표시 — 토스트(3초 후 사라짐)만 있으면 실패해도 헤더만 덩그러니 남아
+       보였던 문제를 해결. 다음 검색 시작 시 hideSearchErrorState()로 감춰짐. -->
+  <div id="search-error-state" class="search-error-state hidden">
+    <div class="search-error-icon">📡</div>
+    <p class="search-error-title">데이터를 불러오지 못했습니다</p>
+    <p class="search-error-sub">티커를 다시 확인하거나 잠시 후 다시 시도해 주세요.</p>
   </div>
 
   <!-- 결과 카드 -->

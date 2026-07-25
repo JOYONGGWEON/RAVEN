@@ -894,6 +894,37 @@ body.raven-result-bg {
   color: var(--text-sub);
 }
 
+/* 검색/분석 실패 시 결과 카드 자리에 대신 표시 — 헤더만 남고 아래가 텅 비어 보이던 문제 해결용 */
+.search-error-state {
+  max-width: 1000px;
+  margin: 0 auto 3rem;
+  background: var(--bg-card);
+  border-radius: 24px;
+  padding: 2.5rem;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  text-align: center;
+}
+
+.search-error-icon {
+  font-size: 2rem;
+  margin-bottom: 0.75rem;
+  opacity: 0.8;
+}
+
+.search-error-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0 0 0.4rem;
+}
+
+.search-error-sub {
+  font-size: 0.85rem;
+  color: var(--text-sub);
+  margin: 0;
+}
+
 .toast {
   position: fixed;
   bottom: 2rem;
@@ -1406,49 +1437,18 @@ body.raven-result-bg {
     0 0 60px rgba(139, 92, 246, 0.45);
   opacity: 0.95;
   mix-blend-mode: screen;
-  animation: ravenRing 20s linear infinite;
-}
-
-/* crow silhouette watermark, perched low in the ring's clear space (below the entry text/input),
-   fixed on the static parent so it doesn't spin with the ring above it */
-.raven-smoke-bg::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 76%;
-  width: 15vmin;
-  height: 9vmin;
-  transform: translate(-50%, -50%);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 60'%3E%3Cpath d='M50,22 L92,4 L58,26 L68,50 L50,34 L32,50 L42,26 L8,4 Z' fill='white'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: contain;
-  opacity: 0.4;
-  filter: drop-shadow(0 0 8px rgba(139, 92, 246, 0.6));
-  animation: ravenWingBreathe 6s ease-in-out infinite;
+  /* 예전엔 20s linear라 한 사이클에 10초씩 걸려 숨쉬는 느낌이 거의 안 느껴졌음(회전은 대칭
+     그라디언트라 어차피 안 보임, 체감되는 건 스케일 펄스뿐이었음) — ease-in-out + 5s로
+     실제 "숨쉬는" 느낌이 나게 빠르고 부드럽게 조정. */
+  animation: ravenRing 5s ease-in-out infinite;
 }
 
 @keyframes ravenRing {
-  0% {
+  0%, 100% {
     transform: translate(-50%, -50%) rotate(0deg) scale(1.0);
   }
   50% {
-    transform: translate(-50%, -50%) rotate(180deg) scale(1.05);
-  }
-  100% {
-    transform: translate(-50%, -50%) rotate(360deg) scale(1.0);
-  }
-}
-
-/* 까마귀 마크가 날갯짓하듯 아주 미세하게 숨쉬는 애니메이션(정적인 워터마크가 죽어 보이지 않게) */
-@keyframes ravenWingBreathe {
-  0%, 100% {
-    transform: translate(-50%, -50%) scaleX(1);
-    opacity: 0.4;
-  }
-  50% {
-    transform: translate(-50%, -50%) scaleX(0.92);
-    opacity: 0.55;
+    transform: translate(-50%, -50%) rotate(180deg) scale(1.08);
   }
 }
 

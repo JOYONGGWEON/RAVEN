@@ -70,6 +70,18 @@ function hideResultCard() {
   card.classList.remove("show");
 }
 
+// 검색/분석 실패 시 결과 카드 대신 표시 — 토스트(3초)만 있으면 사라진 뒤 헤더만 덩그러니
+// 남아 보였던 문제를 해결하기 위해, 다음 검색을 시작하기 전까지 계속 남아있는 안내로 대체.
+function showSearchErrorState() {
+  const el = $("search-error-state");
+  if (el) el.classList.remove("hidden");
+}
+
+function hideSearchErrorState() {
+  const el = $("search-error-state");
+  if (el) el.classList.add("hidden");
+}
+
 // ===== RAVEN VIP CODE + Intro + Entry Flow v2 =====
 // PIN은 더 이상 프론트에 평문으로 두지 않고, 서버(/api/auth/verify-pin)가 검증함.
 
@@ -140,8 +152,7 @@ async function checkPinCode() {
   }
 }
 
-// PIN 성공 후: AT YOUR SERVICE, SIR → RAVEN is online → 티커 입력
-// (자비스(아이언맨) 톤의 AI 비서 인사말로 교체 — "GOOD DAY SIR"는 평범한 인사라 AI 비서 느낌이 약했음)
+// PIN 성공 후: GOOD DAY TODAY :) → RAVEN is online → 티커 입력
 function playIntroSequence() {
   if (!introScreen) return;
 
@@ -149,7 +160,7 @@ function playIntroSequence() {
 
   if (!introTitleEl || !introSubEl) return;
 
-  introTitleEl.textContent = "AT YOUR SERVICE, SIR";
+  introTitleEl.textContent = "GOOD DAY TODAY :)";
   introSubEl.textContent = "⚡RAVEN is online";
 
   introTitleEl.classList.remove("intro-hidden", "intro-visible-short");
@@ -3224,8 +3235,9 @@ async function runAnalysisForTicker(rawSymbol) {
     return;
   }
 
-  // 🔹 새 실행 시: 이전 결과 카드 잠깐 숨기기
+  // 🔹 새 실행 시: 이전 결과 카드 잠깐 숨기기 (이전 실패 안내가 떠 있었다면 그것도 같이 정리)
   hideResultCard();
+  hideSearchErrorState();
 
   // 새 종목 분석 시작 시 이전 티커의 AI 서술 분석 결과는 더 이상 유효하지 않으므로 숨김
   const prevAiResult = $("ai-analysis-result");
@@ -3273,7 +3285,9 @@ async function runAnalysisForTicker(rawSymbol) {
   } catch (err) {
     console.error("[RAVEN] 분석 중 오류:", err);
     showToast("분석 중 오류가 발생했습니다. 티커/네트워크를 확인해 주세요.");
-    // 에러 시에는 hideResultCard() 상태 유지 (이미 위에서 호출됨)
+    // 에러 시에는 hideResultCard() 상태 유지(이미 위에서 호출됨) + 토스트가 사라진 뒤에도
+    // 화면이 헤더만 남아 비어 보이지 않도록 다음 검색 전까지 남는 안내를 표시
+    showSearchErrorState();
   } finally {
     // 🔹 로딩 스피너 OFF
     showLoading(false);
