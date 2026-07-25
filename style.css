@@ -455,10 +455,27 @@ body.raven-result-bg {
 }
 
 .z-badge-value {
-  font-size: 3.1rem;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  font-size: 2.3rem;
   font-weight: 800;
   font-style: italic;
   color: var(--accent);
+}
+
+.z-badge-grade sup {
+  font-size: 0.5em;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.z-badge-points-unit {
+  font-size: 0.45em;
+  font-weight: 600;
+  font-style: normal;
 }
 
 .z-metrics-caption {
@@ -1111,7 +1128,8 @@ body.raven-result-bg {
 
   .ticker-form #ticker-input {
     padding: 0.65rem 1rem;
-    font-size: 0.9rem;
+    /* 16px 미만이면 iOS Safari가 포커스 시 자동으로 화면을 확대함(줌인 버그의 원인) — 16px 이상 유지 */
+    font-size: 16px;
   }
 
   #search-btn,
@@ -1134,11 +1152,11 @@ body.raven-result-bg {
 
   .z-badge {
     padding: 1.2rem;
-    min-width: 120px;
+    min-width: 150px;
   }
 
   .z-badge-value {
-    font-size: 2.4rem;
+    font-size: 1.8rem;
   }
 
   /* 차트 높이 조금 낮추기 */
@@ -1171,7 +1189,8 @@ body.raven-result-bg {
   }
 
   #entry-ticker {
-    font-size: 1rem;
+    /* 16px 미만이면 iOS Safari가 포커스 시 자동으로 화면을 확대함 — 16px 이상 유지 */
+    font-size: 16px;
   }
 
   .entry-message {
@@ -1362,7 +1381,8 @@ body.raven-result-bg {
   pointer-events: none;
 }
 
-/* 링 이펙트 */
+/* 링 이펙트 — 까마귀 날개깃 특유의 무지개빛 광택(iridescence)을 모티브로 한 팔레트.
+   기존 시안/핑크 2색 대비 대신 청록→인디고→보라를 부드럽게 잇는 다단 그라디언트로 톤을 낮춤. */
 .raven-smoke-orb {
   position: absolute;
   width: 80vmin;
@@ -1373,17 +1393,39 @@ body.raven-result-bg {
   border-radius: 50%;
   background:
     radial-gradient(circle at center,
-      transparent 55%,
-      rgba(56, 189, 248, 0.0) 56%,
-      rgba(56, 189, 248, 0.9) 62%,
-      rgba(244, 114, 182, 0.9) 72%,
-      transparent 78%);
+      transparent 54%,
+      rgba(45, 212, 191, 0) 55%,
+      rgba(45, 212, 191, 0.55) 59%,
+      rgba(56, 189, 248, 0.85) 64%,
+      rgba(99, 102, 241, 0.9) 69%,
+      rgba(167, 139, 250, 0.7) 74%,
+      rgba(45, 212, 191, 0.3) 78%,
+      transparent 81%);
   box-shadow:
-    0 0 30px rgba(56, 189, 248, 0.6),
-    0 0 60px rgba(168, 85, 247, 0.6);
+    0 0 30px rgba(56, 189, 248, 0.45),
+    0 0 60px rgba(139, 92, 246, 0.45);
   opacity: 0.95;
   mix-blend-mode: screen;
-  animation: ravenRing 16s linear infinite;
+  animation: ravenRing 20s linear infinite;
+}
+
+/* crow silhouette watermark, perched low in the ring's clear space (below the entry text/input),
+   fixed on the static parent so it doesn't spin with the ring above it */
+.raven-smoke-bg::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 76%;
+  width: 15vmin;
+  height: 9vmin;
+  transform: translate(-50%, -50%);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 60'%3E%3Cpath d='M50,22 L92,4 L58,26 L68,50 L50,34 L32,50 L42,26 L8,4 Z' fill='white'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  opacity: 0.4;
+  filter: drop-shadow(0 0 8px rgba(139, 92, 246, 0.6));
+  animation: ravenWingBreathe 6s ease-in-out infinite;
 }
 
 @keyframes ravenRing {
@@ -1395,6 +1437,18 @@ body.raven-result-bg {
   }
   100% {
     transform: translate(-50%, -50%) rotate(360deg) scale(1.0);
+  }
+}
+
+/* 까마귀 마크가 날갯짓하듯 아주 미세하게 숨쉬는 애니메이션(정적인 워터마크가 죽어 보이지 않게) */
+@keyframes ravenWingBreathe {
+  0%, 100% {
+    transform: translate(-50%, -50%) scaleX(1);
+    opacity: 0.4;
+  }
+  50% {
+    transform: translate(-50%, -50%) scaleX(0.92);
+    opacity: 0.55;
   }
 }
 

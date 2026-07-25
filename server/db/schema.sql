@@ -5,7 +5,7 @@ create table if not exists supply_demand_daily (
   id bigint generated always as identity primary key,
   symbol text not null,
   trade_date date not null,
-  data_type text not null check (data_type in ('program_trade', 'short_sale', 'credit_balance', 'loan_trans')),
+  data_type text not null check (data_type in ('program_trade', 'short_sale', 'credit_balance', 'loan_trans', 'investor_trend')),
   raw_data jsonb not null,
   fetched_at timestamptz not null default now(),
   unique (symbol, trade_date, data_type)
@@ -13,6 +13,13 @@ create table if not exists supply_demand_daily (
 
 create index if not exists idx_supply_demand_symbol_date
   on supply_demand_daily (symbol, trade_date desc);
+
+-- 2026-07-25: investor_trend(투자자별 개인/외국인/기관 매매동향) 데이터타입 추가.
+-- 이미 supply_demand_daily 테이블이 있는 기존 프로젝트는 위 create table문이 스킵되므로
+-- CHECK 제약을 아래처럼 직접 갱신해야 함(신규 설치는 위 create table에 이미 포함되어 있어 불필요).
+alter table supply_demand_daily drop constraint if exists supply_demand_daily_data_type_check;
+alter table supply_demand_daily add constraint supply_demand_daily_data_type_check
+  check (data_type in ('program_trade', 'short_sale', 'credit_balance', 'loan_trans', 'investor_trend'));
 
 -- KIS Developers OAuth 접근토큰 영구저장. Render 무료 요금제가 비활성 시 재시작되면
 -- 메모리 캐시가 날아가는데, KIS 토큰은 "1일 1회 발급 원칙"이라 재시작마다 새로 받으면 안 됨.

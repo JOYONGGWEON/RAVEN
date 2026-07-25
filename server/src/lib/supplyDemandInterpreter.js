@@ -14,13 +14,14 @@ async function getLatestRow(symbol, dataType) {
 }
 
 async function getLatestRows(symbol) {
-  const [program_trade, short_sale, credit_balance, loan_trans] = await Promise.all([
+  const [program_trade, short_sale, credit_balance, loan_trans, investor_trend] = await Promise.all([
     getLatestRow(symbol, "program_trade"),
     getLatestRow(symbol, "short_sale"),
     getLatestRow(symbol, "credit_balance"),
     getLatestRow(symbol, "loan_trans"),
+    getLatestRow(symbol, "investor_trend"),
   ]);
-  return { program_trade, short_sale, credit_balance, loan_trans };
+  return { program_trade, short_sale, credit_balance, loan_trans, investor_trend };
 }
 
 // tone: 1=우호적, -1=부담, 0=중립 (전체 어조 판단에 합산)
@@ -123,7 +124,43 @@ function interpretLoanTrans(row) {
   return { text: "대차잔고는 전일과 큰 변화가 없습니다.", tone: 0 };
 }
 
-// 종목의 전일 수급 4종을 오늘 해석 + 내일 예상 코멘트로 변환
+function interpretInvestorTrend(row) {
+  if (!row) return { text: "투자자별(개인/외국인/기관) 매매동향 데이터가 없습니다.", tone: 0 };
+  const r = row.raw_data;
+  const prsn = Number(r.prsn_ntby_qty);
+  const frgn = Number(r.frgn_ntby_qty);
+  const orgn = Number(r.orgn_ntby_qty);
+
+  if ([prsn, frgn, orgn].some((n) => Number.isNaN(n))) {
+    return { text: "투자자별(개인/외국인/기관) 매매동향 데이터가 없습니다.", tone: 0 };
+  }
+
+  const fmt = (n) => `${Math.abs(n).toLocaleString()}주 ${n >= 0 ? "순매수" : "순매도"}`;
+  let text = `투자자별로는 개인 ${fmt(prsn)}, 외국인 ${fmt(frgn)}, 기관 ${fmt(orgn)}입니다.`;
+
+  // 외국인·기관("스마트머니")과 개인의 방향이 엇갈리는지를 우선 보고, 아니면 외국인+기관 합산 방향으로 판단
+  let tone = 0;
+  if (frgn > 0 && orgn > 0) {
+    tone = 1;
+    text += " 외국인·기관이 동반 순매수하는 우호적인 수급 구조입니다.";
+  } else if (frgn < 0 && orgn < 0 && prsn > 0) {
+    tone = -1;
+    text += " 외국인·기관이 동반 순매도한 물량을 개인이 받아내는 구조로, 수급 주체 측면에서는 부담 요인입니다.";
+  } else {
+    const smartMoney = frgn + orgn;
+    if (smartMoney > 0) {
+      tone = 1;
+      text += " 외국인·기관 합산으로는 순매수 우위입니다.";
+    } else if (smartMoney < 0) {
+      tone = -1;
+      text += " 외국인·기관 합산으로는 순매도 우위입니다.";
+    }
+  }
+
+  return { text, tone };
+}
+
+// 종목의 전일 수급 5종(프로그램매매/공매도/신용/대차/투자자별)을 오늘 해석 + 내일 예상 코멘트로 변환
 // 캐시된 데이터가 없으면 그 자리에서 KIS로 즉시 수집(+캐싱)한 뒤 해석함
 async function interpretSupplyDemand(symbol) {
   let rows = await getLatestRows(symbol);
@@ -139,6 +176,7 @@ async function interpretSupplyDemand(symbol) {
     interpretShortSale(rows.short_sale),
     interpretCreditBalance(rows.credit_balance),
     interpretLoanTrans(rows.loan_trans),
+    interpretInvestorTrend(rows.investor_trend),
   ];
 
   const toneSum = parts.reduce((sum, p) => sum + p.tone, 0);
@@ -159,6 +197,7 @@ async function interpretSupplyDemand(symbol) {
     rows.short_sale?.trade_date ||
     rows.credit_balance?.trade_date ||
     rows.loan_trans?.trade_date ||
+    rows.investor_trend?.trade_date ||
     null;
 
   return {

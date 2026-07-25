@@ -108,6 +108,17 @@ const DATA_TYPES = [
       return (json.output1 || []).map((row) => ({ date: row.bsop_date, raw: row }));
     },
   },
+  {
+    type: "investor_trend",
+    fetch: async (symbol) => {
+      const json = await kisGet(
+        "/uapi/domestic-stock/v1/quotations/inquire-investor",
+        "FHKST01010900",
+        { FID_COND_MRKT_DIV_CODE: "J", FID_INPUT_ISCD: symbol, FID_INPUT_DATE_1: "" }
+      );
+      return (json.output || []).map((row) => ({ date: row.stck_bsop_date, raw: row }));
+    },
+  },
 ];
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

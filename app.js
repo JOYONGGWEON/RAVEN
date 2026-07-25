@@ -140,7 +140,8 @@ async function checkPinCode() {
   }
 }
 
-// PIN 성공 후: GOOD DAY SIR → Connect to RAVEN → 티커 입력
+// PIN 성공 후: AT YOUR SERVICE, SIR → RAVEN is online → 티커 입력
+// (자비스(아이언맨) 톤의 AI 비서 인사말로 교체 — "GOOD DAY SIR"는 평범한 인사라 AI 비서 느낌이 약했음)
 function playIntroSequence() {
   if (!introScreen) return;
 
@@ -148,14 +149,14 @@ function playIntroSequence() {
 
   if (!introTitleEl || !introSubEl) return;
 
-  introTitleEl.textContent = "GOOD DAY SIR :)";
-  introSubEl.textContent = "⚡Access to RAVEN";
+  introTitleEl.textContent = "AT YOUR SERVICE, SIR";
+  introSubEl.textContent = "⚡RAVEN is online";
 
   introTitleEl.classList.remove("intro-hidden", "intro-visible-short");
   introSubEl.classList.remove("intro-visible-short");
   introSubEl.classList.add("intro-hidden");
 
-  // GOOD DAY SIR 2초 페이드인 (끝까지 남아있음)
+  // 인트로 타이틀 2초 페이드인 (끝까지 남아있음)
   introTitleEl.classList.add("intro-visible-long");
 
   // 2초 뒤에 Connect to RAVEN만 추가로 페이드인
@@ -669,10 +670,11 @@ async function fetchMacroData() {
       fetchYahooChart("CL=F", "1d", "1d").catch(() => null)
     ]);
 
-    // 미국10년물
+    // 미국10년물 — Yahoo ^TNX(CBOE Interest Rate 10 Year T No)는 이미 실제 금리(%) 값을 그대로 줌
+    // (예: 4.679 = 4.679%). 예전엔 10배 스케일 지수로 착각해 /10을 해서 0.47%처럼 잘못 표시되던 버그가 있었음.
     let rate = null;
     if (tnx) {
-      rate = tnx.lastClose / 10;
+      rate = tnx.lastClose;
       if ($("macro-rate")) $("macro-rate").textContent = rate.toFixed(2) + "%";
       let note = "중립 구간";
       if (rate < 3) note = "저금리, 성장주 우호";
@@ -1342,6 +1344,7 @@ function analyzeData(data, benchmarkData, intradayCloses) {
 
   score = Math.round(Math.max(0, Math.min(99, score)));
 
+  // 랭크 밴드 — formatRankGrade()가 같은 경계값으로 밴드 내 +/- 세부등급을 매김
   let rank = "C";
   if (score >= 85) rank = "S";
   else if (score >= 70) rank = "A";
@@ -2099,6 +2102,22 @@ function detectCandlePatterns(data, analysis) {
   return patterns;
 }
 
+// RAVEN SCORE의 랭크 밴드(위 calcXXX의 S/A/B/C/D 경계와 동일) 안에서, 점수 위치에 따라
+// +/- 세부등급을 붙임(밴드 하위 1/3="-", 중간 1/3="", 상위 1/3="+"). +/-만 <sup>로 위첨자 처리.
+function formatRankGrade(score, letter) {
+  const bands = { S: [85, 99], A: [70, 84], B: [55, 69], C: [35, 54], D: [0, 34] };
+  const [min, max] = bands[letter] || [0, 99];
+  const width = max - min + 1;
+  const pos = score - min;
+  const third = width / 3;
+
+  let mod = "";
+  if (pos < third) mod = "-";
+  else if (pos >= third * 2) mod = "+";
+
+  return mod ? `${letter}<sup>${mod}</sup>` : letter;
+}
+
 // 6-2. 종목 라벨 / 섹터 태깅 (간단 버전 보조)
 // 7. UI 업데이트 (섹터/패턴/시나리오 포함)
 function updateUI(data, analysis, fxRate, stockName) {
@@ -2166,9 +2185,10 @@ function updateUI(data, analysis, fxRate, stockName) {
     }
   }
 
-  // 점수 / 랭크
+  // 점수 / 랭크 — 하나의 배지(RAVEN SCORE)로 통합. 랭크 글자 안에서도 점수 위치에 따라
+  // 세부등급(+/-)을 붙여줌(예: A 밴드의 상위 1/3이면 A+). +/-는 <sup>로 위첨자 처리.
   if (scoreEl) scoreEl.textContent = analysis.score;
-  if (rankEl) rankEl.textContent = analysis.rank;
+  if (rankEl) rankEl.innerHTML = formatRankGrade(analysis.score, analysis.rank);
 
   const color =
     analysis.score >= 70
@@ -2331,17 +2351,24 @@ function updateUI(data, analysis, fxRate, stockName) {
   const rsEl = $("rs-txt");
   if (rsEl) {
     if (rsInfo && (Number.isFinite(rsInfo.rs20) || Number.isFinite(rsInfo.rs60))) {
-      const fmtRs = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%p`;
-      const parts = [];
-      if (Number.isFinite(rsInfo.rs20)) parts.push(`20일 ${fmtRs(rsInfo.rs20)}`);
-      if (Number.isFinite(rsInfo.rs60)) parts.push(`60일 ${fmtRs(rsInfo.rs60)}`);
+      // "20일 +6.5%p / 60일 +4.6%p"처럼 단어+숫자가 섞인 형태는 좁은 화면에서 어중간하게
+      // 줄바꿈되기 쉬워서, "20일/60일 = +6.5/+4.6(%p)" 형태로 숫자만 붙여 자연스럽게 줄바꿈되게 함.
+      const fmtRs = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`;
+      let display;
+      if (Number.isFinite(rsInfo.rs20) && Number.isFinite(rsInfo.rs60)) {
+        display = `20일/60일 = ${fmtRs(rsInfo.rs20)}/${fmtRs(rsInfo.rs60)}(%p)`;
+      } else if (Number.isFinite(rsInfo.rs20)) {
+        display = `20일 = ${fmtRs(rsInfo.rs20)}(%p)`;
+      } else {
+        display = `60일 = ${fmtRs(rsInfo.rs60)}(%p)`;
+      }
       const primary = Number.isFinite(rsInfo.rs20) ? rsInfo.rs20 : rsInfo.rs60;
 
       let verdict = "시장과 비슷한 흐름";
       if (primary >= 5) verdict = "시장 대비 아웃퍼폼";
       else if (primary <= -5) verdict = "시장 대비 언더퍼폼 — 개별 지표가 좋아도 주의";
 
-      setIndicatorBox(rsEl, parts.join(" / "), verdict);
+      setIndicatorBox(rsEl, display, verdict);
     } else {
       setIndicatorBox(rsEl, "데이터 부족");
     }
@@ -3039,7 +3066,7 @@ function renderSupplyDemandBox(data) {
   const supplySummaryEl = $("supply-summary-txt");
   if (supplySummaryEl && data.outlook) {
     const li = document.createElement("li");
-    li.textContent = `전일 프로그램매매·공매도·신용·대차 기준 코멘트: "${data.outlook}"`;
+    li.textContent = `전일 프로그램매매·공매도·신용·대차·투자자별 매매동향 기준 코멘트: "${data.outlook}"`;
     supplySummaryEl.appendChild(li);
   }
 }

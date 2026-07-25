@@ -146,22 +146,23 @@
 
 ## 📌 다음 세션 시작 시 우선 처리
 
-1. **배포 (모바일 접속용) — 프론트+백엔드 둘 다 사실상 완료(2026-07-23), 남은 건 Render 환경변수 갱신 하나뿐 (2026-07-25 갱신 — 토스 IP 문제 자체가 소멸됨)**
+1. **배포 (모바일 접속용) — ✅ 완전히 완료 (2026-07-25)**
    - [x] 백엔드(`server/`) → Render.com 배포 완료. `render.yaml`(repo 루트)로 Blueprint 배포, 서비스명 `raven-backend`, URL: `https://raven-backend-z5uc.onrender.com`. `/health`, Supabase(`/api/watchlist`), KIS(`/api/kis/program-trade`) 전부 실제 호출 검증 완료(정상 응답).
    - [x] **프론트엔드 GitHub Pages — 이미 배포되어 있었음을 발견함(2026-07-23)!** 확인해보니 저장소가 (메모리에 "private"로 잘못 기록돼 있던 것과 달리) 실제로는 **public**이고, GitHub Pages도 이미 활성화되어 `https://joyonggweon.github.io/RAVEN/`에서 라이브로 서빙 중이었음(레포 루트 정적 서빙, main 브랜치 푸시마다 자동 반영 확인됨 — `curl`로 최신 커밋의 `/api/ai/analyze` 코드까지 실제 존재 확인). 언제/어떻게 켜졌는지는 불명(사용자가 이전에 직접 했거나 GitHub 기본 동작으로 추정) — 아무튼 새로 설정할 필요 없음.
    - [x] `app.js`의 `API_BASE`를 로컬 고정값에서 **호스트 자동 분기**로 교체 — `window.location.hostname`이 localhost/127.0.0.1이면 로컬 백엔드(`:3001`), 그 외(GitHub Pages 등)면 Render 백엔드(`https://raven-backend-z5uc.onrender.com`) 자동 사용. 정적 사이트라 빌드타임 환경변수 주입이 없어서 이 방식으로 처리함.
    - [x] 백엔드 CORS(`server/src/index.js`)를 **콤마 구분 다중 origin 지원**으로 변경 — 기존엔 `FRONTEND_ORIGIN` 문자열 하나만 허용해서 로컬(`localhost:5500`)과 배포 주소를 동시에 못 받았음. 로컬에서 두 origin(`http://localhost:5500`, `https://joyonggweon.github.io`) 모두 허용/차단 정상 동작 실제 검증 완료(curl로 OPTIONS 프리플라이트 테스트, 제3의 origin은 정상 차단됨 확인).
-   - [ ] **남은 건 딱 하나 — Render 대시보드에서 `FRONTEND_ORIGIN` 환경변수를 `http://localhost:5500,https://joyonggweon.github.io`로 갱신하는 것뿐** (현재 Render엔 `http://localhost:5500` 하나만 들어있어서 실제 GitHub Pages 접속 시 CORS로 막힘 — curl로 실측 확인함). 이건 Render 대시보드 로그인이 필요해서 사용자가 직접 해야 함.
+   - [x] Render `FRONTEND_ORIGIN` 환경변수 갱신 완료(사용자 직접) — curl로 재검증: GitHub Pages origin은 204 허용(`access-control-allow-origin` 정상 반환), 제3 origin은 차단됨.
    - [x] **Oracle Cloud 시도 → 최종 포기 결정 (2026-07-25)**: "Always Free" VM에 경량 프록시(tinyproxy/squid)를 얹어 토스 호출만 고정 IP로 우회시키는 방법을 여러 세션에 걸쳐 시도했으나 가입 단계("등록을 완료할 수 없습니다") 자체를 못 넘음. 이번 세션에 실제로 시도해본 것들 전부 실패: DCC(해외원화결제) 차단, 카드 변경, 브라우저 변경. 사용자가 명시적으로 "못하겠다, 지쳐서"라며 중단 선언 — **더 이상 오라클 재시도하지 말 것**.
    - [x] **토스→KIS/Yahoo 전환 완료 (2026-07-25, 같은 세션)**: Oracle을 포기하면서 "KIS로 통합하면 토스처럼 IP 등록 문제가 또 나오지 않냐"는 질문에서 시작 — 실측(Yahoo Finance가 `.KS`/`.KQ` 접미사로 국내 종목도 되는지, KIS 해외 시세가 실제로 되는지 등) 먼저 해보고 진행하기로 함. 최종적으로 사용자가 "KIS로 통합 + 토큰 저장방식 개선, Yahoo는 지연 무관 데이터(환율/VIX/유가)만" 방향으로 결정:
      - **시세/차트**: 국내+해외 전부 KIS Developers로 통합, 토스 완전 제거(`tossAuth.js`/`routes/toss.js` 삭제, `TOSS_CLIENT_ID/SECRET` 정리). 신규 `server/src/lib/kisMarket.js` — 국내는 `inquire-price`(현재가)/`inquire-daily-itemchartprice`(일봉), 해외는 거래소코드(NAS→NYS→AMS 순차 탐색, 성공한 코드는 심볼별로 캐싱) + `overseas-price`(현재가)/`dailyprice`(일봉). ⚠️ **실측으로 발견한 제약**: 국내/해외 일봉 둘 다 1회 호출당 최신 100개로 캡됨(요청 범위를 넓혀도 무시됨) — EMA120 등 워밍업에 필요한 180개 확보하려면 종료일(국내: `FID_INPUT_DATE_2`)/커서(해외: `BYMD`)를 과거로 옮겨 2회 호출 후 이어붙여야 함(둘 다 실측 검증 완료). 해외는 틀린 거래소코드를 넣어도 `rt_cd=0`(성공)에 필드만 전부 빈 문자열로 와서, `output.last` 존재 여부로 거래소를 판별해야 함.
      - **환율(USD/KRW)**: Yahoo `KRW=X`로 전환(`/api/yahoo/exchange-rate` 신설). 장중 지연시세지만 환율은 변동폭이 작아 실사용 영향 미미로 판단하고 진행.
      - **매크로 대시보드**: BTC 제거, 유가(WTI, `CL=F`) 추가(사용자 요청) — VIX/미국10년물은 그대로 Yahoo 유지.
-     - **KIS 토큰 영구저장**: `kisAuth.js`가 메모리 캐시 → Supabase(`kis_oauth_token` 테이블, `db/schema.sql`에 추가) 순으로 재사용하도록 변경. **사용자가 Supabase SQL 에디터에서 테이블 생성 SQL을 직접 실행해야 함(미완료)** — 안 해도 앱은 동작하지만(에러 캐치돼 있음) Render 재시작마다 재발급이 일어나서 원래 걱정했던 문제가 그대로 남음.
+     - **KIS 토큰 영구저장**: `kisAuth.js`가 메모리 캐시 → Supabase(`kis_oauth_token` 테이블, `db/schema.sql`에 추가) 순으로 재사용하도록 변경. 사용자가 Supabase SQL 에디터에서 테이블 생성 완료(2026-07-25).
      - **실전에서 발견한 버그**: 종목 검색 시 본종목+RS벤치마크(KODEX200/SPY) 캔들을 동시에 요청하는데, 토큰이 없는 상태에서 두 요청이 동시에 "새로 발급" 분기를 타면서 KIS "1분당1회" 제한에 걸려 하나가 실패하는 걸 브라우저 실테스트로 재현함 → `kisAuth.js`에 `inFlightFetch` 프로미스 락 추가해서 동시 요청이 토큰 발급 하나를 공유하도록 수정, 재검증 완료.
      - **분봉(1분봉) 초단기 보조지표는 미구현으로 남김** — KIS 분봉 엔드포인트가 미검증이라 서버가 일부러 400을 줘서 기존 soft-fail(실패해도 메인 분석엔 영향 없음) 경로를 그대로 타게 함. 필요해지면 별도 작업.
      - **해외 종목 한글명 표시도 보류** — 토스 종목마스터 같은 간단한 이름조회가 KIS엔 없어서, 해외 종목은 이제 한글명 대신 티커 그대로 표시(예: "애플" → "AAPL"). `updateUI()`의 기존 폴백이 처리하므로 에러는 아니고 UX만 소폭 후퇴.
      - 브라우저로 005930(코스피)/058610(코스닥)/AAPL(해외) 전부 실검색해서 캔들·RS벤치마크·지지저항·수급탭·환율변환까지 정상 렌더링 확인함.
+   - [x] **커밋 + push + 프로덕션 검증 완료 (2026-07-25, 커밋 `4e567b6`)** — GitHub push로 Render/GitHub Pages 자동 재배포됨. 배포 후 실제 프로덕션 URL(`raven-backend-z5uc.onrender.com`)에 curl로 `/api/kis/candles`(삼성전자 실데이터 응답), `/api/yahoo/exchange-rate`(₩1,462.1 응답) 재검증 완료.
 
 2. **RAVEN 분석 엔진 전체 재검토 — ✅ 완료 (2026-07-20)**
    - GPT 엔진과 비교해서 Claude 기준으로 판단 기준 자체(시그널/지지저항/캔들·보조지표/SCORE·RANK)를 재검토하는 작업. 아래 "Phase 1.5 — 분석 엔진 퀀트 업그레이드" 섹션에 상세 기록.
@@ -188,9 +189,21 @@
    - AI 서술 분석 관련 사용자 우려(뉴스/실적/기관수급 없이 그냥 지표를 문장으로 풀어주는 느낌)에 답변: 현재 AI는 이미 계산된 기술 지표만 서술하도록 의도적으로 설계됨(할루시네이션 방지 위해 새 숫자·뉴스를 지어내지 말라고 시스템 프롬프트에 명시) — 진짜 뉴스/실적/기관수급 서술은 Phase 5+에서 실제 데이터 소스를 붙인 뒤에나 타당하다고 설명, 지금 프롬프트를 풀어서 그럴듯한 가짜 뉴스를 만들게 하지 않기로 함.
    - **투자자별(개인/외국인/기관) 매매동향 — KIS API로 가능함을 실제 호출로 확인함**: `GET /uapi/domestic-stock/v1/quotations/inquire-investor` (TR_ID `FHKST01010900`)을 임시 테스트 라우트로 실제 호출 → `rt_cd:"0"` 정상 응답, 개인/외국인/기관 각각의 순매수 수량·순매수 대금·매수/매도 거래량을 일자별(30일치) 시계열로 제공함 확인. 기존 4종(프로그램매매/공매도/신용/대차)과 같은 KIS 계정 그대로 사용 가능. 확인 후 테스트 라우트는 제거함 — 사용자가 "다음 업데이트에 반영"하기로 명시적으로 예약(아래 우선순위 참고).
 
-7. **다음 우선순위 후보 (아직 미정, 세션 시작 시 사용자와 정하기)**
-   - 배포(위 1번) — Render `FRONTEND_ORIGIN` 환경변수 갱신(사용자가 Render 대시보드에서 직접) + Supabase에 `kis_oauth_token` 테이블 생성(SQL은 `server/db/schema.sql`에 있음, 사용자가 SQL 에디터에서 직접 실행) 두 가지만 남음 — 둘 다 대시보드 로그인이 필요해서 Claude Code가 대신 못 함
-   - **수급 탭에 개인/외국인/기관 매매동향 추가** — KIS `inquire-investor`로 가능함 확인 완료(위 6번 참고), 사용자가 다음 업데이트로 예약함
+7. **수급 탭에 개인/외국인/기관 매매동향 추가 — ✅ 완료 (2026-07-25, 같은 세션)**
+   - KIS `inquire-investor`(TR `FHKST01010900`)를 5번째 수급 데이터타입(`investor_trend`)으로 추가. 실측으로 정확한 필드명 확인(`prsn/frgn/orgn_ntby_qty` 등). `supplyDemandCollector.js`(수집) + `supplyDemandInterpreter.js`(해석 — 외국인·기관 동반 매도인데 개인만 받아내는 구조면 부담 요인, 동반 매수면 우호적 신호로 톤 판단)에 반영, 수급탭 제목/요약 문구도 "투자자별" 포함하도록 갱신.
+   - ⚠️ **DB 마이그레이션 필요**: `supply_demand_daily`의 `data_type` CHECK 제약이 기존 4종만 허용해서, 새 타입 저장 시도 시 실제로 `violates check constraint "supply_demand_daily_data_type_check"` 에러가 나는 것까지 실측 확인함. `server/db/schema.sql`에 `alter table ... drop/add constraint` 추가해둠 — **사용자가 Supabase SQL 에디터에서 아직 안 돌림(미완료)**. 안 돌려도 앱은 안 깨지고 "투자자별 매매동향 데이터가 없습니다"로 우아하게 표시됨(브라우저 실검증 완료) — 돌리면 바로 실제 데이터로 채워짐.
+
+8. **UI/UX 다듬기 + 실버그 수정 라운드 — ✅ 완료 (2026-07-25, 같은 세션)**
+   - **미국 10년물 계산 버그 수정**: Yahoo `^TNX`가 이미 실제 금리(%)를 그대로 주는데(실측: 4.679=4.679%) 코드가 `/10`을 한 번 더 해서 0.47%처럼 잘못 표시되던 실제 버그 발견·수정. VIX/환율/유가 임계값은 재검토 결과 이상 없어 그대로 둠.
+   - **RAVEN SCORE/RANK UI 통합**: 별도였던 두 배지를 "RAVEN SCORE" 하나로 합치고 `A+ 92점` 형태(+/-는 `<sup>` 위첨자)로 표시. `formatRankGrade()`가 기존 S/A/B/C/D 밴드 안에서 점수 위치(하위 1/3="-", 중위 1/3="", 상위 1/3="+")로 세부등급을 매김. 캡션 문구도 실제 스코어 계산 입력값(추세/모멘텀/변동성/R:R/RS)에 맞게 갱신.
+   - **RS(상대강도) 표기 형식 변경**: "20일 -3.3%p / 60일 +4.6%p" → "20일/60일 = -3.3/+4.6(%p)"로 바꿔 좁은 화면에서 단어 중간에 어중간하게 줄바꿈되던 문제 해결.
+   - **AI 분석요청 모바일 에러의 진짜 원인 발견**: 모바일 전용 버그가 아니라 **배포 서버(Render)에 `ANTHROPIC_API_KEY`가 아예 설정 안 되어 있던 것**이었음 — 실제 프로덕션 엔드포인트에 직접 curl 요청해서 정확한 원인 문구(`ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다`)까지 확인. 데스크탑 테스트는 로컬 서버(.env에 키 있음)로 붙어서 몰랐던 것. `render.yaml`에 해당 env var 항목 자체가 누락되어 있어서 추가함 — **실제 키 값은 사용자가 Render 대시보드에서 등록해야 함(미완료, 아래 참고)**.
+   - **인트로 인사말 교체**: "GOOD DAY SIR" → "AT YOUR SERVICE, SIR" / "RAVEN is online" (아이언맨 자비스 톤의 AI 비서 인사말로, 사용자 요청).
+   - **모바일 줌인 버그 수정**: 헤더 검색창(`.ticker-form #ticker-input`)의 모바일 브레이크포인트 `font-size`가 0.9rem(14.4px)로 16px 미만이라 iOS Safari가 포커스 시 자동 확대하던 게 원인 — 16px로 고정. `#entry-ticker`도 안전마진 차원에서 16px로 고정.
+   - **원형 그래픽(raven-smoke-orb) 리디자인**: 기존 시안/핑크 2색 대비를 까마귀 깃털 특유의 무지개빛 광택(iridescence) 느낌의 청록→인디고→보라 다단 그라디언트로 교체, 링 안쪽 빈 공간(하단)에 작은 까마귀 실루엣(인라인 SVG, 고정 워터마크로 은은한 날갯짓 애니메이션)을 추가해 "까마귀"라는 이름을 시각적으로 상징화. 모바일/데스크탑 둘 다 스크린샷으로 실확인 완료.
+     - ⚠️ 작업 중 겪은 함정: 미리보기 브라우저 탭이 `style.css`를 강하게 캐싱해서, `navigate{force:true}`로 새로고침해도 CSS 변경이 반영 안 되는 것처럼 보였음(마치 파싱 에러로 규칙이 통째로 사라진 것처럼 오인해 한참 디버깅함) — `<link>`의 `href`에 캐시버스터 쿼리스트링을 붙여서야 최신 CSS가 반영되는 걸 확인함. **다음에 스타일 변경이 브라우저에 반영 안 되는 것처럼 보이면 CSS 문법 문제보다 먼저 이 캐싱 문제부터 의심할 것.**
+
+9. **다음 우선순위 후보 (2026-07-25 갱신, 아직 미정, 세션 시작 시 사용자와 정하기)**
    - Phase 5(뉴스+실적 그래프)
    - Phase 6(국내장 프리마켓 분석 + 익일 신규진입 추천 — 규모 큰 작업)
 
