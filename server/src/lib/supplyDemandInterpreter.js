@@ -1,6 +1,15 @@
 const { supabase } = require("./supabaseClient");
 const { collectSupplyDemandForSymbol } = require("./supplyDemandCollector");
 
+// KIS 응답 필드가 빈 문자열("")로 오는 경우가 실제로 있음(장중 당일 데이터가 아직 집계되기 전 —
+// investor_trend가 일중 누적치라 장 시작 직후엔 당일 행 자체는 있는데 값만 비어있는 걸 실측 확인함).
+// Number("")는 NaN이 아니라 0이라 그냥 Number()를 쓰면 "0주 순매수"처럼 없는 데이터를 있는 것처럼
+// 잘못 표시하는 버그가 생김 — 빈 문자열/null/undefined는 명시적으로 NaN 처리.
+function parseKisNum(v) {
+  if (v === "" || v === null || v === undefined) return NaN;
+  return Number(v);
+}
+
 async function getLatestRow(symbol, dataType) {
   const { data, error } = await supabase
     .from("supply_demand_daily")
@@ -28,9 +37,16 @@ async function getLatestRows(symbol) {
 function interpretProgramTrade(row) {
   if (!row) return { text: "프로그램매매 데이터가 없습니다.", tone: 0 };
   const r = row.raw_data;
-  const netQty = Number(r.whol_smtn_ntby_qty);
-  const netAmt = Number(r.whol_smtn_ntby_tr_pbmn);
-  const trendIcdc = Number(r.whol_ntby_vol_icdc);
+  const netQty = parseKisNum(r.whol_smtn_ntby_qty);
+  const netAmt = parseKisNum(r.whol_smtn_ntby_tr_pbmn);
+  const trendIcdc = parseKisNum(r.whol_ntby_vol_icdc);
+
+  // ⚠️ 예전엔 이 가드가 없어서 필드가 비어있어도(NaN) netQty>0/<0 둘 다 거짓이라 조용히
+  // "균형" 문구로 빠지며 데이터 없음을 숨기고 있었음 — 다른 4개 해석 함수는 이미 이 가드가 있었는데
+  // 이 함수만 빠져있던 것.
+  if (!Number.isFinite(netQty)) {
+    return { text: "프로그램매매 데이터가 없습니다.", tone: 0 };
+  }
 
   let text;
   let tone = 0;
@@ -57,7 +73,7 @@ function interpretProgramTrade(row) {
 
 function interpretShortSale(row) {
   if (!row) return { text: "공매도 데이터가 없습니다.", tone: 0 };
-  const ratio = Number(row.raw_data.ssts_vol_rlim); // 당일 거래량 대비 공매도 비중(%)
+  const ratio = parseKisNum(row.raw_data.ssts_vol_rlim); // 당일 거래량 대비 공매도 비중(%)
 
   if (!Number.isFinite(ratio)) return { text: "공매도 데이터가 없습니다.", tone: 0 };
 
@@ -79,9 +95,9 @@ function interpretShortSale(row) {
 function interpretCreditBalance(row) {
   if (!row) return { text: "신용잔고 데이터가 없습니다.", tone: 0 };
   const r = row.raw_data;
-  const newStcn = Number(r.whol_loan_new_stcn);
-  const rdmpStcn = Number(r.whol_loan_rdmp_stcn);
-  const rate = Number(r.whol_loan_rmnd_rate);
+  const newStcn = parseKisNum(r.whol_loan_new_stcn);
+  const rdmpStcn = parseKisNum(r.whol_loan_rdmp_stcn);
+  const rate = parseKisNum(r.whol_loan_rmnd_rate);
 
   if (!Number.isFinite(newStcn) || !Number.isFinite(rdmpStcn)) {
     return { text: "신용잔고 데이터가 없습니다.", tone: 0 };
@@ -105,7 +121,7 @@ function interpretCreditBalance(row) {
 
 function interpretLoanTrans(row) {
   if (!row) return { text: "대차거래 데이터가 없습니다.", tone: 0 };
-  const change = Number(row.raw_data.prdy_rmnd_vrss);
+  const change = parseKisNum(row.raw_data.prdy_rmnd_vrss);
 
   if (!Number.isFinite(change)) return { text: "대차거래 데이터가 없습니다.", tone: 0 };
 
@@ -127,9 +143,9 @@ function interpretLoanTrans(row) {
 function interpretInvestorTrend(row) {
   if (!row) return { text: "투자자별(개인/외국인/기관) 매매동향 데이터가 없습니다.", tone: 0 };
   const r = row.raw_data;
-  const prsn = Number(r.prsn_ntby_qty);
-  const frgn = Number(r.frgn_ntby_qty);
-  const orgn = Number(r.orgn_ntby_qty);
+  const prsn = parseKisNum(r.prsn_ntby_qty);
+  const frgn = parseKisNum(r.frgn_ntby_qty);
+  const orgn = parseKisNum(r.orgn_ntby_qty);
 
   if ([prsn, frgn, orgn].some((n) => Number.isNaN(n))) {
     return { text: "투자자별(개인/외국인/기관) 매매동향 데이터가 없습니다.", tone: 0 };
@@ -160,6 +176,22 @@ function interpretInvestorTrend(row) {
   return { text, tone };
 }
 
+// investor_trend는 일중 누적치라 당일 행이 존재해도 장 시작 직후엔 값이 비어있을 수 있음(위 참고).
+// 그런 "존재하지만 비어있는" 행은 데이터가 있다고 착각하면 안 되므로 별도로 유효성 체크.
+function isInvestorRowUsable(row) {
+  if (!row) return false;
+  const r = row.raw_data;
+  return [r.prsn_ntby_qty, r.frgn_ntby_qty, r.orgn_ntby_qty].every((v) => Number.isFinite(parseKisNum(v)));
+}
+
+// 캐시된 데이터의 최신 날짜가 오늘로부터 며칠 지났는지(주말/연휴 감안해 4일까지는 정상 범위로 봄)
+function daysSince(dateStr) {
+  if (!dateStr) return Infinity;
+  const then = new Date(`${dateStr}T00:00:00Z`).getTime();
+  const now = Date.now();
+  return (now - then) / (1000 * 60 * 60 * 24);
+}
+
 // 종목의 전일 수급 5종(프로그램매매/공매도/신용/대차/투자자별)을 오늘 해석 + 내일 예상 코멘트로 변환
 // 캐시된 데이터가 없으면 그 자리에서 KIS로 즉시 수집(+캐싱)한 뒤 해석함
 async function interpretSupplyDemand(symbol) {
@@ -169,8 +201,21 @@ async function interpretSupplyDemand(symbol) {
   // 타입으로 추가한 뒤, 이미 다른 4종 캐시가 있던 종목은 hasAnyData가 true라 재수집이 통째로
   // 스킵되면서 investor_trend만 영영 채워지지 않았음(실측으로 재현·확인함). 5종 전부 있는지로 바꿔서
   // 타입 하나라도 비어있으면(신규 타입 추가/일시적 수집 실패 등) 다시 채워지도록 함.
-  const hasAllData = Object.values(rows).every((r) => r !== null);
-  if (!hasAllData) {
+  const hasAllData =
+    Object.values(rows).every((r) => r !== null) && isInvestorRowUsable(rows.investor_trend);
+
+  // ⚠️ 또 다른 실제 버그: hasAllData가 한 번 true가 되면(예: 예전 세션에 한 번 수집됨) 그 뒤로는
+  // "5종 다 있으니 됐다"고 영원히 재수집을 안 해서, 캐시가 며칠 지나도 최신화가 안 되고 날짜가
+  // 계속 예전 그대로 박혀있는 문제가 있었음(사용자가 7/24처럼 오래된 날짜를 보고받는 것으로 재현됨).
+  // "다 있는지"뿐 아니라 "최신인지"도 같이 봐서, 가장 최근 캐시 날짜가 너무 오래됐으면 다시 수집함.
+  const latestCachedDate = Object.values(rows)
+    .map((r) => r?.trade_date)
+    .filter(Boolean)
+    .sort()
+    .pop();
+  const isStale = daysSince(latestCachedDate) > 4;
+
+  if (!hasAllData || isStale) {
     await collectSupplyDemandForSymbol(symbol);
     rows = await getLatestRows(symbol);
   }
