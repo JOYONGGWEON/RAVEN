@@ -184,6 +184,75 @@ function isInvestorRowUsable(row) {
   return [r.prsn_ntby_qty, r.frgn_ntby_qty, r.orgn_ntby_qty].every((v) => Number.isFinite(parseKisNum(v)));
 }
 
+// 최근 N영업일치 investor_trend 히스토리(최신순) — 연속 순매수/매도 감지용
+async function getInvestorTrendHistory(symbol, limit = 15) {
+  const { data, error } = await supabase
+    .from("supply_demand_daily")
+    .select("trade_date, raw_data")
+    .eq("symbol", symbol)
+    .eq("data_type", "investor_trend")
+    .order("trade_date", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+// historyDesc(최신순) 중 한 필드(외국인/기관 순매수량)가 며칠 연속 같은 방향인지 계산.
+// 맨 앞(오늘) 행이 아직 장중 미집계라 비어있으면(값이 NaN) 그 행만 건너뛰고 어제부터 셈 —
+// 중간에 비어있는 날이 있으면(수집 실패 등) 거기서 연속 카운트를 끊음.
+function computeStreak(historyDesc, field) {
+  const values = [];
+  for (const row of historyDesc) {
+    const v = parseKisNum(row.raw_data[field]);
+    if (Number.isFinite(v)) {
+      values.push(v);
+    } else if (values.length === 0) {
+      continue;
+    } else {
+      break;
+    }
+  }
+  if (!values.length) return null;
+
+  const sign = values[0] > 0 ? 1 : values[0] < 0 ? -1 : 0;
+  if (sign === 0) return null;
+
+  let days = 0;
+  let cumulative = 0;
+  for (const v of values) {
+    const s = v > 0 ? 1 : v < 0 ? -1 : 0;
+    if (s !== sign) break;
+    days += 1;
+    cumulative += v;
+  }
+  return { direction: sign > 0 ? "BUY" : "SELL", days, cumulative };
+}
+
+// 외국인/기관 연속 순매수·순매도 — 실전에서 많이 보는 수급 투자포인트라 요청받아 추가함.
+// 3일 미만은 "연속"이라 부르기 애매해서 문장 자체를 생략함(짧은 노이즈성 흐름까지 강조하지 않기 위함).
+function interpretInvestorStreak(historyDesc) {
+  const MIN_DAYS = 3;
+  const frgnStreak = computeStreak(historyDesc, "frgn_ntby_qty");
+  const orgnStreak = computeStreak(historyDesc, "orgn_ntby_qty");
+
+  const bits = [];
+  let tone = 0;
+
+  if (frgnStreak && frgnStreak.days >= MIN_DAYS) {
+    const verb = frgnStreak.direction === "BUY" ? "순매수" : "순매도";
+    bits.push(`외국인 ${frgnStreak.days}일 연속 ${verb}(누적 ${Math.abs(frgnStreak.cumulative).toLocaleString()}주)`);
+    tone += frgnStreak.direction === "BUY" ? 1 : -1;
+  }
+  if (orgnStreak && orgnStreak.days >= MIN_DAYS) {
+    const verb = orgnStreak.direction === "BUY" ? "순매수" : "순매도";
+    bits.push(`기관 ${orgnStreak.days}일 연속 ${verb}(누적 ${Math.abs(orgnStreak.cumulative).toLocaleString()}주)`);
+    tone += orgnStreak.direction === "BUY" ? 1 : -1;
+  }
+
+  if (!bits.length) return null;
+  return { text: `${bits.join(", ")} 흐름이 이어지고 있습니다.`, tone };
+}
+
 // 캐시된 데이터의 최신 날짜가 오늘로부터 며칠 지났는지(주말/연휴 감안해 4일까지는 정상 범위로 봄)
 function daysSince(dateStr) {
   if (!dateStr) return Infinity;
@@ -227,6 +296,12 @@ async function interpretSupplyDemand(symbol) {
     interpretLoanTrans(rows.loan_trans),
     interpretInvestorTrend(rows.investor_trend),
   ];
+
+  // 연속 순매수/매도는 하루 스냅샷이 아니라 최근 며칠 흐름을 봐야 해서 별도로 히스토리 조회.
+  // 특이 연속매매가 없으면(3일 미만) null이라 문장 자체를 안 넣음 — 매번 뜨는 문구가 아님.
+  const history = await getInvestorTrendHistory(symbol);
+  const streakPart = interpretInvestorStreak(history);
+  if (streakPart) parts.push(streakPart);
 
   const toneSum = parts.reduce((sum, p) => sum + p.tone, 0);
   let outlook;

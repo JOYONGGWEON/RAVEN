@@ -707,6 +707,18 @@ body.raven-result-bg {
   color: var(--text-sub);
 }
 
+/* 긍정/중립/부정 색상 코딩 — 지표박스(.indicator-interp) 전체 색칠과 문단 안 핵심 문구
+   부분 강조(toneSpan) 양쪽에서 공용으로 씀 */
+.sentiment-pos {
+  color: var(--success);
+}
+.sentiment-neu {
+  color: var(--warning);
+}
+.sentiment-neg {
+  color: var(--danger);
+}
+
 /* 탭 하단 종합 요약 — 노란색으로 "여러 해석을 합쳤을 때의 결론"임을 표시 */
 .tab-summary-box {
   border: 1px solid rgba(250, 204, 21, 0.3);

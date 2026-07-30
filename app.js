@@ -724,7 +724,9 @@ async function fetchMacroData() {
       $("macro-krw-note").textContent = "데이터 수신 실패";
     }
 
-    // 유가 (WTI 원유 선물)
+    // 유가 (WTI 원유 선물) — 기준값은 최근 5년(2021~2026) 주봉 실데이터 분포로 보정함
+    // (하위 10분위 ≈ $62.7, 상위 10분위 ≈ $97.6, 중앙값 $76.3 — 처음엔 감으로 잡은 <60/>90이었는데
+    // 실측해보니 대략 맞았어서 반올림한 값으로 다듬기만 함, 큰 변경은 아님)
     let oilVal = null;
     if (oil) {
       oilVal = oil.lastClose;
@@ -732,8 +734,8 @@ async function fetchMacroData() {
         $("macro-oil").textContent =
           "$" + oilVal.toFixed(2);
       let note = "중립 구간";
-      if (oilVal > 90) note = "고유가, 인플레이션 압력 주의";
-      else if (oilVal < 60) note = "저유가, 에너지주 부담";
+      if (oilVal > 95) note = "고유가, 인플레이션 압력 주의";
+      else if (oilVal < 65) note = "저유가, 에너지주 부담";
       if ($("macro-oil-note")) $("macro-oil-note").textContent = note;
     } else if ($("macro-oil-note")) {
       $("macro-oil-note").textContent = "데이터 수신 실패";
@@ -1725,7 +1727,13 @@ function renderBulletList(el, bullets) {
 }
 
 // 지표 박스(RSI/MACD/ADX/ATR/RS) 값 줄을 "숫자값" + "▶ 해석" 두 줄로 분리 렌더링
-function setIndicatorBox(el, valueText, interpText) {
+// 문단 안의 특정 핵심 문구만 색칠할 때 쓰는 인라인 span (지표박스 전체 색칠과는 별개 용도)
+function toneSpan(text, sentiment) {
+  return `<span class="sentiment-${sentiment}">${text}</span>`;
+}
+
+// sentiment: "pos"(긍정/녹색) | "neu"(중립/주황) | "neg"(부정/빨강) | undefined(색 없음, 기본색 유지)
+function setIndicatorBox(el, valueText, interpText, sentiment) {
   if (!el) return;
   el.innerHTML = "";
 
@@ -1737,6 +1745,7 @@ function setIndicatorBox(el, valueText, interpText) {
   if (interpText) {
     const interpSpan = document.createElement("span");
     interpSpan.className = "indicator-interp";
+    if (sentiment) interpSpan.classList.add(`sentiment-${sentiment}`);
     interpSpan.textContent = `▶ ${interpText}`;
     el.appendChild(interpSpan);
   }
@@ -2215,6 +2224,9 @@ function updateUI(data, analysis, fxRate, stockName) {
     rankEl.style.color = color;
     rankEl.style.textShadow = `0 0 10px ${color}88`;
   }
+  // "점" 단위 글자가 숫자/등급과 따로 흰색으로 남아있던 것 — 같은 색으로 맞춤
+  const scoreUnitEl = $("ai-score-unit");
+  if (scoreUnitEl) scoreUnitEl.style.color = color;
 
   // ===== 3단계 판정 (매수 우위 / 중립·관망 / 매도 신중) =====
   // 배지·전략요약이 같은 판정을 공유하도록 computeVerdict() 하나로 통일 (중복 계산 금지)
@@ -2376,10 +2388,16 @@ function updateUI(data, analysis, fxRate, stockName) {
       const primary = Number.isFinite(rsInfo.rs20) ? rsInfo.rs20 : rsInfo.rs60;
 
       let verdict = "시장과 비슷한 흐름";
-      if (primary >= 5) verdict = "시장 대비 아웃퍼폼";
-      else if (primary <= -5) verdict = "시장 대비 언더퍼폼 — 개별 지표가 좋아도 주의";
+      let sentiment = "neu";
+      if (primary >= 5) {
+        verdict = "시장 대비 아웃퍼폼";
+        sentiment = "pos";
+      } else if (primary <= -5) {
+        verdict = "시장 대비 언더퍼폼 — 개별 지표가 좋아도 주의";
+        sentiment = "neg";
+      }
 
-      setIndicatorBox(rsEl, display, verdict);
+      setIndicatorBox(rsEl, display, verdict, sentiment);
     } else {
       setIndicatorBox(rsEl, "데이터 부족");
     }
@@ -2416,16 +2434,17 @@ function updateUI(data, analysis, fxRate, stockName) {
         )}로 모멘텀은 중립 구간입니다. 뚜렷한 과열/과매도 신호보다는 추세와 지지·저항에서 방향성을 확인하는 편이 좋습니다.`;
     }
 
-    // MACD 다이버전스 — 가격과 모멘텀 지표가 서로 다른 말을 하는 구간이라 별도로 경고
+    // MACD 다이버전스 — 가격과 모멘텀 지표가 서로 다른 말을 하는 구간이라 별도로 경고.
+    // 핵심 문구("약세/강세 다이버전스")만 색칠 — 문단 전체를 물들이면 오히려 안 읽혀서 키워드만.
     if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BEARISH") {
       txt +=
-        ` 최근 ${analysis.macdDivergence.lookback}일간 가격은 올랐지만 MACD 모멘텀은 오히려 꺾이는 약세 다이버전스가 나타나, 상승 동력이 소진되고 있을 가능성이 있습니다.`;
+        ` 최근 ${analysis.macdDivergence.lookback}일간 가격은 올랐지만 MACD 모멘텀은 오히려 꺾이는 ${toneSpan("약세 다이버전스", "neg")}가 나타나, 상승 동력이 소진되고 있을 가능성이 있습니다.`;
     } else if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BULLISH") {
       txt +=
-        ` 최근 ${analysis.macdDivergence.lookback}일간 가격은 빠졌지만 MACD 모멘텀은 오히려 개선되는 강세 다이버전스가 나타나, 하락 동력이 약해지고 있을 가능성이 있습니다.`;
+        ` 최근 ${analysis.macdDivergence.lookback}일간 가격은 빠졌지만 MACD 모멘텀은 오히려 개선되는 ${toneSpan("강세 다이버전스", "pos")}가 나타나, 하락 동력이 약해지고 있을 가능성이 있습니다.`;
     }
 
-    momentumEl.textContent = txt;
+    momentumEl.innerHTML = txt;
   }
 
   // ===== Flow / WhyToday / 패턴 계산 =====
@@ -2783,6 +2802,11 @@ function updateUI(data, analysis, fxRate, stockName) {
         if (nearSupport) bits.push(`1차 지지선(${s1 ? s1.toFixed(2) : "N/A"}) 근처`);
         if (typeof adx === "number" && adx >= 25) bits.push(`ADX ${adx.toFixed(1)}로 추세 강도까지 뚜렷`);
         if (analysis.macdCrossover === "GOLDEN") bits.push("MACD 골든크로스 동반");
+        // ⚠️ ADX/MACD크로스/RS는 이미 근거로 들어가는데 MACD 다이버전스만 빠져있던 실제 누락 —
+        // 모멘텀 탭엔 다이버전스 문장이 있는데 정작 종합 요약(RAVEN SIGNAL)엔 안 보이던 게 이 부분.
+        if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BULLISH") {
+          bits.push("MACD 강세 다이버전스 동반");
+        }
         if (rsInfo && Number.isFinite(rsInfo.rs20) && rsInfo.rs20 >= 5) bits.push("지수 대비 아웃퍼폼 중");
 
         detailTxt =
@@ -2801,6 +2825,9 @@ function updateUI(data, analysis, fxRate, stockName) {
         mainTxt = "저항선 근처 리스크 우위";
         const bits = [`1차 저항선(${r1 ? r1.toFixed(2) : "N/A"}) 근처 상단 파동`];
         if (analysis.macdCrossover === "DEAD") bits.push("MACD 데드크로스 동반");
+        if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BEARISH") {
+          bits.push("MACD 약세 다이버전스 동반");
+        }
         if (typeof adx === "number" && adx < 20) bits.push(`ADX ${adx.toFixed(1)}로 추세 신뢰도 낮음`);
 
         detailTxt =
@@ -2814,9 +2841,12 @@ function updateUI(data, analysis, fxRate, stockName) {
         if (actions.length) detailTxt += "\n\n" + actions.join("\n");
       } else {
         mainTxt = "R:R 불리 (위험 대비 보상 부족)";
-        const extra = analysis.macdCrossover === "DEAD"
+        let extra = analysis.macdCrossover === "DEAD"
           ? " MACD 데드크로스까지 겹쳐 있어 더 보수적으로 접근해야 합니다."
           : "";
+        if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BEARISH") {
+          extra += " MACD 약세 다이버전스까지 나타나 상승 동력이 약해지는 신호도 있습니다.";
+        }
         detailTxt =
           `현재 ${rrTxt}로, 손절 폭 대비 위쪽 기대 수익이 충분히 보상되지 않는 자리입니다. ` +
           "추세·수급이 좋아 보여도 진입보다는 다음 더 유리한 R:R 구간을 기다리는 것이 효율적입니다." +
@@ -2853,17 +2883,20 @@ function updateUI(data, analysis, fxRate, stockName) {
   // 6) RSI / MACD 박스 (숫자 + 짧은 해석)
   if (rsiBox) {
     if (typeof rsi === "number") {
+      // 과열/과매도는 방향성 자체보다 "반전 위험 구간"이라는 경고 성격이 강해서 중립(주황) 취급.
+      // 상승 우위만 명확한 긍정, 약세만 명확한 부정으로 분류.
       let rsiNote = "중립";
+      let sentiment = "neu";
       if (rsi >= 70) rsiNote = "과열";
-      else if (rsi >= 60) rsiNote = "상승 우위";
+      else if (rsi >= 60) { rsiNote = "상승 우위"; sentiment = "pos"; }
       else if (rsi <= 30) rsiNote = "과매도";
-      else if (rsi <= 40) rsiNote = "약세";
+      else if (rsi <= 40) { rsiNote = "약세"; sentiment = "neg"; }
 
       let crossTxt = "";
       if (analysis.rsiCross === "BUY") crossTxt = " · 과매도 탈출(반등 신호)";
       else if (analysis.rsiCross === "SELL") crossTxt = " · 과열 이탈(조정 신호)";
 
-      setIndicatorBox(rsiBox, rsi.toFixed(1), `${rsiNote}${crossTxt}`);
+      setIndicatorBox(rsiBox, rsi.toFixed(1), `${rsiNote}${crossTxt}`, sentiment);
     } else {
       setIndicatorBox(rsiBox, "데이터 부족");
     }
@@ -2872,13 +2905,14 @@ function updateUI(data, analysis, fxRate, stockName) {
   if (macdBox) {
     if (typeof analysis.macd === "number") {
       const dir = analysis.macd >= 0 ? "상승 우위" : "하락 우위";
+      const sentiment = analysis.macd >= 0 ? "pos" : "neg";
       let crossTxt = "";
       if (analysis.macdCrossover === "GOLDEN") crossTxt = " · 골든크로스(매수 신호)";
       else if (analysis.macdCrossover === "DEAD") crossTxt = " · 데드크로스(매도 신호)";
       const macdValueText = `${
         analysis.macd >= 0 ? "+" : ""
       }${analysis.macd.toFixed(3)}`;
-      setIndicatorBox(macdBox, macdValueText, `${dir}${crossTxt}`);
+      setIndicatorBox(macdBox, macdValueText, `${dir}${crossTxt}`, sentiment);
     } else {
       setIndicatorBox(macdBox, "데이터 부족");
     }
@@ -2890,16 +2924,21 @@ function updateUI(data, analysis, fxRate, stockName) {
       if (adx >= 25) strengthNote = "뚜렷함";
       else if (adx < 20) strengthNote = "약함(횡보 가능성)";
 
+      // ADX 자체는 추세 "강도"라 방향성이 없음 — 색깔은 DI+/DI-가 가리키는 방향으로 정하되,
+      // 추세가 약하면(횡보 가능성) 그 방향을 신뢰하기 어려우니 중립으로 둠.
       let diTxt = "";
+      let sentiment = "neu";
       if (typeof plusDI === "number" && typeof minusDI === "number") {
-        diTxt = plusDI > minusDI ? ", DI+ 우위" : ", DI- 우위";
+        const bullish = plusDI > minusDI;
+        diTxt = bullish ? ", DI+ 우위" : ", DI- 우위";
+        if (adx >= 20) sentiment = bullish ? "pos" : "neg";
       }
       // ADX 숫자가 같아도 강해지는 중인지 약해지는 중인지에 따라 의미가 다름
       // (예: 15→25는 추세가 막 시작되는 신호, 35→25는 추세가 식어가는 신호 — 둘 다 "25"지만 정반대 국면)
       let adxTrendTxt = "";
       if (adxTrend === "RISING") adxTrendTxt = ", 강도 강화 중";
       else if (adxTrend === "FALLING") adxTrendTxt = ", 강도 약화 중";
-      setIndicatorBox(adxBox, adx.toFixed(1), `추세 ${strengthNote}${diTxt}${adxTrendTxt}`);
+      setIndicatorBox(adxBox, adx.toFixed(1), `추세 ${strengthNote}${diTxt}${adxTrendTxt}`, sentiment);
     } else {
       setIndicatorBox(adxBox, "데이터 부족");
     }
@@ -2910,12 +2949,15 @@ function updateUI(data, analysis, fxRate, stockName) {
       const atrPctTxt = typeof atrPct === "number" ? ` (${atrPct.toFixed(1)}%)` : "";
       // 20일 변동성(volatility)은 RAVEN SCORE에 감점/가점으로 이미 반영되고 있는데
       // 정작 화면 어디에도 안 보여서 "왜 이 종목만 점수가 깎였는지" 알 수 없었음 — 여기 노출.
+      // ATR 자체는 방향성 없는 변동성 지표라 기본은 무채색 유지 — "점수 감점 요인"이 붙을 때만
+      // (RAVEN SCORE에 실제로 불리하게 반영된다는 뜻이라) 부정으로 표시.
       let volTxt = "";
+      let sentiment;
       if (typeof volatility === "number") {
-        if (volatility > 6) volTxt = " · 20일 변동성 높음(점수 감점 요인)";
-        else if (volatility > 0 && volatility < 2) volTxt = " · 20일 변동성 매우 낮음(점수 감점 요인)";
+        if (volatility > 6) { volTxt = " · 20일 변동성 높음(점수 감점 요인)"; sentiment = "neg"; }
+        else if (volatility > 0 && volatility < 2) { volTxt = " · 20일 변동성 매우 낮음(점수 감점 요인)"; sentiment = "neg"; }
       }
-      setIndicatorBox(atrBox, `${formatPrice(atr)}${atrPctTxt}`, `손절폭 산정 기준${volTxt}`);
+      setIndicatorBox(atrBox, `${formatPrice(atr)}${atrPctTxt}`, `손절폭 산정 기준${volTxt}`, sentiment);
     } else {
       setIndicatorBox(atrBox, "데이터 부족");
     }
