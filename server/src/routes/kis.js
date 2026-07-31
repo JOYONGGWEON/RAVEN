@@ -4,6 +4,7 @@ const { getKisAccessToken } = require("../lib/kisAuth");
 const { collectSupplyDemandForSymbol } = require("../lib/supplyDemandCollector");
 const { interpretSupplyDemand } = require("../lib/supplyDemandInterpreter");
 const { fetchCandles, fetchOverseasStockName, fetchIntradayCandles } = require("../lib/kisMarket");
+const { fetchIncomeStatement } = require("../lib/kisFundamentals");
 
 const KIS_API_BASE = "https://openapi.koreainvestment.com:9443";
 
@@ -143,6 +144,20 @@ router.get("/candles", async (req, res) => {
   } catch (e) {
     console.error("[RAVEN] /api/kis/candles error:", e);
     res.status(502).json({ error: "KIS candles proxy error" });
+  }
+});
+
+// 국내 종목 분기별 손익계산서(매출액/영업이익/당기순이익) — Phase 5(실적 그래프)용, 국내 전용
+router.get("/income-statement", async (req, res) => {
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: "symbol query param required" });
+
+  try {
+    const quarters = await fetchIncomeStatement(symbol);
+    res.json({ result: { quarters } });
+  } catch (e) {
+    console.error("[RAVEN] /api/kis/income-statement error:", e);
+    res.status(502).json({ error: "KIS income-statement proxy error" });
   }
 });
 
