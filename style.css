@@ -609,6 +609,9 @@ body.raven-result-bg {
   font-weight: 600;
   color: var(--text-sub);
   margin-bottom: 5px;
+  /* 값이 "—"(없음)인 칸은 그리드 열이 CJK 글자 단위 줄바꿈으로 극단적으로 좁아질 수 있어서
+     라벨이 세로로 한 글자씩 쌓이는 버그가 있었음(실측 확인) — 줄바꿈 금지로 고정폭 확보 */
+  white-space: nowrap;
 }
 
 .wave-chip-price {

@@ -2256,12 +2256,15 @@ function updateUI(data, analysis, fxRate, stockName) {
     const downPct = downPctRaw.toFixed(1);
     const rrText = rrRaw.toFixed(2);
 
+    // 각 통계 문구(예: "▼ DOWN: 22.0%")가 좁은 화면에서 라벨과 숫자 사이로 줄바꿈되며
+    // 잘리는 게 실측으로 확인돼서, 문구 단위로 white-space:nowrap을 걸어 덩어리째로만
+    // 줄바꿈되도록 함(RS 표기 줄바꿈 버그와 같은 유형).
     mainComment =
-      `<span style="color:#10b981;">▲ UP: ${upPct}%</span> ` +
-      `<span style="color:#ef4444; margin-left:6px;">▼ DOWN: ${downPct}%</span> ` +
+      `<span style="color:#10b981; white-space:nowrap;">▲ UP: ${upPct}%</span> ` +
+      `<span style="color:#ef4444; white-space:nowrap; margin-left:6px;">▼ DOWN: ${downPct}%</span> ` +
       `<span style="color:#666; margin:0 6px;">·</span>` +
-      `<span style="color:#3b82f6; font-weight:700;">R:R ≈ ${rrText} : 1</span> ` +
-      `<span style="color:${verdictColor}; font-weight:600; margin-left:6px;">${verdictBracket}</span>`;
+      `<span style="color:#3b82f6; font-weight:700; white-space:nowrap;">R:R ≈ ${rrText} : 1</span> ` +
+      `<span style="color:${verdictColor}; font-weight:600; white-space:nowrap; margin-left:6px;">${verdictBracket}</span>`;
   } else {
     mainComment =
       "최근 구간에서 뚜렷한 지지·저항이 부족해, 기본 추세·모멘텀 기준으로만 평가합니다.";
