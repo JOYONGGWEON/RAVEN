@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const { fetchOverseasIncomeStatement } = require("../lib/yahooFundamentals");
 
 const YAHOO_CHART_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/";
 
@@ -45,6 +46,21 @@ router.get("/exchange-rate", async (req, res) => {
   } catch (e) {
     console.error("[RAVEN] /api/yahoo/exchange-rate error:", e);
     res.status(502).json({ error: "Yahoo exchange-rate proxy error" });
+  }
+});
+
+// 해외 종목 분기별 손익계산서 (Phase 5, 5단계) — KIS의 income-statement 엔드포인트와 같은
+// 응답 모양({ result: { quarters } })으로 맞춰서 프론트가 렌더링 로직을 그대로 재사용할 수 있게 함.
+router.get("/income-statement", async (req, res) => {
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: "symbol query param required" });
+
+  try {
+    const quarters = await fetchOverseasIncomeStatement(symbol.toUpperCase());
+    res.json({ result: { quarters } });
+  } catch (e) {
+    console.error("[RAVEN] /api/yahoo/income-statement error:", e);
+    res.status(502).json({ error: "Yahoo income-statement proxy error" });
   }
 });
 

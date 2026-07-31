@@ -415,15 +415,32 @@ async function fetchSupplyDemandComment(symbol) {
   }
 }
 
-// 국내 분기별 손익계산서(실적 탭) — 해외는 Phase 5 5단계(Yahoo Finance)에서 지원 예정, 아직 없음
-async function fetchIncomeStatementData(symbol) {
+// 분기별 손익계산서(실적 탭) — 국내는 KIS, 해외는 Yahoo Finance(Phase 5, 5단계)로 분기.
+// 두 백엔드 라우트 모두 같은 응답 모양({ result: { quarters } })으로 맞춰둬서 프론트는 출처만 바꿔 호출하면 됨.
+async function fetchIncomeStatementData(symbol, domestic) {
+  const path = domestic
+    ? `/api/kis/income-statement?symbol=${encodeURIComponent(symbol)}`
+    : `/api/yahoo/income-statement?symbol=${encodeURIComponent(symbol)}`;
   try {
-    const res = await fetch(`${API_BASE}/api/kis/income-statement?symbol=${encodeURIComponent(symbol)}`);
+    const res = await fetch(`${API_BASE}${path}`);
     if (!res.ok) return null;
     const json = await res.json();
     return (json.result && json.result.quarters) || null;
   } catch (e) {
     console.warn("[RAVEN] 실적 조회 실패:", e);
+    return null;
+  }
+}
+
+// 뉴스 탭 — 국내/해외 둘 다 KIS 하나로 커버됨(Phase 5, 4단계)
+async function fetchNewsData(symbol) {
+  try {
+    const res = await fetch(`${API_BASE}/api/kis/news?symbol=${encodeURIComponent(symbol)}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return (json.result && json.result.news) || null;
+  } catch (e) {
+    console.warn("[RAVEN] 뉴스 조회 실패:", e);
     return null;
   }
 }
@@ -3100,10 +3117,11 @@ function updateUI(data, analysis, fxRate, stockName) {
     renderNarrativeBullets(stratDetail, detailLines);
   }
 
-  // 5) Fund 섹터 — 새 티커 분석 시작 시 이전 종목의 실적 차트를 지우고 로딩 상태로 리셋.
-  // 실제 데이터 렌더링은 runAnalysisForTicker()에서 fetchIncomeStatementData() 완료 후 비동기로 처리
-  // (수급 탭과 동일한 패턴 — 메인 분석을 늦추지 않음).
+  // 5) Fund/뉴스 섹터 — 새 티커 분석 시작 시 이전 종목의 실적 차트·뉴스 목록을 지우고 로딩 상태로 리셋.
+  // 실제 데이터 렌더링은 runAnalysisForTicker()에서 fetchIncomeStatementData()/fetchNewsData() 완료 후
+  // 비동기로 처리(수급 탭과 동일한 패턴 — 메인 분석을 늦추지 않음).
   resetEarningsPanel();
+  resetNewsPanel();
 
   // 6) RSI / MACD 박스 (숫자 + 짧은 해석)
   if (rsiBox) {
@@ -3312,18 +3330,22 @@ function renderTradingViewChart(symbol) {
 }
 
 // ===============================
-// 📑 상세 탭 (추세·모멘텀 / 수급 / 패턴·신호 / 실적)
+// 📑 상세 탭 (추세·모멘텀 / 수급 / 패턴·신호 / 실적 / 뉴스)
 // ===============================
 function initResultTabs() {
   const tabBtns = document.querySelectorAll(".tab-btn");
   const track = $("tabs-track");
   if (!tabBtns.length || !track) return;
 
+  // 탭 개수만큼 슬라이드 폭(%)을 계산 — 탭 추가/삭제 시 CSS(.tabs-track width, .tab-panel flex-basis)만
+  // 맞춰주면 이 계산식은 그대로 재사용됨(기존엔 4탭 고정으로 25% 하드코딩돼 있었음, 뉴스 탭 추가하며 일반화).
+  const step = 100 / tabBtns.length;
+
   tabBtns.forEach((btn, idx) => {
     btn.addEventListener("click", () => {
       tabBtns.forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
-      track.style.transform = `translateX(-${idx * 25}%)`;
+      track.style.transform = `translateX(-${idx * step}%)`;
     });
   });
 }
@@ -3398,7 +3420,7 @@ function resetEarningsPanel() {
   if (txtEl) txtEl.textContent = "";
 }
 
-// KIS 손익계산서는 억원 단위로 옴 — 1조원 넘어가면 "조원" 단위로 환산해서 표시(가독성)
+// KIS 손익계산서(국내)는 억원 단위로 옴 — 1조원 넘어가면 "조원" 단위로 환산해서 표시(가독성)
 function formatEokwon(value) {
   if (!Number.isFinite(value)) return "-";
   const trillions = value / 10000;
@@ -3406,6 +3428,16 @@ function formatEokwon(value) {
     return `${trillions.toLocaleString("ko-KR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}조원`;
   }
   return `${Math.round(value).toLocaleString("ko-KR")}억원`;
+}
+
+// Yahoo Finance(해외)는 달러 원단위 그대로 옴(예: 29589000000) — B(십억)/M(백만) 단위로 환산
+function formatUsdCompact(value) {
+  if (!Number.isFinite(value)) return "-";
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  if (abs >= 1e9) return `${sign}$${(abs / 1e9).toLocaleString("en-US", { maximumFractionDigits: 2 })}B`;
+  if (abs >= 1e6) return `${sign}$${(abs / 1e6).toLocaleString("en-US", { maximumFractionDigits: 1 })}M`;
+  return `${sign}$${Math.round(abs).toLocaleString("en-US")}`;
 }
 
 const QUARTER_MONTH_LABEL = { "03": "1", "06": "2", "09": "3", "12": "4" };
@@ -3419,7 +3451,8 @@ function shortQuarterLabel(yyyymm) {
 // (막대 8개 x 2계열 정도의 단순한 차트라 새 의존성을 추가할 필요가 없다고 판단함, 2026-08-01).
 // 매출액과 영업이익을 같은 스케일에 그려서 영업이익률이 막대 높이 비율로도 바로 보이게 함 —
 // 영업적자 분기는 기준선(baseline) 아래로 내려가는 빨간 막대로 표시.
-function renderEarningsChart(quarters, isDomestic) {
+// currency: "KRW"(국내, KIS 억원 단위) | "USD"(해외, Yahoo Finance 달러 원단위) — 단위 포맷터만 다름.
+function renderEarningsChart(quarters, currency) {
   const svg = $("fund-chart");
   const empty = $("fund-chart-empty");
   const legend = $("fund-legend");
@@ -3427,6 +3460,8 @@ function renderEarningsChart(quarters, isDomestic) {
   const listEl = $("fund-quarter-list");
   const txtEl = $("fund-txt");
   if (!svg || !empty) return;
+
+  const fmt = currency === "USD" ? formatUsdCompact : formatEokwon;
 
   const showEmpty = (msg) => {
     empty.textContent = msg;
@@ -3438,10 +3473,6 @@ function renderEarningsChart(quarters, isDomestic) {
     if (txtEl) txtEl.textContent = "";
   };
 
-  if (!isDomestic) {
-    showEmpty("해외 종목 실적은 아직 지원하지 않습니다 (추후 지원 예정).");
-    return;
-  }
   if (!quarters || !quarters.length) {
     showEmpty("실적 데이터를 불러오지 못했습니다.");
     return;
@@ -3516,7 +3547,7 @@ function renderEarningsChart(quarters, isDomestic) {
         const marginTxt = Number.isFinite(marginPct) ? ` (영업이익률 ${marginPct.toFixed(1)}%)` : "";
         li.innerHTML =
           `<span class="earnings-quarter-label">${q.label || shortQuarterLabel(q.yyyymm)}</span>` +
-          `<span class="earnings-quarter-values">매출 ${formatEokwon(q.revenue)} · 영업이익 ${formatEokwon(q.operatingProfit)}${marginTxt}</span>`;
+          `<span class="earnings-quarter-values">매출 ${fmt(q.revenue)} · 영업이익 ${fmt(q.operatingProfit)}${marginTxt}</span>`;
         listEl.appendChild(li);
       });
     listEl.classList.remove("hidden");
@@ -3531,7 +3562,7 @@ function renderEarningsChart(quarters, isDomestic) {
       (q) => q.yyyymm.slice(4, 6) === latestMonth && Number(q.yyyymm.slice(0, 4)) === latestYear - 1
     );
 
-    let summary = `최근 분기(${latest.label || shortQuarterLabel(latest.yyyymm)}) 매출액 ${formatEokwon(latest.revenue)}, 영업이익 ${formatEokwon(latest.operatingProfit)}`;
+    let summary = `최근 분기(${latest.label || shortQuarterLabel(latest.yyyymm)}) 매출액 ${fmt(latest.revenue)}, 영업이익 ${fmt(latest.operatingProfit)}`;
     if (latest.operatingProfit < 0) summary += " — 영업적자";
 
     if (yearAgo) {
@@ -3550,6 +3581,50 @@ function renderEarningsChart(quarters, isDomestic) {
     }
     txtEl.textContent = summary + ".";
   }
+}
+
+// ===============================
+// 뉴스 탭 (Phase 5, 4단계) — 국내/해외 모두 KIS news-title 엔드포인트 하나로 커버됨
+// ===============================
+
+function resetNewsPanel() {
+  const listEl = $("news-list");
+  const emptyEl = $("news-empty");
+  if (listEl) {
+    listEl.innerHTML = "";
+    listEl.classList.add("hidden");
+  }
+  if (emptyEl) {
+    emptyEl.textContent = "데이터를 불러오는 중...";
+    emptyEl.classList.remove("hidden");
+  }
+}
+
+function renderNewsList(news) {
+  const listEl = $("news-list");
+  const emptyEl = $("news-empty");
+  if (!listEl || !emptyEl) return;
+
+  if (!news || !news.length) {
+    emptyEl.textContent = "관련 뉴스를 찾지 못했습니다.";
+    emptyEl.classList.remove("hidden");
+    listEl.classList.add("hidden");
+    return;
+  }
+
+  emptyEl.classList.add("hidden");
+  listEl.innerHTML = "";
+  news.slice(0, 15).forEach((n) => {
+    const li = document.createElement("li");
+    li.className = "news-row";
+    const meta = [n.date, n.time].filter(Boolean).join(" ");
+    const metaLine = [meta, n.source].filter(Boolean).join(" · ");
+    li.innerHTML =
+      `<div class="news-title">${n.title || "(제목 없음)"}</div>` +
+      (metaLine ? `<div class="news-meta">${metaLine}</div>` : "");
+    listEl.appendChild(li);
+  });
+  listEl.classList.remove("hidden");
 }
 
 // 외국인/기관 연속매매(investorStreakTone, -2~+2)를 RAVEN SCORE에 소폭 반영 — 전일 수급(KIS)은
@@ -3821,15 +3896,18 @@ async function runAnalysisForTicker(rawSymbol) {
       supplyKisBox.classList.add("hidden");
     }
 
-    // 실적(분기 매출/영업이익) 탭도 같은 패턴 — 국내만 지원(해외는 Phase 5 5단계 예정), 비동기 로드
-    if (domestic) {
-      fetchIncomeStatementData(symbol).then((quarters) => {
-        if (!lastAnalysis || lastAnalysis.data.symbol !== symbol) return; // 그 사이 다른 종목 검색 시 무시
-        renderEarningsChart(quarters, true);
-      });
-    } else {
-      renderEarningsChart(null, false);
-    }
+    // 실적(분기 매출/영업이익) 탭도 같은 패턴 — 국내는 KIS, 해외는 Yahoo Finance(Phase 5 5단계), 비동기 로드
+    // (resetEarningsPanel()은 updateUI() 안에서 이미 호출됨)
+    fetchIncomeStatementData(symbol, domestic).then((quarters) => {
+      if (!lastAnalysis || lastAnalysis.data.symbol !== symbol) return; // 그 사이 다른 종목 검색 시 무시
+      renderEarningsChart(quarters, domestic ? "KRW" : "USD");
+    });
+
+    // 뉴스 탭 — 국내/해외 모두 지원(Phase 5, 4단계), 비동기 로드 (resetNewsPanel()도 updateUI() 안에서 호출됨)
+    fetchNewsData(symbol).then((news) => {
+      if (!lastAnalysis || lastAnalysis.data.symbol !== symbol) return;
+      renderNewsList(news);
+    });
   } catch (err) {
     console.error("[RAVEN] 분석 중 오류:", err);
     showToast("분석 중 오류가 발생했습니다. 티커/네트워크를 확인해 주세요.");

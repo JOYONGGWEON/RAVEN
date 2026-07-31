@@ -313,12 +313,13 @@
       </div>
     </div>
 
-    <!-- ===== 탭 영역: 추세·모멘텀 / 수급 / 패턴·신호 / 실적 ===== -->
+    <!-- ===== 탭 영역: 추세·모멘텀 / 수급 / 패턴·신호 / 실적 / 뉴스 ===== -->
     <div class="tabs-bar" role="tablist">
       <button type="button" class="tab-btn active" data-tab="trend">📈 추세·모멘텀</button>
       <button type="button" class="tab-btn" data-tab="supply">💰 수급</button>
       <button type="button" class="tab-btn" data-tab="pattern">📊 패턴·신호</button>
       <button type="button" class="tab-btn" data-tab="fund">🏦 실적</button>
+      <button type="button" class="tab-btn" data-tab="news">📰 뉴스</button>
     </div>
 
     <div class="tabs-viewport">
@@ -416,6 +417,14 @@
             </div>
             <ul id="fund-quarter-list" class="earnings-quarter-list hidden"></ul>
             <p id="fund-txt">분석 중...</p>
+          </div>
+        </div>
+
+        <div class="tab-panel" data-tab-panel="news">
+          <div class="section-box wide">
+            <h3>📰 관련 뉴스</h3>
+            <div id="news-empty" class="earnings-empty hidden">분석 중...</div>
+            <ul id="news-list" class="news-list hidden"></ul>
           </div>
         </div>
       </div>
