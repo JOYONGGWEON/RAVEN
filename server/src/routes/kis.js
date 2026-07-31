@@ -3,7 +3,7 @@ const router = express.Router();
 const { getKisAccessToken } = require("../lib/kisAuth");
 const { collectSupplyDemandForSymbol } = require("../lib/supplyDemandCollector");
 const { interpretSupplyDemand } = require("../lib/supplyDemandInterpreter");
-const { fetchCandles } = require("../lib/kisMarket");
+const { fetchCandles, fetchOverseasStockName } = require("../lib/kisMarket");
 
 const KIS_API_BASE = "https://openapi.koreainvestment.com:9443";
 
@@ -139,6 +139,20 @@ router.get("/candles", async (req, res) => {
   } catch (e) {
     console.error("[RAVEN] /api/kis/candles error:", e);
     res.status(502).json({ error: "KIS candles proxy error" });
+  }
+});
+
+// 해외 종목 한글명 조회 (예: FLNC → 플루언스 에너지) — 없으면 name: null (호출측이 티커로 폴백)
+router.get("/overseas-name", async (req, res) => {
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: "symbol query param required" });
+
+  try {
+    const name = await fetchOverseasStockName(symbol);
+    res.json({ name });
+  } catch (e) {
+    console.error("[RAVEN] /api/kis/overseas-name error:", e);
+    res.status(502).json({ error: "overseas name lookup error" });
   }
 });
 

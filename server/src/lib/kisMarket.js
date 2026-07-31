@@ -7,6 +7,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // 서버가 살아있는 동안은 같은 심볼을 다시 조회할 때 재시도하지 않도록 캐싱.
 const OVERSEAS_EXCHANGES = ["NAS", "NYS", "AMS"];
 const overseasExchangeCache = new Map();
+// 캔들 조회(fetchCandles)와 한글명 조회(fetchOverseasStockName)가 같은 심볼에 대해 거의 동시에
+// resolveOverseasExchange를 부를 수 있어서(둘 다 Promise.all로 병렬 실행됨), 캐시가 비어있는
+// 최초 조회 시 중복 API 호출이 나가는 걸 막기 위해 진행 중인 Promise 자체를 캐싱함
+// (KIS 토큰 발급 때 겪었던 동시요청 중복 발급 버그와 같은 유형이라 미리 방지).
+const overseasExchangeInFlight = new Map();
 
 async function kisGet(path, trId, query) {
   const token = await getKisAccessToken();
@@ -91,9 +96,7 @@ async function fetchDomesticCandles(symbol, count) {
 // 현재가 조회로 거래소를 순서대로 시도(NAS→NYS→AMS) — 틀린 거래소를 넣어도 rt_cd=0(성공)에
 // output 필드가 전부 빈 문자열로만 오기 때문에 output.last 값 존재 여부로 판단해야 함(실측 확인됨).
 
-async function resolveOverseasExchange(symbol) {
-  if (overseasExchangeCache.has(symbol)) return overseasExchangeCache.get(symbol);
-
+async function resolveOverseasExchangeUncached(symbol) {
   for (let i = 0; i < OVERSEAS_EXCHANGES.length; i++) {
     const excd = OVERSEAS_EXCHANGES[i];
     const json = await kisGet(
@@ -102,13 +105,54 @@ async function resolveOverseasExchange(symbol) {
       { AUTH: "", EXCD: excd, SYMB: symbol }
     );
     if (json.output && json.output.last) {
-      overseasExchangeCache.set(symbol, excd);
       return excd;
     }
     if (i < OVERSEAS_EXCHANGES.length - 1) await sleep(600);
   }
 
   throw new Error(`해외 종목 거래소를 찾을 수 없음: ${symbol}`);
+}
+
+async function resolveOverseasExchange(symbol) {
+  if (overseasExchangeCache.has(symbol)) return overseasExchangeCache.get(symbol);
+  if (overseasExchangeInFlight.has(symbol)) return overseasExchangeInFlight.get(symbol);
+
+  const promise = resolveOverseasExchangeUncached(symbol)
+    .then((excd) => {
+      overseasExchangeCache.set(symbol, excd);
+      overseasExchangeInFlight.delete(symbol);
+      return excd;
+    })
+    .catch((e) => {
+      overseasExchangeInFlight.delete(symbol);
+      throw e;
+    });
+
+  overseasExchangeInFlight.set(symbol, promise);
+  return promise;
+}
+
+// EXCD(거래소코드) → search-info API가 요구하는 PRDT_TYPE_CD. 현재 OVERSEAS_EXCHANGES가
+// 미국 3개 거래소만 다뤄서 이 3개만 매핑(KIS 문서상 일본/홍콩/베트남/중국 코드도 있으나 미지원 범위).
+const EXCD_TO_PRDT_TYPE_CD = { NAS: "512", NYS: "513", AMS: "529" };
+
+// 해외 종목 한글명 조회 — KIS "해외주식 상품기본정보"(search-info)의 prdt_name 필드가
+// 한글 종목명을 그대로 줌(실측 확인: FLNC→"플루언스 에너지", AAPL→"애플", TSLA→"테슬라").
+// 값이 없는(신규상장 등) 종목도 있을 수 있어 없으면 null 반환 — 호출측이 티커로 폴백.
+async function fetchOverseasStockName(symbol) {
+  const trimmed = (symbol || "").trim().toUpperCase();
+  const excd = await resolveOverseasExchange(trimmed);
+  const prdtTypeCd = EXCD_TO_PRDT_TYPE_CD[excd];
+  if (!prdtTypeCd) return null;
+
+  await sleep(600);
+  const json = await kisGet(
+    "/uapi/overseas-price/v1/quotations/search-info",
+    "CTPF1702R",
+    { PRDT_TYPE_CD: prdtTypeCd, PDNO: trimmed }
+  );
+  const name = json.output && json.output.prdt_name;
+  return name && name.trim() ? name.trim() : null;
 }
 
 async function fetchOverseasCandleBatch(symbol, excd, bymd) {
@@ -161,4 +205,4 @@ async function fetchCandles(symbol, count = 180) {
   return rows;
 }
 
-module.exports = { fetchCandles, isDomesticSymbol };
+module.exports = { fetchCandles, isDomesticSymbol, fetchOverseasStockName };

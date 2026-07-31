@@ -39,3 +39,9 @@ create table if not exists watchlist (
   added_at timestamptz not null default now(),
   unique (symbol)
 );
+
+-- 2026-07-31: 관심종목 표시명(예: "삼성전자") 추가. symbol(종목코드/티커)은 검색·삭제 키로 계속 쓰고,
+-- name은 화면 표시·텔레그램 메시지용 — 해외 종목은 한글명 조회를 지원 안 해서 null일 수 있음(그 경우
+-- 화면/메시지에서 symbol로 폴백). 이미 watchlist 테이블이 있는 기존 프로젝트는 위 create table문이
+-- 스킵되므로 이 alter문을 직접 돌려야 함(신규 설치는 need 없음, 그냥 no-op).
+alter table watchlist add column if not exists name text;

@@ -385,10 +385,18 @@ async function fetchDomesticStockName(code) {
 }
 
 // 해외 티커 → 한글 종목명 조회 (결과 화면 타이틀 표시용)
-// KIS에는 토스 종목마스터 같은 간단한 이름조회 엔드포인트가 없어서 보류 — 티커 그대로 표시(예: "AAPL").
-// updateUI()의 stockName || data.symbol 폴백이 이미 처리하므로 null을 반환하면 됨.
+// KIS "해외주식 상품기본정보"(search-info)의 prdt_name 필드가 한글명을 그대로 줌(예: FLNC→"플루언스 에너지").
+// 값이 없으면(신규상장 등) null 반환 — updateUI()의 stockName || data.symbol 폴백이 티커로 표시함.
 async function fetchOverseasStockName(symbol) {
-  return null;
+  try {
+    const res = await fetch(`${API_BASE}/api/kis/overseas-name?symbol=${encodeURIComponent(symbol)}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.name || null;
+  } catch (e) {
+    console.warn("[RAVEN] 해외 종목 한글명 조회 실패:", e);
+    return null;
+  }
 }
 
 // 전일 수급(프로그램매매/공매도/신용/대차) 해석 코멘트 조회 (국내 종목 전용)
@@ -2929,19 +2937,28 @@ function updateUI(data, analysis, fxRate, stockName) {
 
       // ADX 자체는 추세 "강도"라 방향성이 없음 — 색깔은 DI+/DI-가 가리키는 방향으로 정하되,
       // 추세가 약하면(횡보 가능성) 그 방향을 신뢰하기 어려우니 중립으로 둠.
-      let diTxt = "";
+      // ⚠️ 예전엔 "추세 뚜렷함, DI- 우위"처럼 강도와 방향을 분리해서 적어, 강도(뚜렷함)만 보고
+      // "왜 좋은 신호인데 빨간색이지?"라고 오해하기 쉬웠음(실측 피드백) — 방향을 "추세" 앞에 붙여
+      // "하락 추세 뚜렷함"처럼 강도+방향이 한 문구로 읽히도록 수정.
+      let directionPrefix = "";
+      let diSuffix = "";
       let sentiment = "neu";
       if (typeof plusDI === "number" && typeof minusDI === "number") {
         const bullish = plusDI > minusDI;
-        diTxt = bullish ? ", DI+ 우위" : ", DI- 우위";
-        if (adx >= 20) sentiment = bullish ? "pos" : "neg";
+        if (adx >= 20) {
+          directionPrefix = bullish ? "상승 " : "하락 ";
+          sentiment = bullish ? "pos" : "neg";
+        } else {
+          // 추세 자체가 약하면 방향을 "추세" 앞에 못 붙이고(신뢰 어려움) 참고용으로만 뒤에 표기
+          diSuffix = bullish ? ", DI+ 우위" : ", DI- 우위";
+        }
       }
       // ADX 숫자가 같아도 강해지는 중인지 약해지는 중인지에 따라 의미가 다름
       // (예: 15→25는 추세가 막 시작되는 신호, 35→25는 추세가 식어가는 신호 — 둘 다 "25"지만 정반대 국면)
       let adxTrendTxt = "";
       if (adxTrend === "RISING") adxTrendTxt = ", 강도 강화 중";
       else if (adxTrend === "FALLING") adxTrendTxt = ", 강도 약화 중";
-      setIndicatorBox(adxBox, adx.toFixed(1), `추세 ${strengthNote}${diTxt}${adxTrendTxt}`, sentiment);
+      setIndicatorBox(adxBox, adx.toFixed(1), `${directionPrefix}추세 ${strengthNote}${diSuffix}${adxTrendTxt}`, sentiment);
     } else {
       setIndicatorBox(adxBox, "데이터 부족");
     }
@@ -3144,12 +3161,12 @@ async function fetchWatchlist() {
   }
 }
 
-async function addToWatchlist(symbol, domestic) {
+async function addToWatchlist(symbol, domestic, name) {
   try {
     const res = await fetch(`${API_BASE}/api/watchlist`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ symbol, domestic })
+      body: JSON.stringify({ symbol, domestic, name: name || null })
     });
     return res.ok;
   } catch (e) {
@@ -3194,7 +3211,7 @@ function renderWatchlistPills(list) {
     pill.appendChild(star);
 
     const label = document.createElement("span");
-    label.textContent = item.symbol;
+    label.textContent = item.name || item.symbol;
     label.addEventListener("click", () => runAnalysisForTicker(item.symbol));
     pill.appendChild(label);
 
@@ -3247,21 +3264,23 @@ async function toggleWatchlistForCurrentTicker() {
   if (!symbol) return;
 
   const domestic = isDomesticTicker(symbol);
+  const name = lastAnalysis?.stockName || null;
+  const displayLabel = name || symbol;
   const alreadyIn = watchlistCache.some((w) => w.symbol === symbol);
 
   if (alreadyIn) {
     const ok = await removeFromWatchlist(symbol);
     if (ok) {
-      showToast(`${symbol} 관심종목에서 삭제됨`);
+      showToast(`${displayLabel} 관심종목에서 삭제됨`);
       await refreshWatchlistPanel();
       updateWatchlistStarState();
     } else {
       showToast("관심종목 삭제에 실패했습니다.");
     }
   } else {
-    const ok = await addToWatchlist(symbol, domestic);
+    const ok = await addToWatchlist(symbol, domestic, name);
     if (ok) {
-      showToast(`${symbol} 관심종목에 추가됨`);
+      showToast(`${displayLabel} 관심종목에 추가됨`);
       await refreshWatchlistPanel();
       updateWatchlistStarState();
     } else {

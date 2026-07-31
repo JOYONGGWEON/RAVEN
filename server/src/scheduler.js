@@ -5,18 +5,23 @@ const { checkSignal } = require("./lib/signalDetector");
 const { sendTelegramMessage } = require("./lib/telegram");
 
 async function getWatchlist() {
-  const { data, error } = await supabase.from("watchlist").select("symbol, domestic");
+  const { data, error } = await supabase.from("watchlist").select("symbol, name, domestic");
   if (error) throw error;
   return data || [];
 }
 
-function formatAlertMessage(result, domestic) {
+// 종목명이 있으면 "종목명 (코드)", 없으면(해외 종목 등 한글명 미조회) 코드만 표시
+function formatSymbolLabel(symbol, name) {
+  return name ? `${name} (${symbol})` : symbol;
+}
+
+function formatAlertMessage(result, domestic, name) {
   const label = result.signal === "BUY" ? "🟢 매수 신호" : "🔴 매도 신호";
   const priceTxt = domestic
     ? `₩${Math.round(result.price).toLocaleString("ko-KR")}`
     : `$${result.price.toFixed(2)}`;
   return (
-    `<b>[RAVEN 알림] ${result.symbol} — ${label}</b>\n` +
+    `<b>[RAVEN 알림] ${formatSymbolLabel(result.symbol, name)} — ${label}</b>\n` +
     `현재가: ${priceTxt}\n` +
     result.reasons.map((r) => `• ${r}`).join("\n")
   );
@@ -27,12 +32,12 @@ async function checkWatchlistAndAlert() {
   const watchlist = await getWatchlist();
   const results = [];
 
-  for (const { symbol, domestic } of watchlist) {
+  for (const { symbol, name, domestic } of watchlist) {
     try {
       const result = await checkSignal(symbol);
       results.push(result);
       if (result.signal !== "NONE") {
-        await sendTelegramMessage(formatAlertMessage(result, domestic));
+        await sendTelegramMessage(formatAlertMessage(result, domestic, name));
       }
     } catch (e) {
       console.error(`[RAVEN] 신호 체크 실패 (${symbol}):`, e.message);

@@ -8,7 +8,7 @@ router.get("/", async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("watchlist")
-      .select("symbol, domestic, added_at")
+      .select("symbol, name, domestic, added_at")
       .order("added_at", { ascending: false });
     if (error) throw error;
     res.json({ result: data });
@@ -19,7 +19,7 @@ router.get("/", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  const { symbol, domestic } = req.body || {};
+  const { symbol, domestic, name } = req.body || {};
   if (!symbol || typeof domestic !== "boolean") {
     return res.status(400).json({ error: "symbol(string), domestic(boolean) required" });
   }
@@ -27,7 +27,7 @@ router.post("/", async (req, res) => {
   try {
     const { error } = await supabase
       .from("watchlist")
-      .upsert({ symbol, domestic }, { onConflict: "symbol" });
+      .upsert({ symbol, domestic, name: name || null }, { onConflict: "symbol" });
     if (error) throw error;
     res.json({ ok: true });
   } catch (e) {

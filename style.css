@@ -131,7 +131,7 @@ body.raven-result-bg {
 .watchlist-row-label {
   font-size: 0.8rem;
   font-weight: 700;
-  color: var(--text-sub);
+  color: var(--text-main);
 }
 
 .watchlist-pills {
