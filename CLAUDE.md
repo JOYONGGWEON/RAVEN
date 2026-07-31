@@ -346,8 +346,12 @@
       갈수록 매출이 폭증하는 것처럼 완전히 잘못 보였을 것 — `toStandaloneQuarters()`로 같은 회계연도
       안에서 이전 분기 누적치를 빼는 변환 추가. 변환 후 실측 검증: 2023년(반도체 다운턴) 영업이익률이
       2.5~6%로 급감하는 게 실제 역사와 일치하는 것까지 확인해 정확성 검증 완료.
-- [ ] 2단계: 국내+해외 종목 뉴스 백엔드 (`news-title` 엔드포인트, 해외는 거래소코드 필요 — 기존
-      `resolveOverseasExchange()` 재사용)
+- [x] **2단계: 국내+해외 종목 뉴스 백엔드** — `server/src/lib/kisNews.js`의 `fetchNews()`,
+      `GET /api/kis/news?symbol=`. 국내는 `news-title`(TR `FHKST01011800`), 해외는
+      `overseas-price/quotations/news-title`(TR `HHPSTH60100C1`) — 해외는 `EXCHANGE_CD`를
+      비워두면 결과가 텅 비어서(실측 확인) 기존 `resolveOverseasExchange()`를 재사용해 거래소코드를
+      채워 넣어야 종목별 필터링이 걸림. 실측 검증: 삼성전자(국내 언론사 헤드라인)/AAPL(한국어로 번역된
+      "연합미국" 소스 뉴스) 둘 다 정상 수신.
 - [ ] 3단계: 실적 탭 프론트엔드(분기별 매출/영업이익 그래프 — 차트 라이브러리 필요 여부 확인)
 - [ ] 4단계: 뉴스 탭 프론트엔드
 - [ ] 5단계: 해외 실적(Yahoo Finance) — 정확도 낮을 수 있어 후순위

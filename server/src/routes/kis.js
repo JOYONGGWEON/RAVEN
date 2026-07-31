@@ -5,6 +5,7 @@ const { collectSupplyDemandForSymbol } = require("../lib/supplyDemandCollector")
 const { interpretSupplyDemand } = require("../lib/supplyDemandInterpreter");
 const { fetchCandles, fetchOverseasStockName, fetchIntradayCandles } = require("../lib/kisMarket");
 const { fetchIncomeStatement } = require("../lib/kisFundamentals");
+const { fetchNews } = require("../lib/kisNews");
 
 const KIS_API_BASE = "https://openapi.koreainvestment.com:9443";
 
@@ -158,6 +159,20 @@ router.get("/income-statement", async (req, res) => {
   } catch (e) {
     console.error("[RAVEN] /api/kis/income-statement error:", e);
     res.status(502).json({ error: "KIS income-statement proxy error" });
+  }
+});
+
+// 종목 뉴스(국내: 종합 시황/공시 제목, 해외: 해외뉴스종합 제목) — DART/네이버뉴스 없이 KIS로 통합
+router.get("/news", async (req, res) => {
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: "symbol query param required" });
+
+  try {
+    const news = await fetchNews(symbol);
+    res.json({ result: { news } });
+  } catch (e) {
+    console.error("[RAVEN] /api/kis/news error:", e);
+    res.status(502).json({ error: "KIS news proxy error" });
   }
 });
 

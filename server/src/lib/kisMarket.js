@@ -270,4 +270,10 @@ async function fetchCandles(symbol, count = 180) {
   return rows;
 }
 
-module.exports = { fetchCandles, isDomesticSymbol, fetchOverseasStockName, fetchIntradayCandles };
+module.exports = {
+  fetchCandles,
+  isDomesticSymbol,
+  fetchOverseasStockName,
+  fetchIntradayCandles,
+  resolveOverseasExchange,
+};
