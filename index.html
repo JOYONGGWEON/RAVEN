@@ -403,7 +403,18 @@
 
         <div class="tab-panel" data-tab-panel="fund">
           <div class="section-box wide">
-            <h3>🏦 실적 / 밸류에이션</h3>
+            <h3>🏦 실적 (분기별 매출액 · 영업이익)</h3>
+            <div id="fund-chart-wrap" class="earnings-chart-wrap">
+              <div id="fund-chart-empty" class="earnings-empty hidden">데이터를 불러오는 중...</div>
+              <svg id="fund-chart" class="earnings-svg hidden" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+              <div id="fund-chart-labels" class="earnings-chart-labels hidden"></div>
+            </div>
+            <div id="fund-legend" class="earnings-legend hidden">
+              <span class="earnings-legend-item"><i class="earnings-swatch revenue"></i>매출액</span>
+              <span class="earnings-legend-item"><i class="earnings-swatch profit-pos"></i>영업이익(흑자)</span>
+              <span class="earnings-legend-item"><i class="earnings-swatch profit-neg"></i>영업이익(적자)</span>
+            </div>
+            <ul id="fund-quarter-list" class="earnings-quarter-list hidden"></ul>
             <p id="fund-txt">분석 중...</p>
           </div>
         </div>

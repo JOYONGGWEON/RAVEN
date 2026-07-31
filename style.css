@@ -1056,6 +1056,104 @@ body.raven-result-bg {
   align-content: start;
 }
 
+/* ───────── 실적 탭: 분기별 매출액/영업이익 차트 ───────── */
+
+.earnings-chart-wrap {
+  grid-column: 1 / -1;
+  margin-top: 0.5rem;
+}
+
+.earnings-empty {
+  padding: 1.5rem 0;
+  text-align: center;
+  color: var(--text-sub);
+  font-size: 0.85rem;
+}
+
+.earnings-svg {
+  width: 100%;
+  height: 160px;
+  overflow: visible;
+}
+
+.earnings-chart-labels {
+  display: flex;
+  margin-top: 0.3rem;
+}
+
+.earnings-chart-labels span {
+  flex: 1;
+  text-align: center;
+  font-size: 0.62rem;
+  color: var(--text-sub);
+  white-space: nowrap;
+}
+
+.earnings-legend {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-sub);
+}
+
+.earnings-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.earnings-swatch {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+}
+
+.earnings-swatch.revenue {
+  background: var(--accent);
+}
+
+.earnings-swatch.profit-pos {
+  background: var(--success);
+}
+
+.earnings-swatch.profit-neg {
+  background: var(--danger);
+}
+
+.earnings-quarter-list {
+  grid-column: 1 / -1;
+  margin-top: 0.75rem;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.earnings-quarter-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.earnings-quarter-label {
+  color: var(--text-sub);
+  white-space: nowrap;
+}
+
+.earnings-quarter-values {
+  text-align: right;
+  white-space: nowrap;
+}
+
 
 /* Targets */
 

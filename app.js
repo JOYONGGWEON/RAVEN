@@ -415,6 +415,19 @@ async function fetchSupplyDemandComment(symbol) {
   }
 }
 
+// 국내 분기별 손익계산서(실적 탭) — 해외는 Phase 5 5단계(Yahoo Finance)에서 지원 예정, 아직 없음
+async function fetchIncomeStatementData(symbol) {
+  try {
+    const res = await fetch(`${API_BASE}/api/kis/income-statement?symbol=${encodeURIComponent(symbol)}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return (json.result && json.result.quarters) || null;
+  } catch (e) {
+    console.warn("[RAVEN] 실적 조회 실패:", e);
+    return null;
+  }
+}
+
 // 국내 종목명 검색 (자동완성용)
 async function searchDomesticStocks(query) {
   try {
@@ -2326,7 +2339,6 @@ function updateUI(data, analysis, fxRate, stockName) {
   const obvEl = $("obv-txt");
   const patternEl = $("pattern-txt"); // 패턴 카드
   const signalEl = $("signal-txt"); // 시그널 카드
-  const fundEl = $("fund-txt");
 
   const rsiBox = $("rsi-txt");
   const macdBox = $("macd-txt");
@@ -3088,12 +3100,10 @@ function updateUI(data, analysis, fxRate, stockName) {
     renderNarrativeBullets(stratDetail, detailLines);
   }
 
-  // 5) Fund 섹터 (펀디멘탈 API 연동 전)
-  if (fundEl) {
-    fundEl.textContent =
-      "현재 버전에서는 재무제표/밸류에이션 지표를 API로 직접 불러오지 않습니다. " +
-      "관리자 모드의 Pro Raven Engine 구동이 필요합니다";
-  }
+  // 5) Fund 섹터 — 새 티커 분석 시작 시 이전 종목의 실적 차트를 지우고 로딩 상태로 리셋.
+  // 실제 데이터 렌더링은 runAnalysisForTicker()에서 fetchIncomeStatementData() 완료 후 비동기로 처리
+  // (수급 탭과 동일한 패턴 — 메인 분석을 늦추지 않음).
+  resetEarningsPanel();
 
   // 6) RSI / MACD 박스 (숫자 + 짧은 해석)
   if (rsiBox) {
@@ -3352,6 +3362,193 @@ function renderSupplyDemandBox(data) {
     const li = document.createElement("li");
     li.textContent = `전일 프로그램매매·공매도·신용·대차·투자자별 매매동향 기준 코멘트: "${data.outlook}"`;
     supplySummaryEl.appendChild(li);
+  }
+}
+
+// ===============================
+// 실적 탭 (Phase 5, 3단계 — 분기별 매출액/영업이익)
+// ===============================
+
+// 새 티커 분석 시작 시 이전 종목의 실적 차트를 지우고 로딩 상태로 리셋
+function resetEarningsPanel() {
+  const svg = $("fund-chart");
+  const empty = $("fund-chart-empty");
+  const legend = $("fund-legend");
+  const labelsEl = $("fund-chart-labels");
+  const listEl = $("fund-quarter-list");
+  const txtEl = $("fund-txt");
+
+  if (svg) {
+    svg.innerHTML = "";
+    svg.classList.add("hidden");
+  }
+  if (legend) legend.classList.add("hidden");
+  if (labelsEl) {
+    labelsEl.innerHTML = "";
+    labelsEl.classList.add("hidden");
+  }
+  if (listEl) {
+    listEl.innerHTML = "";
+    listEl.classList.add("hidden");
+  }
+  if (empty) {
+    empty.textContent = "데이터를 불러오는 중...";
+    empty.classList.remove("hidden");
+  }
+  if (txtEl) txtEl.textContent = "";
+}
+
+// KIS 손익계산서는 억원 단위로 옴 — 1조원 넘어가면 "조원" 단위로 환산해서 표시(가독성)
+function formatEokwon(value) {
+  if (!Number.isFinite(value)) return "-";
+  const trillions = value / 10000;
+  if (Math.abs(trillions) >= 1) {
+    return `${trillions.toLocaleString("ko-KR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}조원`;
+  }
+  return `${Math.round(value).toLocaleString("ko-KR")}억원`;
+}
+
+const QUARTER_MONTH_LABEL = { "03": "1", "06": "2", "09": "3", "12": "4" };
+function shortQuarterLabel(yyyymm) {
+  const year = yyyymm.slice(2, 4);
+  const q = QUARTER_MONTH_LABEL[yyyymm.slice(4, 6)] || "?";
+  return `'${year} Q${q}`;
+}
+
+// 분기별 매출액/영업이익 그룹 막대 차트 — Chart.js 등 외부 라이브러리 없이 순수 SVG로 직접 그림
+// (막대 8개 x 2계열 정도의 단순한 차트라 새 의존성을 추가할 필요가 없다고 판단함, 2026-08-01).
+// 매출액과 영업이익을 같은 스케일에 그려서 영업이익률이 막대 높이 비율로도 바로 보이게 함 —
+// 영업적자 분기는 기준선(baseline) 아래로 내려가는 빨간 막대로 표시.
+function renderEarningsChart(quarters, isDomestic) {
+  const svg = $("fund-chart");
+  const empty = $("fund-chart-empty");
+  const legend = $("fund-legend");
+  const labelsEl = $("fund-chart-labels");
+  const listEl = $("fund-quarter-list");
+  const txtEl = $("fund-txt");
+  if (!svg || !empty) return;
+
+  const showEmpty = (msg) => {
+    empty.textContent = msg;
+    empty.classList.remove("hidden");
+    svg.classList.add("hidden");
+    if (legend) legend.classList.add("hidden");
+    if (labelsEl) labelsEl.classList.add("hidden");
+    if (listEl) listEl.classList.add("hidden");
+    if (txtEl) txtEl.textContent = "";
+  };
+
+  if (!isDomestic) {
+    showEmpty("해외 종목 실적은 아직 지원하지 않습니다 (추후 지원 예정).");
+    return;
+  }
+  if (!quarters || !quarters.length) {
+    showEmpty("실적 데이터를 불러오지 못했습니다.");
+    return;
+  }
+
+  const shown = quarters.slice(-8);
+  empty.classList.add("hidden");
+
+  // --- SVG 그룹 막대 차트 ---
+  const slotWidth = 60;
+  const barWidth = 18;
+  const gap = 4;
+  const height = 100;
+  const width = shown.length * slotWidth;
+
+  const maxPos = Math.max(1, ...shown.map((q) => Math.max(q.revenue, q.operatingProfit, 0)));
+  const maxNeg = Math.max(0, ...shown.map((q) => Math.max(-q.operatingProfit, 0)));
+  const span = maxPos + maxNeg;
+  const baselineY = height * (maxPos / span);
+
+  let svgContent = "";
+  if (maxNeg > 0) {
+    svgContent += `<line x1="0" y1="${baselineY.toFixed(2)}" x2="${width}" y2="${baselineY.toFixed(2)}" stroke="rgba(148,163,184,0.35)" stroke-width="1" />`;
+  }
+
+  shown.forEach((q, i) => {
+    const groupPad = (slotWidth - (barWidth * 2 + gap)) / 2;
+    const revX = i * slotWidth + groupPad;
+    const profitX = revX + barWidth + gap;
+
+    const revHeight = (q.revenue / span) * height;
+    svgContent += `<rect x="${revX.toFixed(2)}" y="${(baselineY - revHeight).toFixed(2)}" width="${barWidth}" height="${revHeight.toFixed(2)}" rx="2" fill="var(--accent)" />`;
+
+    const profit = q.operatingProfit;
+    if (profit >= 0) {
+      const h = (profit / span) * height;
+      svgContent += `<rect x="${profitX.toFixed(2)}" y="${(baselineY - h).toFixed(2)}" width="${barWidth}" height="${h.toFixed(2)}" rx="2" fill="var(--success)" />`;
+    } else {
+      const h = (-profit / span) * height;
+      svgContent += `<rect x="${profitX.toFixed(2)}" y="${baselineY.toFixed(2)}" width="${barWidth}" height="${h.toFixed(2)}" rx="2" fill="var(--danger)" />`;
+    }
+  });
+
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.innerHTML = svgContent;
+  svg.classList.remove("hidden");
+
+  // --- 분기 라벨: SVG 밖 별도 HTML 행에 그림 (preserveAspectRatio="none"으로 늘어난 SVG 안에
+  // <text>를 넣으면 글자가 가로/세로 비율이 달라져 찌그러져 보이는 문제를 피하기 위함) ---
+  if (labelsEl) {
+    labelsEl.innerHTML = "";
+    shown.forEach((q) => {
+      const span2 = document.createElement("span");
+      span2.textContent = shortQuarterLabel(q.yyyymm);
+      labelsEl.appendChild(span2);
+    });
+    labelsEl.classList.remove("hidden");
+  }
+
+  if (legend) legend.classList.remove("hidden");
+
+  // --- 분기별 정확한 수치 목록(차트만으론 정밀한 값을 읽기 어려우므로 병기) — 최신 분기가 위로 오게 역순 ---
+  if (listEl) {
+    listEl.innerHTML = "";
+    shown
+      .slice()
+      .reverse()
+      .forEach((q) => {
+        const li = document.createElement("li");
+        li.className = "earnings-quarter-row";
+        const marginPct = q.revenue ? (q.operatingProfit / q.revenue) * 100 : null;
+        const marginTxt = Number.isFinite(marginPct) ? ` (영업이익률 ${marginPct.toFixed(1)}%)` : "";
+        li.innerHTML =
+          `<span class="earnings-quarter-label">${q.label || shortQuarterLabel(q.yyyymm)}</span>` +
+          `<span class="earnings-quarter-values">매출 ${formatEokwon(q.revenue)} · 영업이익 ${formatEokwon(q.operatingProfit)}${marginTxt}</span>`;
+        listEl.appendChild(li);
+      });
+    listEl.classList.remove("hidden");
+  }
+
+  // --- 요약 문장: 최신 분기 실적 + 전년 동기 대비(YoY) ---
+  if (txtEl) {
+    const latest = shown[shown.length - 1];
+    const latestYear = Number(latest.yyyymm.slice(0, 4));
+    const latestMonth = latest.yyyymm.slice(4, 6);
+    const yearAgo = quarters.find(
+      (q) => q.yyyymm.slice(4, 6) === latestMonth && Number(q.yyyymm.slice(0, 4)) === latestYear - 1
+    );
+
+    let summary = `최근 분기(${latest.label || shortQuarterLabel(latest.yyyymm)}) 매출액 ${formatEokwon(latest.revenue)}, 영업이익 ${formatEokwon(latest.operatingProfit)}`;
+    if (latest.operatingProfit < 0) summary += " — 영업적자";
+
+    if (yearAgo) {
+      const revYoy = yearAgo.revenue ? ((latest.revenue - yearAgo.revenue) / yearAgo.revenue) * 100 : null;
+      if (Number.isFinite(revYoy)) {
+        summary += `. 전년 동기 대비 매출 ${revYoy >= 0 ? "+" : ""}${revYoy.toFixed(1)}%`;
+      }
+      if (yearAgo.operatingProfit < 0 && latest.operatingProfit >= 0) {
+        summary += ", 영업이익 흑자 전환";
+      } else if (yearAgo.operatingProfit >= 0 && latest.operatingProfit < 0) {
+        summary += ", 영업이익 적자 전환";
+      } else if (yearAgo.operatingProfit) {
+        const opYoy = ((latest.operatingProfit - yearAgo.operatingProfit) / Math.abs(yearAgo.operatingProfit)) * 100;
+        summary += `, 영업이익 ${opYoy >= 0 ? "+" : ""}${opYoy.toFixed(1)}%`;
+      }
+    }
+    txtEl.textContent = summary + ".";
   }
 }
 
@@ -3622,6 +3819,16 @@ async function runAnalysisForTicker(rawSymbol) {
       });
     } else if (supplyKisBox) {
       supplyKisBox.classList.add("hidden");
+    }
+
+    // 실적(분기 매출/영업이익) 탭도 같은 패턴 — 국내만 지원(해외는 Phase 5 5단계 예정), 비동기 로드
+    if (domestic) {
+      fetchIncomeStatementData(symbol).then((quarters) => {
+        if (!lastAnalysis || lastAnalysis.data.symbol !== symbol) return; // 그 사이 다른 종목 검색 시 무시
+        renderEarningsChart(quarters, true);
+      });
+    } else {
+      renderEarningsChart(null, false);
     }
   } catch (err) {
     console.error("[RAVEN] 분석 중 오류:", err);
