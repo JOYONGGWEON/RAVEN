@@ -22,18 +22,55 @@ async function getLatestRow(symbol, dataType) {
   return data?.[0] || null;
 }
 
+async function getRecentRows(symbol, dataType, limit = 5) {
+  const { data, error } = await supabase
+    .from("supply_demand_daily")
+    .select("trade_date, raw_data")
+    .eq("symbol", symbol)
+    .eq("data_type", dataType)
+    .order("trade_date", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+// program_trade/investor_trend는 일중 누적치라 "가장 최신 날짜 행"이 오늘인데 값만 비어있을 수 있음.
+// 그 경우 그냥 "데이터 없음"으로 포기하지 않고, 최근 며칠 중 값이 채워진 가장 최신 행으로 폴백해서
+// 보여줌(예: 오늘 데이터가 아직 집계 전이면 어제 데이터를 계속 보여줌). rawLatest는 "오늘 것이 실제로
+// 왔는지"를 판단해 재수집 여부를 결정하는 데 별도로 씀.
+async function getLatestUsableRow(symbol, dataType, isUsable) {
+  const rows = await getRecentRows(symbol, dataType);
+  const usable = rows.find((row) => isUsable(row));
+  return { display: usable || rows[0] || null, rawLatest: rows[0] || null };
+}
+
 async function getLatestRows(symbol) {
-  const [program_trade, short_sale, credit_balance, loan_trans, investor_trend] = await Promise.all([
-    getLatestRow(symbol, "program_trade"),
-    getLatestRow(symbol, "short_sale"),
+  const [credit_balance, loan_trans, programResult, shortResult, investorResult] = await Promise.all([
     getLatestRow(symbol, "credit_balance"),
     getLatestRow(symbol, "loan_trans"),
-    getLatestRow(symbol, "investor_trend"),
+    getLatestUsableRow(symbol, "program_trade", isProgramTradeRowUsable),
+    getLatestUsableRow(symbol, "short_sale", isShortSaleRowUsable),
+    getLatestUsableRow(symbol, "investor_trend", isInvestorRowUsable),
   ]);
-  return { program_trade, short_sale, credit_balance, loan_trans, investor_trend };
+  return {
+    program_trade: programResult.display,
+    short_sale: shortResult.display,
+    credit_balance,
+    loan_trans,
+    investor_trend: investorResult.display,
+    programRawLatest: programResult.rawLatest,
+    shortRawLatest: shortResult.rawLatest,
+    investorRawLatest: investorResult.rawLatest,
+  };
 }
 
 // tone: 1=우호적, -1=부담, 0=중립 (전체 어조 판단에 합산)
+// program_trade도 investor_trend와 같은 이유(일중 누적치)로 당일 행이 비어있을 수 있어 동일하게 체크.
+function isProgramTradeRowUsable(row) {
+  if (!row) return false;
+  return Number.isFinite(parseKisNum(row.raw_data.whol_smtn_ntby_qty));
+}
+
 function interpretProgramTrade(row) {
   if (!row) return { text: "프로그램매매 데이터가 없습니다.", tone: 0 };
   const r = row.raw_data;
@@ -69,6 +106,13 @@ function interpretProgramTrade(row) {
   }
 
   return { text, tone };
+}
+
+// short_sale도 program_trade/investor_trend와 마찬가지로 "당일 거래량 대비 비중"을 실시간
+// 누적으로 주는 방식이라 장중엔 오늘 행이 비어있을 수 있음(실측으로 확인 — 장마감 직후엔 채워져 있었음).
+function isShortSaleRowUsable(row) {
+  if (!row) return false;
+  return Number.isFinite(parseKisNum(row.raw_data.ssts_vol_rlim));
 }
 
 function interpretShortSale(row) {
@@ -261,6 +305,20 @@ function daysSince(dateStr) {
   return (now - then) / (1000 * 60 * 60 * 24);
 }
 
+// 한국 날짜(KST) 기준 오늘 날짜, YYYY-MM-DD
+function todayKST() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+}
+
+// program_trade/short_sale/investor_trend는 "당일 실시간 누적" 데이터라, 캐시된 값이 완전해 보여도
+// 그게 어제(혹은 그 이전) 날짜 것일 뿐 오늘 데이터를 아직 한 번도 안 가져와본 상태일 수 있음
+// (실측으로 재현한 버그: 캐시가 유효한 "어제" 데이터라 hasAllData/isStale 둘 다 통과해서 재수집이
+// 아예 트리거되지 않고, 장마감 후에도 하루 종일 어제 데이터만 계속 보여주고 있었음). "오늘 날짜의
+// 값 채워진 행"이 아니면 무조건 재시도하도록 날짜까지 같이 비교함.
+function isFreshForToday(row, isUsable, today) {
+  return !!row && row.trade_date === today && isUsable(row);
+}
+
 // 종목의 전일 수급 5종(프로그램매매/공매도/신용/대차/투자자별)을 오늘 해석 + 내일 예상 코멘트로 변환
 // 캐시된 데이터가 없으면 그 자리에서 KIS로 즉시 수집(+캐싱)한 뒤 해석함
 async function interpretSupplyDemand(symbol) {
@@ -271,20 +329,38 @@ async function interpretSupplyDemand(symbol) {
   // 스킵되면서 investor_trend만 영영 채워지지 않았음(실측으로 재현·확인함). 5종 전부 있는지로 바꿔서
   // 타입 하나라도 비어있으면(신규 타입 추가/일시적 수집 실패 등) 다시 채워지도록 함.
   const hasAllData =
-    Object.values(rows).every((r) => r !== null) && isInvestorRowUsable(rows.investor_trend);
+    rows.program_trade !== null &&
+    rows.short_sale !== null &&
+    rows.credit_balance !== null &&
+    rows.loan_trans !== null &&
+    rows.investor_trend !== null;
+
+  // program_trade/short_sale/investor_trend(당일 실시간 누적 3종)는 getLatestRows가 이미 "값 채워진
+  // 최신 행"으로 폴백해서 보여주지만, 그 폴백 행이 오늘 날짜가 아니라면(=오늘 데이터를 아직 못 가져왔거나
+  // 오늘 행이 비어있는 상태) 매 요청마다 계속 재시도해야 함 — rawLatest 기준으로 별도 체크.
+  const today = todayKST();
+  const needsRetryToday =
+    !isFreshForToday(rows.programRawLatest, isProgramTradeRowUsable, today) ||
+    !isFreshForToday(rows.shortRawLatest, isShortSaleRowUsable, today) ||
+    !isFreshForToday(rows.investorRawLatest, isInvestorRowUsable, today);
 
   // ⚠️ 또 다른 실제 버그: hasAllData가 한 번 true가 되면(예: 예전 세션에 한 번 수집됨) 그 뒤로는
   // "5종 다 있으니 됐다"고 영원히 재수집을 안 해서, 캐시가 며칠 지나도 최신화가 안 되고 날짜가
   // 계속 예전 그대로 박혀있는 문제가 있었음(사용자가 7/24처럼 오래된 날짜를 보고받는 것으로 재현됨).
   // "다 있는지"뿐 아니라 "최신인지"도 같이 봐서, 가장 최근 캐시 날짜가 너무 오래됐으면 다시 수집함.
-  const latestCachedDate = Object.values(rows)
-    .map((r) => r?.trade_date)
+  const latestCachedDate = [
+    rows.program_trade?.trade_date,
+    rows.short_sale?.trade_date,
+    rows.credit_balance?.trade_date,
+    rows.loan_trans?.trade_date,
+    rows.investor_trend?.trade_date,
+  ]
     .filter(Boolean)
     .sort()
     .pop();
   const isStale = daysSince(latestCachedDate) > 4;
 
-  if (!hasAllData || isStale) {
+  if (!hasAllData || isStale || needsRetryToday) {
     await collectSupplyDemandForSymbol(symbol);
     rows = await getLatestRows(symbol);
   }
