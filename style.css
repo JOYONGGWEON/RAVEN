@@ -985,22 +985,25 @@ body.raven-result-bg {
   margin-top: 1.5rem;
 }
 
+/* 2026-08-01: 옅은 반투명 파란 배경 + 파란 글자였던 게 저시인성이라는 피드백을 받고, 엔트리
+   화면 버튼(.entry-btn)과 같은 브랜드 그라디언트 + 흰 글자로 눈에 띄게 바꿈. */
 .ai-analyze-btn {
   width: 100%;
   padding: 0.9rem 1rem;
   border-radius: 14px;
-  border: 1px solid rgba(59, 130, 246, 0.45);
-  background: rgba(59, 130, 246, 0.12);
-  color: var(--accent);
-  font-weight: 700;
+  border: none;
+  background: linear-gradient(135deg, #4dabf7, #9775fa);
+  color: #fff;
+  font-weight: 800;
   font-size: 0.95rem;
   cursor: pointer;
-  transition: background 0.2s ease, transform 0.15s ease;
+  box-shadow: 0 8px 20px rgba(77, 171, 247, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.2s ease, opacity 0.2s ease;
 }
 
 .ai-analyze-btn:hover:not(:disabled) {
-  background: rgba(59, 130, 246, 0.2);
   transform: translateY(-1px);
+  box-shadow: 0 10px 26px rgba(77, 171, 247, 0.5);
 }
 
 .ai-analyze-btn:disabled {

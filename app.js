@@ -17,6 +17,11 @@ const API_BASE =
 
 // FX 캐시 & 마지막 분석 결과(포지션 계산용)
 let fxRateKRW = null;
+
+// 헤드라인 지수/매크로 지표의 마지막 값 스냅샷 — { value, changePct } 형태로 id별 저장.
+// AI 분석 요청 시 "화면에 보이는 개별 종목 지표뿐 아니라 오늘 시장 전반 분위기"를 같이 보내기 위한
+// 용도(요청받은 AI 알고리즘 업그레이드, 2026-08-01) — renderIndexChip()과 fetchMacroData()에서 채움.
+let marketSnapshot = {};
 let lastAnalysis = null;
 
 // 2. 유틸리티 함수
@@ -760,6 +765,7 @@ async function fetchMacroData() {
       if (rate < 3) note = "저금리, 성장주 우호";
       else if (rate > 5) note = "고금리, 변동성 주의";
       if ($("macro-rate-note")) $("macro-rate-note").textContent = note;
+      marketSnapshot.rate10y = { value: rate, note };
     } else if ($("macro-rate-note")) {
       $("macro-rate-note").textContent = "데이터 수신 실패";
     }
@@ -773,6 +779,7 @@ async function fetchMacroData() {
       if (vixVal < 15) note = "저변동성, 안정 구간";
       else if (vixVal > 25) note = "고변동성, 주의";
       if ($("macro-vix-note")) $("macro-vix-note").textContent = note;
+      marketSnapshot.vix = { value: vixVal, note };
     } else if ($("macro-vix-note")) {
       $("macro-vix-note").textContent = "데이터 수신 실패";
     }
@@ -790,6 +797,7 @@ async function fetchMacroData() {
       if (oilVal > 95) note = "고유가, 인플레이션 압력 주의";
       else if (oilVal < 65) note = "저유가, 에너지주 부담";
       if ($("macro-oil-note")) $("macro-oil-note").textContent = note;
+      marketSnapshot.oil = { value: oilVal, note };
     } else if ($("macro-oil-note")) {
       $("macro-oil-note").textContent = "데이터 수신 실패";
     }
@@ -844,6 +852,8 @@ function renderIndexChip(id, chartData, opts = {}) {
   const cls = changePct > 0 ? "sentiment-pos" : changePct < 0 ? "sentiment-neg" : "";
   const decimals = opts.decimals ?? 2;
   const prefix = opts.prefix || "";
+
+  marketSnapshot[id] = { value: lastClose, changePct };
 
   animateNumberText(
     valueEl,
@@ -4040,10 +4050,12 @@ async function runAnalysisForTicker(rawSymbol) {
       renderEarningsChart(quarters, domestic ? "KRW" : "USD");
     });
 
-    // 뉴스 탭 — 국내/해외 모두 지원(Phase 5, 4단계), 비동기 로드 (resetNewsPanel()도 updateUI() 안에서 호출됨)
+    // 뉴스 탭 — 국내/해외 모두 지원(Phase 5, 4단계), 비동기 로드 (resetNewsPanel()도 updateUI() 안에서 호출됨).
+    // lastAnalysis.news에도 캐싱해둬서 AI 분석 요청 시 최근 헤드라인을 실제 근거로 같이 보낼 수 있게 함.
     fetchNewsData(symbol).then((news) => {
       if (!lastAnalysis || lastAnalysis.data.symbol !== symbol) return;
       renderNewsList(news);
+      lastAnalysis.news = news;
     });
   } catch (err) {
     console.error("[RAVEN] 분석 중 오류:", err);
@@ -4076,9 +4088,23 @@ async function requestAiAnalysis() {
   }
 
   try {
-    const { data, analysis, patterns, stockName, supplyDemand, flowInfo } = lastAnalysis;
+    const { data, analysis, patterns, stockName, supplyDemand, flowInfo, news } = lastAnalysis;
     const verdict = computeVerdict(analysis);
     const domestic = isDomesticTicker(data.symbol);
+
+    // 시장 전반 배경 — 개별 종목 지표만 반복 서술하지 말고 "오늘 시장 전체가 어땠는지" 대비해서
+    // 해석하라는 요청(2026-08-01)에 따라, 이미 헤더에 렌더링 중인 지수 스냅샷을 그대로 재사용해서 전달.
+    // 국내 종목은 코스피/코스닥, 해외는 나스닥/S&P500/필라델피아반도체/다우존스를 기준으로 삼고,
+    // VIX(위험선호도)는 국내/해외 공통으로 항상 포함.
+    const market = domestic
+      ? { kospi: marketSnapshot.kospi, kosdaq: marketSnapshot.kosdaq, vix: marketSnapshot.vix }
+      : {
+          nasdaq: marketSnapshot.nasdaq,
+          sp500: marketSnapshot.sp500,
+          sox: marketSnapshot.sox,
+          dow: marketSnapshot.dow,
+          vix: marketSnapshot.vix
+        };
 
     const payload = {
       ticker: data.symbol,
@@ -4143,7 +4169,11 @@ async function requestAiAnalysis() {
       // supplyDemandText(한 줄 결론)만 보내던 걸, 실제 5종 개별 수치가 담긴 lines도 같이 보내서
       // AI가 "외국인 N일 연속 순매도" 같은 구체적 근거를 그대로 인용할 수 있게 함.
       supplyDemandText: supplyDemand && supplyDemand.outlook ? supplyDemand.outlook : null,
-      supplyDemandLines: supplyDemand && Array.isArray(supplyDemand.lines) ? supplyDemand.lines : null
+      supplyDemandLines: supplyDemand && Array.isArray(supplyDemand.lines) ? supplyDemand.lines : null,
+      market,
+      // 뉴스 탭에서 이미 조회해둔 실제 헤드라인(최근 5개) — AI가 "호재/악재"를 지어내지 않고
+      // 실제 헤드라인을 근거로 인용할 수 있게 함. 아직 뉴스가 안 온 상태(비동기 로딩 중)면 빈 배열.
+      news: Array.isArray(news) ? news.slice(0, 5).map((n) => n.title).filter(Boolean) : []
     };
 
     const res = await fetch(`${API_BASE}/api/ai/analyze`, {

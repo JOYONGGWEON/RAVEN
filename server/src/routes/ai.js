@@ -8,9 +8,23 @@ const SYSTEM_PROMPT = `당신은 월가 스타일의 전문 퀀트 트레이더 
 아래 규칙을 반드시 지키세요:
 - 입력으로 주어지는 지표는 이미 계산이 끝난 값입니다. 새로운 숫자를 지어내지 말고, 주어진 값만 근거로 서술하세요.
 - 뉴스나 심리적 낙관/비관이 아니라 거래량, 수급, 추세/모멘텀 지표, 캔들 패턴 등 데이터 기반으로 해석하세요.
-- 반드시 한국어로, 2~4개 문단 정도의 자연스러운 서술형으로 답하세요. 불필요한 서론/인사말 없이 바로 분석 내용으로 시작하세요.
+- 반드시 한국어로, 2~4개 문단 정도의 자연스러운 서술형으로 답하세요. 마크다운 제목(#)이나 헤더, 굵게(**) 같은 서식 없이 순수 문단 텍스트로만 답하고, 불필요한 서론/인사말 없이 바로 분석 내용으로 시작하세요.
 - 마지막 문단에는 이 데이터가 가리키는 시나리오(강세/약세/중립)와 유의할 리스크를 짧게 정리하세요.
-- 투자 조언이나 매수/매도 지시가 아니라 데이터 해석이라는 어조를 유지하세요 (예: "~할 수 있습니다", "~로 보입니다").`;
+- 투자 조언이나 매수/매도 지시가 아니라 데이터 해석이라는 어조를 유지하세요 (예: "~할 수 있습니다", "~로 보입니다").
+
+가장 중요한 규칙 — 이 분석은 화면에 이미 나열된 개별 지표(RSI/MACD/ADX 등)를 문장으로 그대로
+바꿔 말하는 게 아닙니다. 그건 이미 화면에 다 표시돼 있어서 사용자가 다시 읽을 필요가 없습니다.
+아래 두 가지를 반드시 실제로 통합해서, 화면만 봐서는 알 수 없는 "해석"을 만들어내세요:
+1) [시장 전반 배경] — 이 종목의 오늘 움직임이 코스피/코스닥(국내) 또는 나스닥/S&P500/필라델피아
+   반도체/다우존스(해외)와 같은 방향인지 다른 방향인지 반드시 비교해서 언급하세요. 시장 전체가
+   상승하는데 이 종목만 부진하다면(혹은 그 반대라면) 그 괴리 자체가 중요한 해석 포인트입니다.
+   VIX 수준으로 현재 시장의 위험선호 분위기도 짧게 짚으세요.
+2) [최근 뉴스 헤드라인] — 제공된 헤드라인 "제목 그대로만" 참고해서, 최근 가격/거래량 움직임과
+   시점이 맞아떨어지는지(예: 실적 발표 이후 거래량이 급증했는지) 연결해서 서술하세요. 헤드라인에
+   없는 구체적 수치·날짜·발언·후속 전망을 지어내지 마세요 — 헤드라인 제목 자체가 근거의 전부입니다.
+   헤드라인이 아예 제공되지 않으면 이 부분은 언급하지 말고 넘어가세요(없는 뉴스를 지어내지 말 것).
+이 두 가지가 없으면(market/news가 비어있으면) 해당 부분은 자연스럽게 생략하고 기존 지표
+해석만 하되, 있으면 반드시 위 통합 관점으로 녹여서 쓰세요.`;
 
 function fmt(v, digits = 2) {
   return typeof v === "number" && Number.isFinite(v) ? v.toFixed(digits) : "N/A";
@@ -31,7 +45,9 @@ function buildPrompt(payload) {
     patterns,
     flow,
     supplyDemandText,
-    supplyDemandLines
+    supplyDemandLines,
+    market,
+    news
   } = payload;
 
   const lines = [];
@@ -43,6 +59,36 @@ function buildPrompt(payload) {
       verdict?.upPctRaw
     )}%, 손실위험 ${fmt(verdict?.downPctRaw)}%)`
   );
+
+  // 시장 전반 배경 — 화면 헤더의 지수 대시보드 스냅샷을 그대로 받아옴(같은 값을 재계산하지 않고
+  // 프론트가 이미 계산해둔 걸 그대로 서술에만 씀, 다른 지표들과 동일한 원칙).
+  const MARKET_LABELS = {
+    kospi: "코스피",
+    kosdaq: "코스닥",
+    nasdaq: "나스닥",
+    sp500: "S&P500",
+    sox: "필라델피아반도체",
+    dow: "다우존스"
+  };
+  const marketParts = Object.entries(market || {})
+    .filter(([, v]) => v && Number.isFinite(v.value))
+    .map(([key, v]) => {
+      if (key === "vix") return `VIX ${fmt(v.value, 1)}(${v.note || ""})`;
+      const label = MARKET_LABELS[key] || key;
+      return `${label} ${fmt(v.changePct, 2)}%`;
+    });
+  if (marketParts.length > 0) {
+    lines.push("");
+    lines.push("[오늘 시장 전반 배경]");
+    lines.push(marketParts.join(", "));
+  }
+
+  if (Array.isArray(news) && news.length > 0) {
+    lines.push("");
+    lines.push("[최근 뉴스 헤드라인 — 제목 그대로만 참고, 세부내용 지어내지 말 것]");
+    news.forEach((title) => lines.push(`- ${title}`));
+  }
+
   lines.push("");
   lines.push("[추세/모멘텀 지표]");
   lines.push(`RSI(14): ${fmt(indicators?.rsi, 1)} (${indicators?.rsiCross || "NONE"})`);
