@@ -29,7 +29,9 @@ function buildPrompt(payload) {
     indicators,
     levels,
     patterns,
-    supplyDemandText
+    flow,
+    supplyDemandText,
+    supplyDemandLines
   } = payload;
 
   const lines = [];
@@ -49,11 +51,20 @@ function buildPrompt(payload) {
       indicators?.macdHistogram
     )} (${indicators?.macdCrossover || "NONE"})`
   );
+  if (indicators?.macdDivergence && indicators.macdDivergence.divergence !== "NONE") {
+    const d = indicators.macdDivergence;
+    lines.push(
+      `MACD 다이버전스: ${d.divergence}(최근 ${d.lookback}일 기준, 가격 변화 ${fmt(
+        d.priceChangePct,
+        1
+      )}%)`
+    );
+  }
   lines.push(
     `ADX(14): ${fmt(indicators?.adx, 1)} (+DI ${fmt(indicators?.plusDI, 1)} / -DI ${fmt(
       indicators?.minusDI,
       1
-    )})`
+    )})${indicators?.adxTrend && indicators.adxTrend !== "FLAT" ? ` — 추세 강도 ${indicators.adxTrend === "RISING" ? "강화 중" : "약화 중"}` : ""}`
   );
   lines.push(`ATR(14): ${fmt(indicators?.atr)} (${fmt(indicators?.atrPct, 1)}%)`);
   lines.push(`20일 변동성: ${fmt(indicators?.volatility, 1)}%`);
@@ -82,9 +93,32 @@ function buildPrompt(payload) {
     });
   }
 
+  if (flow) {
+    lines.push("");
+    lines.push("[당일 수급 (거래량·캔들 기반)]");
+    if (flow.flowLabel) lines.push(`상태: ${flow.flowLabel}`);
+    if (flow.flowNote) lines.push(flow.flowNote);
+    if (flow.obvInfo && flow.obvInfo.divergence && flow.obvInfo.divergence !== "NONE") {
+      lines.push(
+        `OBV 다이버전스: ${flow.obvInfo.divergence}(최근 ${flow.obvInfo.lookback}일 기준, 가격 변화 ${fmt(
+          flow.obvInfo.priceChangePct,
+          1
+        )}%)`
+      );
+    }
+  }
+
+  // 전일 수급 5종(프로그램매매/공매도/신용/대차/투자자별)의 개별 수치 라인 — 결론(supplyDemandText)만
+  // 주면 AI가 "외국인 N일 연속 순매도" 같은 구체적 근거를 못 쓰고 뭉뚱그리게 되던 걸 개선.
+  if (Array.isArray(supplyDemandLines) && supplyDemandLines.length > 0) {
+    lines.push("");
+    lines.push("[전일 수급 상세 (프로그램매매/공매도/신용/대차/투자자별)]");
+    supplyDemandLines.forEach((l) => lines.push(`- ${l}`));
+  }
+
   if (supplyDemandText) {
     lines.push("");
-    lines.push("[수급 해석 (전일 데이터 기반)]");
+    lines.push("[전일 수급 종합 해석]");
     lines.push(supplyDemandText);
   }
 

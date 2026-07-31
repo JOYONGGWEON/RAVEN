@@ -653,6 +653,30 @@ body.raven-result-bg {
   grid-column: span 2;
 }
 
+/* 여러 문장으로 된 서술(추세/모멘텀/수급/패턴/신호 등)을 한 문단으로 이어붙이지 않고 문장 단위
+   불릿으로 분리 — 문장 하나가 통째로 줄바꿈되어 읽기 편하고, 좁은 화면에서 문장 중간이 어중간하게
+   잘리는 것도 방지됨(각 <li>가 독립적으로 줄바꿈됨). 탭 하단의 노란 "종합" 불릿(.tab-summary-box)과는
+   시각적으로 구분되도록 무채색으로 둠. */
+.narrative-bullets {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.narrative-bullets li {
+  font-size: 1.02rem;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+.strategy-detail .narrative-bullets li,
+.strategy-box .narrative-bullets li {
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
 .supply-kis-date {
   margin: 0 0 0.6rem 0 !important;
   font-size: 0.78rem !important;
@@ -733,15 +757,18 @@ body.raven-result-bg {
   border-color: rgba(16, 185, 129, 0.35);
 }
 
-.wave-chip.support .wave-chip-pct {
-  color: var(--success);
-}
-
 .wave-chip.resistance {
   border-color: rgba(239, 68, 68, 0.35);
 }
 
-.wave-chip.resistance .wave-chip-pct {
+/* %텍스트는 칩 역할(지지=초록/저항=빨강)이 아니라 부호 기준으로 색칠 — 지지선은 항상 현재가보다
+   낮아 음수(-%), 저항선은 항상 높아 양수(+%)라서, 역할 기준 색은 "+%인데 빨간색"처럼 앱 전체에서
+   쓰는 상승=초록/하락=빨강 관례(티커 등락률 등)와 반대로 보여 헷갈린다는 실측 피드백으로 변경. */
+.wave-chip-pct.positive {
+  color: var(--success);
+}
+
+.wave-chip-pct.negative {
   color: var(--danger);
 }
 
@@ -823,6 +850,11 @@ body.raven-result-bg {
 }
 .sentiment-neg {
   color: var(--danger);
+}
+/* 긍정/부정 판단이 아니라 "이 문구를 눈에 띄게 강조"만 하고 싶을 때(예: RAVEN SIGNAL의
+   [매수세 우위]/[골든크로스] 같은 핵심 키워드) — sentiment-neu(주황)와는 다른 노란색 */
+.sentiment-highlight {
+  color: var(--macro-note);
 }
 
 /* 탭 하단 종합 요약 — 노란색으로 "여러 해석을 합쳤을 때의 결론"임을 표시 */

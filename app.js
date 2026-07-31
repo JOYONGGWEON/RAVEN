@@ -1735,6 +1735,36 @@ function renderBulletList(el, bullets) {
   });
 }
 
+// 이미 여러 문장이 하나의 문자열로 붙어있는 서술(예: calcFlowSignal의 flowNote)을 함수 반환
+// 타입을 바꾸지 않고도 문장 단위 배열로 쪼개기 위한 범용 헬퍼. "마침표/느낌표/물음표 + 공백"
+// 뒤에서만 자르므로 "3.5%" 같은 소수점 숫자(마침표 뒤 공백 없음)는 쪼개지지 않음.
+function splitSentences(text) {
+  if (!text) return [];
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// 추세/모멘텀/수급/패턴/신호 등 본문 서술을 문장 단위 불릿으로 렌더링.
+// el 자체는 <p>/<div> 등 아무 태그여도 되고(내부에 <ul>을 새로 만들어 넣음), lines의 각 항목은
+// innerHTML로 렌더링되어 toneSpan()으로 만든 부분 강조 문구를 그대로 심을 수 있음.
+function renderNarrativeBullets(el, lines) {
+  if (!el) return;
+  el.innerHTML = "";
+  if (!lines || !lines.length) return;
+
+  const ul = document.createElement("ul");
+  ul.className = "narrative-bullets";
+  lines.forEach((line) => {
+    if (!line) return;
+    const li = document.createElement("li");
+    li.innerHTML = line;
+    ul.appendChild(li);
+  });
+  el.appendChild(ul);
+}
+
 // 지표 박스(RSI/MACD/ADX/ATR/RS) 값 줄을 "숫자값" + "▶ 해석" 두 줄로 분리 렌더링
 // 문단 안의 특정 핵심 문구만 색칠할 때 쓰는 인라인 span (지표박스 전체 색칠과는 별개 용도)
 function toneSpan(text, sentiment) {
@@ -1742,7 +1772,9 @@ function toneSpan(text, sentiment) {
 }
 
 // sentiment: "pos"(긍정/녹색) | "neu"(중립/주황) | "neg"(부정/빨강) | undefined(색 없음, 기본색 유지)
-function setIndicatorBox(el, valueText, interpText, sentiment) {
+// interpHtml은 innerHTML로 렌더링됨 — toneSpan()으로 만든 부분 강조(예: MACD 크로스오버 문구만
+// 별도 색칠)를 문장 안에 그대로 심을 수 있게 하기 위함(아래 MACD 박스 참고).
+function setIndicatorBox(el, valueText, interpHtml, sentiment) {
   if (!el) return;
   el.innerHTML = "";
 
@@ -1751,11 +1783,11 @@ function setIndicatorBox(el, valueText, interpText, sentiment) {
   valueSpan.textContent = valueText;
   el.appendChild(valueSpan);
 
-  if (interpText) {
+  if (interpHtml) {
     const interpSpan = document.createElement("span");
     interpSpan.className = "indicator-interp";
     if (sentiment) interpSpan.classList.add(`sentiment-${sentiment}`);
-    interpSpan.textContent = `▶ ${interpText}`;
+    interpSpan.innerHTML = `▶ ${interpHtml}`;
     el.appendChild(interpSpan);
   }
 }
@@ -2349,8 +2381,10 @@ function updateUI(data, analysis, fxRate, stockName) {
   }
 
   // ==== Trend 카드 텍스트 ====
+  // 문장별로 배열에 담아 renderNarrativeBullets()로 불릿(•) 렌더링 — 한 문단으로 이어붙이면
+  // 좁은 화면에서 문장 중간이 어중간하게 줄바꿈되던 걸 개선(실측 피드백).
   if (trendEl) {
-    let txt = "단기/중기 이평선 기준으로 추세를 평가합니다.";
+    let lines = ["단기/중기 이평선 기준으로 추세를 평가합니다."];
 
     if (ma20 && ma60 && ma120) {
       const isBullTrend =
@@ -2361,23 +2395,31 @@ function updateUI(data, analysis, fxRate, stockName) {
         ma20 < ma60 && price < ma20 && price < ma60 && price < ma120;
 
       if (isBullTrend) {
-        txt =
-          "20·60·120일선이 정배열이고, 현재가도 20일선 위에 위치한 전형적인 상승 추세 구간입니다. 추세 추종 매매가 유리한 자리입니다.";
+        lines = [
+          "20·60·120일선이 정배열이고, 현재가도 20일선 위에 위치한 전형적인 상승 추세 구간입니다.",
+          "추세 추종 매매가 유리한 자리입니다."
+        ];
       } else if (isBullPullback) {
-        txt =
-          "중장기적으로는 정배열 상승 추세지만, 현재가는 20일선 아래/60일선 위의 눌림 구간입니다. 추세 안에서의 단기 조정으로 보는 쪽이 자연스럽습니다.";
+        lines = [
+          "중장기적으로는 정배열 상승 추세지만, 현재가는 20일선 아래/60일선 위의 눌림 구간입니다.",
+          "추세 안에서의 단기 조정으로 보는 쪽이 자연스럽습니다."
+        ];
       } else if (isBearTrend) {
-        txt =
-          "20·60·120일선이 역배열에 가깝고, 현재가도 주요 이평선 아래에 위치한 약세/하락 추세 구간입니다. 반등보다는 하락 추세 연장이 우세한 자리입니다.";
+        lines = [
+          "20·60·120일선이 역배열에 가깝고, 현재가도 주요 이평선 아래에 위치한 약세/하락 추세 구간입니다.",
+          "반등보다는 하락 추세 연장이 우세한 자리입니다."
+        ];
       } else {
-        txt =
-          "이평선 배열과 현재가 위치가 애매한 중립/전환 구간입니다. 추세보다는 지지·저항과 수급 변화를 우선적으로 보는 편이 좋습니다.";
+        lines = [
+          "이평선 배열과 현재가 위치가 애매한 중립/전환 구간입니다.",
+          "추세보다는 지지·저항과 수급 변화를 우선적으로 보는 편이 좋습니다."
+        ];
       }
     } else {
-      txt = "이평선 데이터가 부족해 뚜렷한 추세 판단이 어렵습니다.";
+      lines = ["이평선 데이터가 부족해 뚜렷한 추세 판단이 어렵습니다."];
     }
 
-    trendEl.textContent = txt;
+    renderNarrativeBullets(trendEl, lines);
   }
 
   // ==== 상대강도(RS) — RSI/MACD/ADX/ATR과 같은 지표 박스로 통일 ====
@@ -2417,46 +2459,48 @@ function updateUI(data, analysis, fxRate, stockName) {
 
   // ==== Momentum 카드 텍스트 ====
   if (momentumEl) {
-    let txt = "";
+    let lines = [];
 
     if (rsi >= 70) {
-      txt =
-        `RSI ${rsi.toFixed(
-          1
-        )}로 단기 과열 구간에 진입한 상태입니다. 추세는 강하지만 신규 진입보다는 분할 청산/눌림 대기가 더 유리할 수 있습니다.`;
+      lines = [
+        `RSI ${rsi.toFixed(1)}로 단기 과열 구간에 진입한 상태입니다.`,
+        "추세는 강하지만 신규 진입보다는 분할 청산/눌림 대기가 더 유리할 수 있습니다."
+      ];
     } else if (rsi >= 60) {
-      txt =
-        `RSI ${rsi.toFixed(
-          1
-        )}로 모멘텀은 강세 우위입니다. 추세 추종 관점에서 눌림 매수나 돌파 매매를 고려할 수 있는 구간입니다.`;
+      lines = [
+        `RSI ${rsi.toFixed(1)}로 모멘텀은 강세 우위입니다.`,
+        "추세 추종 관점에서 눌림 매수나 돌파 매매를 고려할 수 있는 구간입니다."
+      ];
     } else if (rsi <= 30) {
-      txt =
-        `RSI ${rsi.toFixed(
-          1
-        )}로 과매도 구간에 가까운 자리입니다. 기술적 반등 여지는 있지만, 추세 자체가 약세라면 역추세 매매는 고위험 구간입니다.`;
+      lines = [
+        `RSI ${rsi.toFixed(1)}로 과매도 구간에 가까운 자리입니다.`,
+        "기술적 반등 여지는 있지만, 추세 자체가 약세라면 역추세 매매는 고위험 구간입니다."
+      ];
     } else if (rsi <= 40) {
-      txt =
-        `RSI ${rsi.toFixed(
-          1
-        )}로 모멘텀은 다소 약세 쪽으로 기울어 있습니다. 추가 하락이 이어질 수 있어 보수적인 접근이 필요합니다.`;
+      lines = [
+        `RSI ${rsi.toFixed(1)}로 모멘텀은 다소 약세 쪽으로 기울어 있습니다.`,
+        "추가 하락이 이어질 수 있어 보수적인 접근이 필요합니다."
+      ];
     } else {
-      txt =
-        `RSI ${rsi.toFixed(
-          1
-        )}로 모멘텀은 중립 구간입니다. 뚜렷한 과열/과매도 신호보다는 추세와 지지·저항에서 방향성을 확인하는 편이 좋습니다.`;
+      lines = [
+        `RSI ${rsi.toFixed(1)}로 모멘텀은 중립 구간입니다.`,
+        "뚜렷한 과열/과매도 신호보다는 추세와 지지·저항에서 방향성을 확인하는 편이 좋습니다."
+      ];
     }
 
-    // MACD 다이버전스 — 가격과 모멘텀 지표가 서로 다른 말을 하는 구간이라 별도로 경고.
+    // MACD 다이버전스 — 가격과 모멘텀 지표가 서로 다른 말을 하는 구간이라 별도 불릿으로 경고.
     // 핵심 문구("약세/강세 다이버전스")만 색칠 — 문단 전체를 물들이면 오히려 안 읽혀서 키워드만.
     if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BEARISH") {
-      txt +=
-        ` 최근 ${analysis.macdDivergence.lookback}일간 가격은 올랐지만 MACD 모멘텀은 오히려 꺾이는 ${toneSpan("약세 다이버전스", "neg")}가 나타나, 상승 동력이 소진되고 있을 가능성이 있습니다.`;
+      lines.push(
+        `최근 ${analysis.macdDivergence.lookback}일간 가격은 올랐지만 MACD 모멘텀은 오히려 꺾이는 ${toneSpan("약세 다이버전스", "neg")}가 나타나, 상승 동력이 소진되고 있을 가능성이 있습니다.`
+      );
     } else if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BULLISH") {
-      txt +=
-        ` 최근 ${analysis.macdDivergence.lookback}일간 가격은 빠졌지만 MACD 모멘텀은 오히려 개선되는 ${toneSpan("강세 다이버전스", "pos")}가 나타나, 하락 동력이 약해지고 있을 가능성이 있습니다.`;
+      lines.push(
+        `최근 ${analysis.macdDivergence.lookback}일간 가격은 빠졌지만 MACD 모멘텀은 오히려 개선되는 ${toneSpan("강세 다이버전스", "pos")}가 나타나, 하락 동력이 약해지고 있을 가능성이 있습니다.`
+      );
     }
 
-    momentumEl.innerHTML = txt;
+    renderNarrativeBullets(momentumEl, lines);
   }
 
   // ===== Flow / WhyToday / 패턴 계산 =====
@@ -2491,11 +2535,17 @@ function updateUI(data, analysis, fxRate, stockName) {
   if (waveLadderEl) {
     const fmtChip = (label, lv, type) => {
       if (!Number.isFinite(lv) || !Number.isFinite(px) || px === 0) {
-        return { label, price: null, pctText: "", type };
+        return { label, price: null, pctText: "", pctSign: null, type };
       }
       const pct = ((lv - px) / px) * 100;
       const sign = pct >= 0 ? "+" : "";
-      return { label, price: lv, pctText: `${sign}${pct.toFixed(1)}%`, type };
+      return {
+        label,
+        price: lv,
+        pctText: `${sign}${pct.toFixed(1)}%`,
+        pctSign: pct >= 0 ? "positive" : "negative",
+        type
+      };
     };
 
     const slots = [
@@ -2523,7 +2573,7 @@ function updateUI(data, analysis, fxRate, stockName) {
 
       if (c.pctText) {
         const pctDiv = document.createElement("div");
-        pctDiv.className = "wave-chip-pct";
+        pctDiv.className = `wave-chip-pct${c.pctSign ? ` ${c.pctSign}` : ""}`;
         pctDiv.textContent = c.pctText;
         chip.appendChild(pctDiv);
       }
@@ -2535,40 +2585,38 @@ function updateUI(data, analysis, fxRate, stockName) {
   if (waveEl) {
     // Wave는 "지금 구조가 어떻게 생겼는지"만 순수하게 설명함 —
     // 매수/매도 전략 판단은 위쪽 RAVEN 전략요약(strategy-main/detail)에 이미 있어서 여기서 안 겹치게 함
-    let detail =
-      "최근 파동 구조와 지지·저항 위치를 기준으로 파동을 해석합니다.";
+    let waveLines = ["최근 파동 구조와 지지·저항 위치를 기준으로 파동을 해석합니다."];
 
     if (s1 && r1) {
       if (nearSupport && !nearResistance) {
-        detail =
-          `현재가는 주요 지지선 근처(≈ ${s1.toFixed(
-            2
-          )})에 위치한 파동 하단 구간입니다. 이전 저점·매물대에서 형성된 자리로, ` +
-          "지지선이 유지되는지 이탈하는지에 따라 다음 파동의 방향이 갈립니다.";
+        waveLines = [
+          `현재가는 주요 지지선 근처(≈ ${s1.toFixed(2)})에 위치한 파동 하단 구간입니다.`,
+          "이전 저점·매물대에서 형성된 자리로, 지지선이 유지되는지 이탈하는지에 따라 다음 파동의 방향이 갈립니다."
+        ];
       } else if (!nearSupport && nearResistance) {
-        detail =
-          `현재가는 주요 저항선 근처(≈ ${r1.toFixed(
-            2
-          )})에 위치한 파동 상단 구간입니다. 이전 고점·매물대에서 형성된 자리로, ` +
-          "저항을 돌파하는지 되밀리는지에 따라 다음 파동의 방향이 갈립니다.";
+        waveLines = [
+          `현재가는 주요 저항선 근처(≈ ${r1.toFixed(2)})에 위치한 파동 상단 구간입니다.`,
+          "이전 고점·매물대에서 형성된 자리로, 저항을 돌파하는지 되밀리는지에 따라 다음 파동의 방향이 갈립니다."
+        ];
       } else if (nearSupport && nearResistance) {
-        detail =
-          "지지와 저항 레벨이 서로 가깝게 밀집한 박스 구간 상·하단에 동시에 걸쳐 있는 구조입니다. " +
-          "박스 폭이 좁아, 어느 한쪽을 벗어나는 순간 다음 파동의 방향이 비교적 빠르게 드러나는 자리입니다.";
+        waveLines = [
+          "지지와 저항 레벨이 서로 가깝게 밀집한 박스 구간 상·하단에 동시에 걸쳐 있는 구조입니다.",
+          "박스 폭이 좁아, 어느 한쪽을 벗어나는 순간 다음 파동의 방향이 비교적 빠르게 드러나는 자리입니다."
+        ];
       } else {
-        detail =
-          `현재가는 지지선(≈ ${s1.toFixed(2)})과 저항선(≈ ${r1.toFixed(
-            2
-          )}) 사이 중간에 위치한 파동 중단 구간입니다. ` +
-          "박스 상·하단 중 어느 쪽에 먼저 재접근하느냐가 다음 파동을 가늠하는 기준점이 됩니다.";
+        waveLines = [
+          `현재가는 지지선(≈ ${s1.toFixed(2)})과 저항선(≈ ${r1.toFixed(2)}) 사이 중간에 위치한 파동 중단 구간입니다.`,
+          "박스 상·하단 중 어느 쪽에 먼저 재접근하느냐가 다음 파동을 가늠하는 기준점이 됩니다."
+        ];
       }
     } else {
-      detail =
-        "최근 스윙 고점/저점을 기반으로 한 명확한 지지·저항 레벨이 충분히 잡히지 않은 구간입니다. " +
-        "이 경우에는 이평선·RSI 등 모멘텀 지표와 상위 타임프레임 차트를 함께 보고 파동 위치를 판단하는 것이 좋습니다.";
+      waveLines = [
+        "최근 스윙 고점/저점을 기반으로 한 명확한 지지·저항 레벨이 충분히 잡히지 않은 구간입니다.",
+        "이 경우에는 이평선·RSI 등 모멘텀 지표와 상위 타임프레임 차트를 함께 보고 파동 위치를 판단하는 것이 좋습니다."
+      ];
     }
 
-    waveEl.textContent = detail;
+    renderNarrativeBullets(waveEl, waveLines);
   }
 
   // ==== Supply: 오늘 캔들·거래량 기준 매수/매도 압력 해석 ====
@@ -2577,34 +2625,36 @@ function updateUI(data, analysis, fxRate, stockName) {
   // 사실상 빈 내용이 대부분이라 오히려 수급 탭이 부실해 보인다는 피드백을 받아 제거함.
   // 특이하게 강한 재료/악재 가능성이 있을 때만 신호(signal-txt) 쪽에 짧게 덧붙이도록 이동함.
   if (supplyEl) {
-    supplyEl.textContent = flowInfo.flowNote;
+    renderNarrativeBullets(supplyEl, splitSentences(flowInfo.flowNote));
   }
 
   // ==== OBV: 최근 10일 누적 거래량 vs 가격 다이버전스 ====
   // (오늘 캔들 하나만 보던 수급 박스와 달리, 여러 날에 걸친 매집/분산 신호라 별도 박스로 분리)
   if (obvEl) {
     const obvInfo = flowInfo.obvInfo;
+    let obvTxt;
     if (!obvInfo) {
-      obvEl.textContent = "OBV 계산을 위한 데이터가 부족합니다.";
+      obvTxt = "OBV 계산을 위한 데이터가 부족합니다.";
     } else if (obvInfo.divergence === "BEARISH") {
-      obvEl.textContent =
+      obvTxt =
         `최근 ${obvInfo.lookback}일간 가격은 +${obvInfo.priceChangePct.toFixed(
           1
         )}% 올랐는데, 누적 거래량(OBV) 기준 수급은 오히려 빠지는 다이버전스가 나타났습니다. ` +
         "상승이 소수의 거래에 의존하고 있다는 신호로, 고점 분산(매집 소진) 가능성을 염두에 둬야 합니다.";
     } else if (obvInfo.divergence === "BULLISH") {
-      obvEl.textContent =
+      obvTxt =
         `최근 ${obvInfo.lookback}일간 가격은 ${obvInfo.priceChangePct.toFixed(
           1
         )}% 빠졌는데, 누적 거래량(OBV) 기준 수급은 오히려 느는 다이버전스가 나타났습니다. ` +
         "저점에서 조용히 매집이 들어오고 있을 가능성이 있는 구간입니다.";
     } else {
-      obvEl.textContent =
+      obvTxt =
         `최근 ${obvInfo.lookback}일간 가격 흐름(${
           obvInfo.priceChangePct >= 0 ? "+" : ""
         }${obvInfo.priceChangePct.toFixed(1)}%)과 누적 거래량(OBV) 방향이 대체로 일치합니다. ` +
         "뚜렷한 매집·분산 다이버전스 신호는 없는 구간입니다.";
     }
+    renderNarrativeBullets(obvEl, splitSentences(obvTxt));
   }
 
   const supplySummaryEl = $("supply-summary-txt");
@@ -2613,23 +2663,21 @@ function updateUI(data, analysis, fxRate, stockName) {
   // ==== Pattern 카드 ====
   if (patternEl) {
     if (!patterns || patterns.length === 0) {
-      patternEl.textContent =
-        "오늘 일봉 기준으로는 교과서적인 강/약세 패턴이 뚜렷하게 감지되지 않습니다. " +
-        "단일 봉보다는 추세와 지지·저항, 거래량을 함께 보고 해석하는 편이 좋습니다.";
+      renderNarrativeBullets(patternEl, [
+        "오늘 일봉 기준으로는 교과서적인 강/약세 패턴이 뚜렷하게 감지되지 않습니다.",
+        "단일 봉보다는 추세와 지지·저항, 거래량을 함께 보고 해석하는 편이 좋습니다."
+      ]);
     } else {
       const top = patterns[0];
       const others = patterns.slice(1, 3);
       const otherNames = others.map((p) => p.name).join(", ");
 
-      let txt =
-        `대표 패턴: [${top.name}] ` +
-        `\n- 해석: ${top.comment}`;
-
+      const patternLines = [`대표 패턴: [${top.name}]`, `해석: ${top.comment}`];
       if (otherNames) {
-        txt += `\n\n보조 패턴(참고용): ${otherNames}`;
+        patternLines.push(`보조 패턴(참고용): ${otherNames}`);
       }
 
-      patternEl.textContent = txt;
+      renderNarrativeBullets(patternEl, patternLines);
     }
   }
 
@@ -2643,88 +2691,88 @@ function updateUI(data, analysis, fxRate, stockName) {
       topName === "Dragonfly Doji" ||
       topName === "Gravestone Doji";
 
-
-    let txt = "";
+    let signalLines = [];
 
     if (topName && isDojiLike) {
-      // 도지 계열 패턴은 변곡 시나리오 위주
+      // 도지 계열 패턴은 변곡 시나리오 위주 — 시나리오 하나(제목+화살표 설명)를 한 불릿으로 묶음
       if (nearSupport) {
-        txt =
-          `지지선(${s1.toFixed(
-            2
-          )}) 바로 위에서 ${topName} 패턴이 나타난 상태입니다.\n\n` +
-          "● 시나리오 1) 지지선 위 양봉 마감 → 지지선 방어 확인 + 반등 시그널 강화\n" +
-          "   → 다음 캔들이 지지선 위에서 중/장대 양봉으로 마감하면, 단기 반등 파동이 시작될 가능성이 큽니다.\n\n" +
-          "● 시나리오 2) 지지선 이탈 음봉 마감 → 반등 실패 + 하락 파동 재개\n" +
-          "   → 지지선 아래로 종가가 밀리면 손절/관망이 유리한 구간입니다.";
+        signalLines = [
+          `지지선(${s1.toFixed(2)}) 바로 위에서 ${topName} 패턴이 나타난 상태입니다.`,
+          "● 시나리오 1) 지지선 위 양봉 마감 → 지지선 방어 확인 + 반등 시그널 강화\n→ 다음 캔들이 지지선 위에서 중/장대 양봉으로 마감하면, 단기 반등 파동이 시작될 가능성이 큽니다.",
+          "● 시나리오 2) 지지선 이탈 음봉 마감 → 반등 실패 + 하락 파동 재개\n→ 지지선 아래로 종가가 밀리면 손절/관망이 유리한 구간입니다."
+        ];
       } else if (nearResistance) {
-        txt =
-          `저항선(${r1.toFixed(
-            2
-          )}) 바로 아래에서 ${topName} 패턴이 출현했습니다.\n\n` +
-          "● 시나리오 1) 저항 돌파 양봉 마감 → 추세 연장/상단 돌파 신호\n" +
-          "   → 다음 캔들이 저항선을 명확히 돌파한 양봉이면, 돌파 후 눌림 구간까지 단기 추세 추종 전략이 유리할 수 있습니다.\n\n" +
-          "● 시나리오 2) 저항 맞고 음봉 마감 → 피크 아웃·조정 가능성\n" +
-          "   → 저항선 터치 후 윗꼬리 긴 음봉으로 마감되면 단기 상방 피로 신호로, 분할 청산/헤지 관점이 필요합니다.";
+        signalLines = [
+          `저항선(${r1.toFixed(2)}) 바로 아래에서 ${topName} 패턴이 출현했습니다.`,
+          "● 시나리오 1) 저항 돌파 양봉 마감 → 추세 연장/상단 돌파 신호\n→ 다음 캔들이 저항선을 명확히 돌파한 양봉이면, 돌파 후 눌림 구간까지 단기 추세 추종 전략이 유리할 수 있습니다.",
+          "● 시나리오 2) 저항 맞고 음봉 마감 → 피크 아웃·조정 가능성\n→ 저항선 터치 후 윗꼬리 긴 음봉으로 마감되면 단기 상방 피로 신호로, 분할 청산/헤지 관점이 필요합니다."
+        ];
       } else {
-        txt =
-          `${topName} 패턴(도지형)이 중립 구간에서 출현했습니다. ` +
-          "현재 위치는 뚜렷한 지지·저항 레벨과 약간 떨어진 구간이어서, 다음 봉 방향성을 섣불리 단정 짓기 어렵습니다.\n\n" +
-          "→ 다음 캔들의 몸통 방향(양/음)과 거래량이 함께 증가하는지 확인한 뒤, " +
-          "지지·저항선 재접근 구간에서 진입/청산 타이밍을 잡는 것이 유리합니다.";
+        signalLines = [
+          `${topName} 패턴(도지형)이 중립 구간에서 출현했습니다.`,
+          "현재 위치는 뚜렷한 지지·저항 레벨과 약간 떨어진 구간이어서, 다음 봉 방향성을 섣불리 단정 짓기 어렵습니다.",
+          "→ 다음 캔들의 몸통 방향(양/음)과 거래량이 함께 증가하는지 확인한 뒤, 지지·저항선 재접근 구간에서 진입/청산 타이밍을 잡는 것이 유리합니다."
+        ];
       }
     } else {
-      const baseIntro = topName
-        ? `대표 패턴 [${topName}]을 기준으로 파동과 지지·저항을 종합 평가합니다. `
-        : "수급 탭의 흐름을 참고해 파동과 지지·저항을 종합 평가합니다. ";
-
-      txt = baseIntro + "\n\n";
+      signalLines.push(
+        topName
+          ? `대표 패턴 [${topName}]을 기준으로 파동과 지지·저항을 종합 평가합니다.`
+          : "수급 탭의 흐름을 참고해 파동과 지지·저항을 종합 평가합니다."
+      );
 
       if (nearSupport) {
-        txt +=
-          `현재가는 주요 지지선(${s1 ? s1.toFixed(2) : "N/A"}) 근처에 위치한 눌림 구간입니다. `;
+        signalLines.push(
+          `현재가는 주요 지지선(${s1 ? s1.toFixed(2) : "N/A"}) 근처에 위치한 눌림 구간입니다.`
+        );
         if (flowType === "BUY_DOMINANT" || flowType === "REBOUND_BUY") {
-          txt +=
-            "지지선에서 매수세가 우위인 구조라면, 다음 캔들이 지지선 위 양봉으로 마감할 경우 단기 매수 시그널로 해석할 수 있습니다.\n";
+          signalLines.push(
+            "지지선에서 매수세가 우위인 구조라면, 다음 캔들이 지지선 위 양봉으로 마감할 경우 단기 매수 시그널로 해석할 수 있습니다."
+          );
         } else if (flowType === "SELL_DOMINANT") {
-          txt +=
-            "다만 아직 매도 우위 흐름이 강하다면, 지지선 이탈 음봉이 한 번 더 나올 수 있어 보수적인 접근이 필요합니다.\n";
+          signalLines.push(
+            "다만 아직 매도 우위 흐름이 강하다면, 지지선 이탈 음봉이 한 번 더 나올 수 있어 보수적인 접근이 필요합니다."
+          );
         } else {
-          txt +=
-            "수급이 중립에 가까워, 추가 하락 후 진짜 매수세가 들어오는지 한 차례 더 지켜본 뒤 진입하는 편이 안전합니다.\n";
+          signalLines.push(
+            "수급이 중립에 가까워, 추가 하락 후 진짜 매수세가 들어오는지 한 차례 더 지켜본 뒤 진입하는 편이 안전합니다."
+          );
         }
       } else if (nearResistance) {
-        txt +=
-          `현재가는 주요 저항선(${r1 ? r1.toFixed(2) : "N/A"}) 근처 상단 파동 영역입니다. `;
+        signalLines.push(
+          `현재가는 주요 저항선(${r1 ? r1.toFixed(2) : "N/A"}) 근처 상단 파동 영역입니다.`
+        );
         if (flowType === "BUY_DOMINANT") {
-          txt +=
-            "강한 매수 우위 속에서 저항 돌파를 시도하는 구간이라, 다음 캔들이 저항 위에서 안착하면 돌파 추세 추종 시그널로 볼 수 있습니다.\n";
-        } else if (
-          flowType === "REJECTION_SELL" ||
-          flowType === "SELL_DOMINANT"
-        ) {
-          txt +=
-            "저항선에서 매도/청산이 강하게 나오는 형태라면, 다음 캔들이 저항 아래 음봉으로 마감될 경우 단기 조정/하락 파동 진입 신호로 볼 수 있습니다.\n";
+          signalLines.push(
+            "강한 매수 우위 속에서 저항 돌파를 시도하는 구간이라, 다음 캔들이 저항 위에서 안착하면 돌파 추세 추종 시그널로 볼 수 있습니다."
+          );
+        } else if (flowType === "REJECTION_SELL" || flowType === "SELL_DOMINANT") {
+          signalLines.push(
+            "저항선에서 매도/청산이 강하게 나오는 형태라면, 다음 캔들이 저항 아래 음봉으로 마감될 경우 단기 조정/하락 파동 진입 신호로 볼 수 있습니다."
+          );
         } else {
-          txt +=
-            "수급이 애매한 상태라, 돌파 실패 시 되돌림 폭이 커질 수 있습니다. 신규 매수보다는 기존 보유 물량 관리에 중점을 두는 편이 좋습니다.\n";
+          signalLines.push(
+            "수급이 애매한 상태라, 돌파 실패 시 되돌림 폭이 커질 수 있습니다. 신규 매수보다는 기존 보유 물량 관리에 중점을 두는 편이 좋습니다."
+          );
         }
       } else {
-        txt +=
-          "지지·저항 사이의 중립 파동 구간에 위치해 있어, 다음 캔들 하나만으로 방향성을 강하게 확정하긴 어렵습니다.\n" +
-          "→ 이 구간에서는 박스 상·하단(지지/저항)에 다시 접근할 때의 수급 패턴을 보면서 진입/청산 타이밍을 잡는 전략이 적합합니다.\n";
+        signalLines.push(
+          "지지·저항 사이의 중립 파동 구간에 위치해 있어, 다음 캔들 하나만으로 방향성을 강하게 확정하긴 어렵습니다."
+        );
+        signalLines.push(
+          "→ 이 구간에서는 박스 상·하단(지지/저항)에 다시 접근할 때의 수급 패턴을 보면서 진입/청산 타이밍을 잡는 전략이 적합합니다."
+        );
       }
 
       if (rrOk) {
-        txt +=
-          `\n현재 구조 기준 R:R ≈ ${rrRatio.toFixed(
-            2
-          )}:1 (위험 ${riskPct.toFixed(
+        signalLines.push(
+          `현재 구조 기준 R:R ≈ ${rrRatio.toFixed(2)}:1 (위험 ${riskPct.toFixed(
             1
-          )}%, 기대 수익 ${rewardPct1.toFixed(
-            1
-          )}%)로 계산됩니다. ` +
-          "손절 폭 대비 기대 수익이 충분히 유리한지(≥ 1.5:1)를 기준으로 진입 여부를 판단하는 것을 권장합니다.";
+          )}%, 기대 수익 ${rewardPct1.toFixed(1)}%)로 계산됩니다.`
+        );
+        signalLines.push(
+          "손절 폭 대비 기대 수익이 충분히 유리한지(≥ 1.5:1)를 기준으로 진입 여부를 판단하는 것을 권장합니다."
+        );
       }
     }
 
@@ -2733,10 +2781,10 @@ function updateUI(data, analysis, fxRate, stockName) {
     // 특이한 날에만 노출되도록 제한함 (예전엔 이 판단이 수급 탭에 "이벤트/맥락 측면"이라는
     // 불명확한 이름으로 항상 붙어 있어서 무슨 뜻인지 알기 어렵고 중복도 심했음).
     if (whyInfo.whyLabel === "강한 재료 가능성" || whyInfo.whyLabel === "악재/청산 가능성") {
-      txt += `\n\n📰 ${whyInfo.whyNote}`;
+      signalLines.push(`📰 ${whyInfo.whyNote}`);
     }
 
-    signalEl.textContent = txt;
+    renderNarrativeBullets(signalEl, signalLines);
   }
 
   // ==== 자비스 전략 요약 (strategy-main / strategy-detail) ====
@@ -2773,107 +2821,122 @@ function updateUI(data, analysis, fxRate, stockName) {
 
     // 위쪽 "수급"/"패턴" 탭에서 이미 계산해둔 신호를 전략요약에도 반영 —
     // 예전엔 지지·저항·R:R만 보고 판단해서 같은 화면 안의 수급/패턴 정보와 따로 놀았음
+    // [수급 상태]/[캔들 패턴]은 눈에 잘 띄어야 하는 핵심 키워드라 노란색으로 강조(toneSpan highlight)
     const buildContextLine = () => {
       const bits = [];
-      if (flowInfo && flowInfo.flowLabel) bits.push(`수급은 [${flowInfo.flowLabel}]`);
+      if (flowInfo && flowInfo.flowLabel) {
+        bits.push(`수급은 ${toneSpan(`[${flowInfo.flowLabel}]`, "highlight")}`);
+      }
       const topPattern = patterns && patterns[0];
-      if (topPattern) bits.push(`대표 캔들 패턴은 [${topPattern.name}]`);
+      if (topPattern) {
+        bits.push(`대표 캔들 패턴은 ${toneSpan(`[${topPattern.name}]`, "highlight")}`);
+      }
       return bits.length ? `참고로 현재 ${bits.join(", ")} 상태입니다.` : "";
     };
 
     let mainTxt = "중립 / 관망 구간";
-    let detailTxt =
-      "지지선·저항선·RSI·R:R를 종합했을 때 뚜렷한 매수/매도 우위가 아닌 구간입니다. 레버리지/단기 트레이딩보다는 관망 또는 소량만 대응하는 것을 권장합니다.";
+    let detailLines = [
+      "지지선·저항선·RSI·R:R를 종합했을 때 뚜렷한 매수/매도 우위가 아닌 구간입니다.",
+      "레버리지/단기 트레이딩보다는 관망 또는 소량만 대응하는 것을 권장합니다."
+    ];
     if (typeof adx === "number" && adx < 20) {
-      detailTxt += ` ADX ${adx.toFixed(1)}로 추세 강도 자체가 약해, 지금은 방향성 베팅보다 관망이 더 유리한 구간입니다.`;
+      detailLines.push(
+        `ADX ${adx.toFixed(1)}로 추세 강도 자체가 약해, 지금은 방향성 베팅보다 관망이 더 유리한 구간입니다.`
+      );
     }
-    const neutralActions = buildActionLines(
-      "여기까지 오르면 돌파 여부를 보고 추종 매수 재검토",
-      null,
-      "여기까지 빠지면 지지 여부를 보고 매수 재검토"
+    detailLines.push(
+      ...buildActionLines(
+        "여기까지 오르면 돌파 여부를 보고 추종 매수 재검토",
+        null,
+        "여기까지 빠지면 지지 여부를 보고 매수 재검토"
+      )
     );
-    if (neutralActions.length) detailTxt += "\n\n" + neutralActions.join("\n");
 
     if (verdict.tier === "BUY") {
       if (typeof rsiVal === "number" && rsiVal < 30) {
         mainTxt = "과매도 역추세 (고위험)";
-        detailTxt =
-          `RSI가 ${rsiVal.toFixed(
-            1
-          )}로 과매도 구간에 진입한 상태입니다. 단기 기술적 반등 가능성은 있지만, 추세 자체가 약세라 고위험 역추세 전략입니다. ` +
-          "포지션 크기를 줄이고, 지지선 이탈 시 재진입을 포기하는 강한 손절 기준이 필요합니다.";
-        const actions = buildActionLines(
-          "반등 목표가 — 추세가 약하므로 도달 시 빠른 분할 익절 권장",
-          null,
-          "역추세 전략은 손절이 생명 — 이탈 시 미련 없이 즉시 손절"
+        detailLines = [
+          `RSI가 ${rsiVal.toFixed(1)}로 과매도 구간에 진입한 상태입니다.`,
+          "단기 기술적 반등 가능성은 있지만, 추세 자체가 약세라 고위험 역추세 전략입니다.",
+          "포지션 크기를 줄이고, 지지선 이탈 시 재진입을 포기하는 강한 손절 기준이 필요합니다."
+        ];
+        detailLines.push(
+          ...buildActionLines(
+            "반등 목표가 — 추세가 약하므로 도달 시 빠른 분할 익절 권장",
+            null,
+            "역추세 전략은 손절이 생명 — 이탈 시 미련 없이 즉시 손절"
+          )
         );
-        if (actions.length) detailTxt += "\n\n" + actions.join("\n");
       } else {
         mainTxt = "지지선 근처 눌림 매수 우위";
         const bits = [];
         if (nearSupport) bits.push(`1차 지지선(${s1 ? s1.toFixed(2) : "N/A"}) 근처`);
         if (typeof adx === "number" && adx >= 25) bits.push(`ADX ${adx.toFixed(1)}로 추세 강도까지 뚜렷`);
-        if (analysis.macdCrossover === "GOLDEN") bits.push("MACD 골든크로스 동반");
         // ⚠️ ADX/MACD크로스/RS는 이미 근거로 들어가는데 MACD 다이버전스만 빠져있던 실제 누락 —
         // 모멘텀 탭엔 다이버전스 문장이 있는데 정작 종합 요약(RAVEN SIGNAL)엔 안 보이던 게 이 부분.
+        if (analysis.macdCrossover === "GOLDEN") bits.push(toneSpan("MACD 골든크로스 동반", "highlight"));
         if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BULLISH") {
           bits.push("MACD 강세 다이버전스 동반");
         }
         if (rsInfo && Number.isFinite(rsInfo.rs20) && rsInfo.rs20 >= 5) bits.push("지수 대비 아웃퍼폼 중");
 
-        detailTxt =
-          (bits.length ? `현재가가 ${bits.join(", ")}이고, ` : "") +
-          `${rrTxt}로 손절 대비 기대 수익이 유리한 구조입니다. ` +
-          "지지선 이탈 시 빠른 손절을 전제로 한 분할 매수 전략이 1안입니다.";
-        const actions = buildActionLines(
-          "도달 시 절반 익절 후 나머지는 2차 목표가까지 홀딩 고려",
-          "추세 지속 시 최종 목표가",
-          "지지선 이탈 확정 시(종가 기준) 미련 없이 손절"
+        detailLines = [];
+        if (bits.length) detailLines.push(`현재가가 ${bits.join(", ")} 상태입니다.`);
+        detailLines.push(`${rrTxt}로 손절 대비 기대 수익이 유리한 구조입니다.`);
+        detailLines.push("지지선 이탈 시 빠른 손절을 전제로 한 분할 매수 전략이 1안입니다.");
+        detailLines.push(
+          ...buildActionLines(
+            "도달 시 절반 익절 후 나머지는 2차 목표가까지 홀딩 고려",
+            "추세 지속 시 최종 목표가",
+            "지지선 이탈 확정 시(종가 기준) 미련 없이 손절"
+          )
         );
-        if (actions.length) detailTxt += "\n\n" + actions.join("\n");
       }
     } else if (verdict.tier === "SELL") {
       if (nearResistance) {
         mainTxt = "저항선 근처 리스크 우위";
         const bits = [`1차 저항선(${r1 ? r1.toFixed(2) : "N/A"}) 근처 상단 파동`];
-        if (analysis.macdCrossover === "DEAD") bits.push("MACD 데드크로스 동반");
+        if (analysis.macdCrossover === "DEAD") bits.push(toneSpan("MACD 데드크로스 동반", "highlight"));
         if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BEARISH") {
           bits.push("MACD 약세 다이버전스 동반");
         }
         if (typeof adx === "number" && adx < 20) bits.push(`ADX ${adx.toFixed(1)}로 추세 신뢰도 낮음`);
 
-        detailTxt =
-          `현재가가 ${bits.join(", ")}에 위치해 있고, ${rrTxt}로 아래쪽 리스크가 더 큰 구조입니다. ` +
-          "신규 매수보다는 기존 보유 물량의 분할 청산/헤지 전략이 1순위입니다.";
-        const actions = buildActionLines(
-          "저항 돌파 실패 시(반등 후 재하락) 기존 보유 물량 분할 청산 구간",
-          null,
-          "저항 부근에서도 밀리면서 이 가격대까지 빠지면 손절 검토"
+        detailLines = [
+          `현재가가 ${bits.join(", ")}에 위치해 있고, ${rrTxt}로 아래쪽 리스크가 더 큰 구조입니다.`,
+          "신규 매수보다는 기존 보유 물량의 분할 청산/헤지 전략이 1순위입니다."
+        ];
+        detailLines.push(
+          ...buildActionLines(
+            "저항 돌파 실패 시(반등 후 재하락) 기존 보유 물량 분할 청산 구간",
+            null,
+            "저항 부근에서도 밀리면서 이 가격대까지 빠지면 손절 검토"
+          )
         );
-        if (actions.length) detailTxt += "\n\n" + actions.join("\n");
       } else {
         mainTxt = "R:R 불리 (위험 대비 보상 부족)";
-        let extra = analysis.macdCrossover === "DEAD"
-          ? " MACD 데드크로스까지 겹쳐 있어 더 보수적으로 접근해야 합니다."
-          : "";
-        if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BEARISH") {
-          extra += " MACD 약세 다이버전스까지 나타나 상승 동력이 약해지는 신호도 있습니다.";
+        detailLines = [
+          `현재 ${rrTxt}로, 손절 폭 대비 위쪽 기대 수익이 충분히 보상되지 않는 자리입니다.`,
+          "추세·수급이 좋아 보여도 진입보다는 다음 더 유리한 R:R 구간을 기다리는 것이 효율적입니다."
+        ];
+        if (analysis.macdCrossover === "DEAD") {
+          detailLines.push("MACD 데드크로스까지 겹쳐 있어 더 보수적으로 접근해야 합니다.");
         }
-        detailTxt =
-          `현재 ${rrTxt}로, 손절 폭 대비 위쪽 기대 수익이 충분히 보상되지 않는 자리입니다. ` +
-          "추세·수급이 좋아 보여도 진입보다는 다음 더 유리한 R:R 구간을 기다리는 것이 효율적입니다." +
-          extra;
-        const actions = buildActionLines(
-          "여기까지 오르면 R:R이 개선되니 그때 재검토",
-          null,
-          "이 가격대까지 밀리면 추가 하락 리스크가 커지는 구간"
+        if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BEARISH") {
+          detailLines.push("MACD 약세 다이버전스까지 나타나 상승 동력이 약해지는 신호도 있습니다.");
+        }
+        detailLines.push(
+          ...buildActionLines(
+            "여기까지 오르면 R:R이 개선되니 그때 재검토",
+            null,
+            "이 가격대까지 밀리면 추가 하락 리스크가 커지는 구간"
+          )
         );
-        if (actions.length) detailTxt += "\n\n" + actions.join("\n");
       }
     }
 
     const ctx = buildContextLine();
-    if (ctx) detailTxt += "\n\n" + ctx;
+    if (ctx) detailLines.push(ctx);
 
     if (stratMain) {
       stratMain.textContent = mainTxt;
@@ -2882,7 +2945,7 @@ function updateUI(data, analysis, fxRate, stockName) {
         verdict.tier === "BUY" ? "tier-buy" : verdict.tier === "SELL" ? "tier-sell" : "tier-neutral"
       );
     }
-    if (stratDetail) stratDetail.textContent = detailTxt;
+    renderNarrativeBullets(stratDetail, detailLines);
   }
 
   // 5) Fund 섹터 (펀디멘탈 API 연동 전)
@@ -2918,9 +2981,16 @@ function updateUI(data, analysis, fxRate, stockName) {
     if (typeof analysis.macd === "number") {
       const dir = analysis.macd >= 0 ? "상승 우위" : "하락 우위";
       const sentiment = analysis.macd >= 0 ? "pos" : "neg";
+      // ⚠️ 실측 피드백으로 발견한 문제: MACD 라인이 마이너스(하락 우위)인데 골든크로스가 막 나온
+      // 경우처럼 두 신호가 엇갈릴 수 있는데, 예전엔 문장 전체를 dir(라인 방향) 기준 한 색으로만
+      // 칠해서 "골든크로스(매수 신호)"라는 글자가 빨갛게 나오는 모순이 있었음 — 크로스오버 문구는
+      // toneSpan으로 그 자체의 방향에 맞게 별도 색칠(전체 문장의 기본색인 dir과 달라도 그대로 유지).
       let crossTxt = "";
-      if (analysis.macdCrossover === "GOLDEN") crossTxt = " · 골든크로스(매수 신호)";
-      else if (analysis.macdCrossover === "DEAD") crossTxt = " · 데드크로스(매도 신호)";
+      if (analysis.macdCrossover === "GOLDEN") {
+        crossTxt = ` · ${toneSpan("골든크로스(매수 신호)", "pos")}`;
+      } else if (analysis.macdCrossover === "DEAD") {
+        crossTxt = ` · ${toneSpan("데드크로스(매도 신호)", "neg")}`;
+      }
       const macdValueText = `${
         analysis.macd >= 0 ? "+" : ""
       }${analysis.macd.toFixed(3)}`;
@@ -3417,7 +3487,7 @@ async function requestAiAnalysis() {
   }
 
   try {
-    const { data, analysis, patterns, stockName, supplyDemand } = lastAnalysis;
+    const { data, analysis, patterns, stockName, supplyDemand, flowInfo } = lastAnalysis;
     const verdict = computeVerdict(analysis);
     const domestic = isDomesticTicker(data.symbol);
 
@@ -3442,6 +3512,11 @@ async function requestAiAnalysis() {
         macdSignal: analysis.macdSignal,
         macdHistogram: analysis.macdHistogram,
         macdCrossover: analysis.macdCrossover,
+        // ⚠️ 실제로 계산되고 화면(모멘텀/추세 탭)엔 이미 반영되던 값들인데 AI 프롬프트엔
+        // 안 보내고 있었던 것들 — 추세 강도 변화(adxTrend)와 MACD 다이버전스는 사람이 볼 때도
+        // 중요한 판단 근거라 AI 서술에도 반영되도록 추가함.
+        adxTrend: analysis.adxTrend,
+        macdDivergence: analysis.macdDivergence,
         adx: analysis.adx,
         plusDI: analysis.plusDI,
         minusDI: analysis.minusDI,
@@ -3466,7 +3541,20 @@ async function requestAiAnalysis() {
         strength: p.strength,
         comment: p.comment
       })),
-      supplyDemandText: supplyDemand && supplyDemand.outlook ? supplyDemand.outlook : null
+      // 당일 거래량·캔들 기준 수급(수급 탭 상단 카드)과 OBV 다이버전스 — 예전엔 AI에 안 보내고
+      // 있어서, 화면엔 "수급 공백"/"OBV 다이버전스" 같은 근거가 떠 있는데 AI 서술만 그걸 모르고
+      // 쓰는 불일치가 있었음.
+      flow: flowInfo
+        ? {
+            flowLabel: flowInfo.flowLabel,
+            flowNote: flowInfo.flowNote,
+            obvInfo: flowInfo.obvInfo
+          }
+        : null,
+      // supplyDemandText(한 줄 결론)만 보내던 걸, 실제 5종 개별 수치가 담긴 lines도 같이 보내서
+      // AI가 "외국인 N일 연속 순매도" 같은 구체적 근거를 그대로 인용할 수 있게 함.
+      supplyDemandText: supplyDemand && supplyDemand.outlook ? supplyDemand.outlook : null,
+      supplyDemandLines: supplyDemand && Array.isArray(supplyDemand.lines) ? supplyDemand.lines : null
     };
 
     const res = await fetch(`${API_BASE}/api/ai/analyze`, {
