@@ -404,7 +404,63 @@ async function interpretSupplyDemand(symbol) {
     date: latestDate,
     lines: parts.map((p) => p.text),
     outlook,
+    // 외국인/기관 연속매매 tone(-2~+2, 방향당 ±1) — 클라이언트가 RAVEN SCORE에 소폭 반영할 때 씀.
+    // streakPart가 없으면(3일 미만 연속) 0 — "특이 신호 없음"과 같은 뜻.
+    investorStreakTone: streakPart ? streakPart.tone : 0,
   };
 }
 
-module.exports = { interpretSupplyDemand };
+// 프로그램매매·공매도·대차·신용잔고 4종을 조합한 신호 — 연속매매(외국인/기관)와 달리 "며칠간
+// 지속됐는지"를 볼 수 없는 하루 스냅샷 조합이라, 그 자체로 텔레그램 독립 알림을 트리거하진 않고
+// 다른 신호(골든/데드크로스, 거래량급증, 연속매매)가 이미 뜬 날에만 근거 문구로 덧붙임
+// (signalDetector.js의 checkSignal() 참고).
+async function getComboSupplyDemandSignal(symbol) {
+  const rows = await getLatestRows(symbol);
+
+  const reasons = [];
+  let signal = "NONE";
+
+  // 약세 조합: 공매도 비중이 높은데(8%+, interpretShortSale과 같은 기준) 대차잔고까지 늘면
+  // (향후 공매도 여력 증가) 하방 압력이 겹치는 구간
+  if (rows.short_sale && rows.loan_trans) {
+    const shortRatio = parseKisNum(rows.short_sale.raw_data.ssts_vol_rlim);
+    const loanChange = parseKisNum(rows.loan_trans.raw_data.prdy_rmnd_vrss);
+    if (Number.isFinite(shortRatio) && shortRatio >= 8 && Number.isFinite(loanChange) && loanChange > 0) {
+      reasons.push(
+        `공매도 비중 ${shortRatio.toFixed(1)}% + 대차잔고 증가(${Math.abs(
+          loanChange
+        ).toLocaleString()}주) 동반 — 공매도 압력 누적`
+      );
+      signal = "SELL";
+    }
+  }
+
+  // 강세 조합: 프로그램매매가 순매수인데 신용융자도 상환 우위(레버리지 부담 완화)면
+  // 매수 유입과 리스크 완화가 함께 나타나는 구조
+  if (rows.program_trade && rows.credit_balance) {
+    const progNet = parseKisNum(rows.program_trade.raw_data.whol_smtn_ntby_qty);
+    const newStcn = parseKisNum(rows.credit_balance.raw_data.whol_loan_new_stcn);
+    const rdmpStcn = parseKisNum(rows.credit_balance.raw_data.whol_loan_rdmp_stcn);
+    if (
+      Number.isFinite(progNet) &&
+      progNet > 0 &&
+      Number.isFinite(newStcn) &&
+      Number.isFinite(rdmpStcn) &&
+      rdmpStcn > newStcn
+    ) {
+      reasons.push(
+        `프로그램매매 순매수(${progNet.toLocaleString()}주) + 신용융자 상환 우위 동반 — 매수 유입과 레버리지 완화가 함께 나타남`
+      );
+      if (signal !== "SELL") signal = "BUY";
+    }
+  }
+
+  return { signal, reasons };
+}
+
+module.exports = {
+  interpretSupplyDemand,
+  getInvestorTrendHistory,
+  computeStreak,
+  getComboSupplyDemandSignal,
+};

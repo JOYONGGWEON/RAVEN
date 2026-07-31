@@ -1365,13 +1365,7 @@ function analyzeData(data, benchmarkData, intradayCloses) {
   }
 
   score = Math.round(Math.max(0, Math.min(99, score)));
-
-  // 랭크 밴드 — formatRankGrade()가 같은 경계값으로 밴드 내 +/- 세부등급을 매김
-  let rank = "C";
-  if (score >= 85) rank = "S";
-  else if (score >= 70) rank = "A";
-  else if (score >= 55) rank = "B";
-  else if (score < 35) rank = "D";
+  const rank = rankFromScore(score);
 
   return {
     price: lastPrice,
@@ -2163,7 +2157,18 @@ function detectCandlePatterns(data, analysis) {
   return patterns;
 }
 
-// RAVEN SCORE의 랭크 밴드(위 calcXXX의 S/A/B/C/D 경계와 동일) 안에서, 점수 위치에 따라
+// RAVEN SCORE(0~99) → S/A/B/C/D 랭크 밴드. analyzeData()의 최초 계산과, 연속매매 반영으로
+// 점수가 사후 조정될 때(updateScoreAndRankDisplay 참고)의 재계산 양쪽에서 공용으로 씀 —
+// 경계값이 두 곳에서 따로 관리되면 어긋날 위험이 있어 하나로 통일.
+function rankFromScore(score) {
+  if (score >= 85) return "S";
+  if (score >= 70) return "A";
+  if (score >= 55) return "B";
+  if (score < 35) return "D";
+  return "C";
+}
+
+// RAVEN SCORE의 랭크 밴드(위 rankFromScore의 S/A/B/C/D 경계와 동일) 안에서, 점수 위치에 따라
 // +/- 세부등급을 붙임(밴드 하위 1/3="-", 중간 1/3="", 상위 1/3="+"). +/-만 <sup>로 위첨자 처리.
 function formatRankGrade(score, letter) {
   const bands = { S: [85, 99], A: [70, 84], B: [55, 69], C: [35, 54], D: [0, 34] };
@@ -2177,6 +2182,28 @@ function formatRankGrade(score, letter) {
   else if (pos >= third * 2) mod = "+";
 
   return mod ? `${letter}<sup>${mod}</sup>` : letter;
+}
+
+// RAVEN SCORE/RANK 배지 렌더링 — updateUI()의 최초 렌더와, 연속매매 수급 데이터가 늦게 도착한 뒤의
+// 사후 조정(applyInvestorStreakToScore) 양쪽에서 공용으로 씀(중복 계산 금지).
+function updateScoreAndRankDisplay(score, rank) {
+  const scoreEl = $("ai-score");
+  const rankEl = $("ai-rank");
+  const scoreUnitEl = $("ai-score-unit");
+
+  if (scoreEl) scoreEl.textContent = score;
+  if (rankEl) rankEl.innerHTML = formatRankGrade(score, rank);
+
+  const color = score >= 70 ? "#10b981" : score >= 40 ? "#3b82f6" : "#ef4444";
+  if (scoreEl) {
+    scoreEl.style.color = color;
+    scoreEl.style.textShadow = `0 0 10px ${color}88`;
+  }
+  if (rankEl) {
+    rankEl.style.color = color;
+    rankEl.style.textShadow = `0 0 10px ${color}88`;
+  }
+  if (scoreUnitEl) scoreUnitEl.style.color = color;
 }
 
 // 6-2. 종목 라벨 / 섹터 태깅 (간단 버전 보조)
@@ -2248,26 +2275,7 @@ function updateUI(data, analysis, fxRate, stockName) {
 
   // 점수 / 랭크 — 하나의 배지(RAVEN SCORE)로 통합. 랭크 글자 안에서도 점수 위치에 따라
   // 세부등급(+/-)을 붙여줌(예: A 밴드의 상위 1/3이면 A+). +/-는 <sup>로 위첨자 처리.
-  if (scoreEl) scoreEl.textContent = analysis.score;
-  if (rankEl) rankEl.innerHTML = formatRankGrade(analysis.score, analysis.rank);
-
-  const color =
-    analysis.score >= 70
-      ? "#10b981"
-      : analysis.score >= 40
-      ? "#3b82f6"
-      : "#ef4444";
-  if (scoreEl) {
-    scoreEl.style.color = color;
-    scoreEl.style.textShadow = `0 0 10px ${color}88`;
-  }
-  if (rankEl) {
-    rankEl.style.color = color;
-    rankEl.style.textShadow = `0 0 10px ${color}88`;
-  }
-  // "점" 단위 글자가 숫자/등급과 따로 흰색으로 남아있던 것 — 같은 색으로 맞춤
-  const scoreUnitEl = $("ai-score-unit");
-  if (scoreUnitEl) scoreUnitEl.style.color = color;
+  updateScoreAndRankDisplay(analysis.score, analysis.rank);
 
   // ===== 3단계 판정 (매수 우위 / 중립·관망 / 매도 신중) =====
   // 배지·전략요약이 같은 판정을 공유하도록 computeVerdict() 하나로 통일 (중복 계산 금지)
@@ -3215,6 +3223,32 @@ function renderSupplyDemandBox(data) {
   }
 }
 
+// 외국인/기관 연속매매(investorStreakTone, -2~+2)를 RAVEN SCORE에 소폭 반영 — 전일 수급(KIS)은
+// 메인 렌더링보다 늦게 도착하므로, 이미 그려진 SCORE 배지를 사후 조정하는 방식(로딩 순서 자체를
+// 바꾸지 않고 늦게 도착한 데이터를 반영하는 기존 패턴 — renderSupplyDemandBox와 동일).
+// RS(rsInfo.rs20 * 0.4, clamp ±8)와 같은 크기의 가중치를 씀 — 다른 보조 요인들과 비슷한 비중.
+function applyInvestorStreakToScore(sdData, symbol) {
+  if (!sdData || !Number.isFinite(sdData.investorStreakTone) || sdData.investorStreakTone === 0) return;
+  // 이 응답이 오는 사이에 사용자가 다른 종목을 새로 검색했을 수 있음 — 지금 화면과 다른 종목이면 무시
+  if (!lastAnalysis || lastAnalysis.data.symbol !== symbol) return;
+
+  const delta = Math.max(-8, Math.min(8, sdData.investorStreakTone * 4));
+  if (delta === 0) return;
+
+  const newScore = Math.round(Math.max(0, Math.min(99, lastAnalysis.analysis.score + delta)));
+  const newRank = rankFromScore(newScore);
+  lastAnalysis.analysis.score = newScore;
+  lastAnalysis.analysis.rank = newRank;
+
+  updateScoreAndRankDisplay(newScore, newRank);
+
+  const captionEl = $("z-metrics-caption");
+  if (captionEl) {
+    const sign = delta > 0 ? "+" : "";
+    captionEl.textContent = `ℹ️ RAVEN 분석에 의한 자체 점수입니다 (외국인·기관 연속매매 반영 ${sign}${delta}점)`;
+  }
+}
+
 // ===============================
 // 관심종목 (Phase 3)
 // ===============================
@@ -3452,6 +3486,7 @@ async function runAnalysisForTicker(rawSymbol) {
       fetchSupplyDemandComment(symbol).then((sdData) => {
         renderSupplyDemandBox(sdData);
         if (lastAnalysis) lastAnalysis.supplyDemand = sdData;
+        applyInvestorStreakToScore(sdData, symbol);
       });
     } else if (supplyKisBox) {
       supplyKisBox.classList.add("hidden");
