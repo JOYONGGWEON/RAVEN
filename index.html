@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RAVEN™ v7.0 (VIP code)</title>
+  <title>RAVEN™ v1.0 (VIP code)</title>
 
   <!-- PWA 설정 -->
   <link rel="manifest" href="manifest.webmanifest" />
@@ -98,10 +98,11 @@
   <header class="top-header">
     <h1 class="app-title">R A V E N</h1>
     <p class="app-sub">🚀Launched by JYG</p>
-    <p class="app-sub app-sub-engine">Ai Stock Analysis Engine v7.0 • Stable Build</p>
+    <p class="app-sub app-sub-engine">Ai Stock Analysis Engine v1.0 • Stable Build</p>
 
-    <!-- 매크로 바: 헤드라인 6개 지수(코스피/코스닥/나스닥/S&P500/필라델피아/다우) 항상 노출,
-         나머지 7개(선물 3종 + 기존 4종)는 펼치기 버튼으로 확장 -->
+    <!-- 매크로 바: 헤드라인 8개 지수(4열x2행 — 코스피/코스닥/나스닥/나스닥100선물 /
+         S&P500/S&P500선물/필라델피아/환율) 항상 노출, 나머지 5개(다우존스/러셀2000선물 칩 +
+         미국10년물/VIX/유가 기존 매크로박스)는 펼치기 버튼으로 확장 -->
     <div class="macro-headline" id="macro-headline">
       <div class="index-chip" id="idx-kospi">
         <div class="index-chip-label">코스피</div>
@@ -118,8 +119,18 @@
         <div class="index-chip-value">--</div>
         <div class="index-chip-change">로딩 중...</div>
       </div>
+      <div class="index-chip" id="idx-nq-fut">
+        <div class="index-chip-label">나스닥100 선물</div>
+        <div class="index-chip-value">--</div>
+        <div class="index-chip-change">로딩 중...</div>
+      </div>
       <div class="index-chip" id="idx-sp500">
         <div class="index-chip-label">S&amp;P500</div>
+        <div class="index-chip-value">--</div>
+        <div class="index-chip-change">로딩 중...</div>
+      </div>
+      <div class="index-chip" id="idx-es-fut">
+        <div class="index-chip-label">S&amp;P500 선물</div>
         <div class="index-chip-value">--</div>
         <div class="index-chip-change">로딩 중...</div>
       </div>
@@ -128,8 +139,8 @@
         <div class="index-chip-value">--</div>
         <div class="index-chip-change">로딩 중...</div>
       </div>
-      <div class="index-chip" id="idx-dow">
-        <div class="index-chip-label">다우존스</div>
+      <div class="index-chip" id="idx-fx">
+        <div class="index-chip-label">환율</div>
         <div class="index-chip-value">--</div>
         <div class="index-chip-change">로딩 중...</div>
       </div>
@@ -144,21 +155,16 @@
       <span id="macro-toggle-label">▼ 전체 지표 보기 (13)</span>
     </button>
 
-    <div id="macro-expanded" class="macro-row hidden">
-      <div class="macro-box">
-        <div class="macro-label">나스닥100 선물</div>
-        <div id="macro-nq-fut" class="macro-value">--</div>
-        <div id="macro-nq-fut-note" class="macro-note">로딩 중...</div>
+    <div id="macro-expanded" class="macro-row">
+      <div class="index-chip" id="idx-dow">
+        <div class="index-chip-label">다우존스</div>
+        <div class="index-chip-value">--</div>
+        <div class="index-chip-change">로딩 중...</div>
       </div>
-      <div class="macro-box">
-        <div class="macro-label">S&amp;P500 선물</div>
-        <div id="macro-es-fut" class="macro-value">--</div>
-        <div id="macro-es-fut-note" class="macro-note">로딩 중...</div>
-      </div>
-      <div class="macro-box">
-        <div class="macro-label">러셀2000 선물</div>
-        <div id="macro-rty-fut" class="macro-value">--</div>
-        <div id="macro-rty-fut-note" class="macro-note">로딩 중...</div>
+      <div class="index-chip" id="idx-rty-fut">
+        <div class="index-chip-label">러셀2000 선물</div>
+        <div class="index-chip-value">--</div>
+        <div class="index-chip-change">로딩 중...</div>
       </div>
       <div class="macro-box">
         <div class="macro-label">미국 10년물</div>
@@ -169,11 +175,6 @@
         <div class="macro-label">VIX</div>
         <div id="macro-vix" class="macro-value">--</div>
         <div id="macro-vix-note" class="macro-note">로딩 중...</div>
-      </div>
-      <div class="macro-box">
-        <div class="macro-label">환율(USD/KRW)</div>
-        <div id="macro-krw" class="macro-value">--</div>
-        <div id="macro-krw-note" class="macro-note">로딩 중...</div>
       </div>
       <div class="macro-box">
         <div class="macro-label">유가(WTI)</div>
@@ -201,23 +202,25 @@
       </form>
     </div>
 
-    <!-- 관심종목: 종목 수가 늘어도 한 줄에 다 안 들어가는 문제가 있어서(예전엔 헤더에 가로 pill
-         나열) 헤더엔 토글 버튼 하나만 두고 실제 목록은 왼쪽 사이드바로 확장함 -->
-    <div id="watchlist-row" class="watchlist-row hidden">
-      <button id="watchlist-open-btn" type="button" class="watchlist-open-btn">
-        <span class="watchlist-row-label">★ 관심종목</span>
-        <span id="watchlist-count" class="watchlist-count"></span>
-      </button>
-    </div>
-
   </header>
 
-  <!-- 관심종목 사이드바 -->
-  <div id="watchlist-sidebar-backdrop" class="watchlist-sidebar-backdrop hidden"></div>
+  <!-- 관심종목 패널 — 2026-08-01부터 헤더의 "★ 관심종목 (N)" 토글 버튼을 없애고, 토스증권처럼
+       화면 왼쪽에 상시 존재하는(기본 열림) 패널 + 접기/펼치기 화살표 버튼으로 대체함.
+       화면폭이 좁으면(모바일) 패널이 본문을 다 가릴 수 있어서 기본값은 접힘으로 시작함
+       (initWatchlistRail()에서 뷰포트 폭으로 판단). -->
+  <button
+    id="watchlist-rail-toggle"
+    class="watchlist-rail-toggle"
+    type="button"
+    title="관심종목 패널 열기/닫기"
+  >
+    <span id="watchlist-rail-toggle-icon">»</span>
+  </button>
+
   <aside id="watchlist-sidebar" class="watchlist-sidebar">
     <div class="watchlist-sidebar-header">
       <span class="watchlist-sidebar-title">★ 관심종목</span>
-      <button id="watchlist-sidebar-close" type="button" class="watchlist-sidebar-close" title="닫기">×</button>
+      <span id="watchlist-count" class="watchlist-count"></span>
     </div>
     <div id="watchlist-sidebar-list" class="watchlist-sidebar-list"></div>
     <p id="watchlist-sidebar-empty" class="watchlist-sidebar-empty hidden">관심종목이 없습니다.</p>
@@ -431,7 +434,7 @@
     </div>
 
     <p class="footer-note">
-      ⚡ Powered by RAVEN Engine v7.0 • 데이터 출처: 한국투자증권 KIS Developers / Yahoo Finance
+      ⚡ Powered by RAVEN Engine v1.0 • 데이터 출처: 한국투자증권 KIS Developers / Yahoo Finance
     </p>
     <p class="copyright">Copyright© 2025 by YongGweon Jo</p>
   </section>

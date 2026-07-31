@@ -45,3 +45,7 @@ create table if not exists watchlist (
 -- 화면/메시지에서 symbol로 폴백). 이미 watchlist 테이블이 있는 기존 프로젝트는 위 create table문이
 -- 스킵되므로 이 alter문을 직접 돌려야 함(신규 설치는 need 없음, 그냥 no-op).
 alter table watchlist add column if not exists name text;
+
+-- 2026-08-01: 관심종목 커스텀 그룹핑 — 별도 groups 테이블 없이 각 종목에 그룹명 문자열만 붙임
+-- (그룹은 이 필드에 등장하는 문자열들의 집합으로 화면에서 묶어서 보여줌 — null/빈 문자열은 "미분류").
+alter table watchlist add column if not exists group_name text;

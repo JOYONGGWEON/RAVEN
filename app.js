@@ -1,5 +1,5 @@
 // =======================
-// RAVEN v7.0 - Pattern / Signal / Target / Chart 통합 버전
+// RAVEN v1.0 - Pattern / Signal / Target / Chart 통합 버전
 // =======================
 
 // Trend / Momentum / Vol / R:R 카테고리 상태 (추후 버튼화용)
@@ -30,6 +30,31 @@ const formatUSD = (num) =>
   });
 
 const formatKRW = (num) => "₩" + Math.round(Number(num)).toLocaleString("ko-KR");
+
+// 페이지 새로고침·재검색 시 가격/지수 값이 정적으로 뚝 바뀌는 대신 이전 값에서 새 값으로
+// 굴러가듯 카운트업되는 시각 효과. 실시간 데이터 스트리밍이 아니라 순수 애니메이션임 —
+// 실제로 몇 초마다 값이 갱신되는 건 아니고, 한 번 불러온 값을 부드럽게 보여주는 용도.
+// el.dataset.animFrom에 마지막으로 표시한 숫자값을 저장해둬서, 나중에 같은 요소가 다시
+// 갱신될 때(예: 다른 종목 재검색) 0이 아니라 이전 값에서부터 자연스럽게 이어서 움직이게 함.
+function animateNumberText(el, toValue, formatFn, duration = 600) {
+  if (!el || !Number.isFinite(toValue)) return;
+
+  const prevValue = Number(el.dataset.animFrom);
+  const fromValue = Number.isFinite(prevValue) ? prevValue : 0;
+  const startTime = performance.now();
+
+  function tick(now) {
+    const t = Math.min(1, (now - startTime) / duration);
+    const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic — 끝으로 갈수록 느려짐
+    el.textContent = formatFn(fromValue + (toValue - fromValue) * eased);
+    if (t < 1) {
+      requestAnimationFrame(tick);
+    } else {
+      el.dataset.animFrom = String(toValue);
+    }
+  }
+  requestAnimationFrame(tick);
+}
 
 function showToast(msg) {
   const el = $("toast-msg");
@@ -714,13 +739,14 @@ async function fetchFxRate() {
   return null;
 }
 
-// 3-3. 매크로 바 데이터 (+ Regime 태그)
+// 3-3. 매크로 바 데이터 (+ Regime 태그) — 환율은 2026-08-01부터 헤드라인 지수 칩(fetchIndexData)으로
+// 이동해서 여기서는 더 이상 다루지 않음(정성적 "원화 약세" 멘트 스타일 자체를 없애고 다른 지수들과
+// 동일한 ▲/▼% 칩 형태로 통일하기 위함 — 사용자 요청).
 async function fetchMacroData() {
   try {
-    const [tnx, vix, krwRate, oil] = await Promise.all([
+    const [tnx, vix, oil] = await Promise.all([
       fetchYahooChart("^TNX", "1d", "1d").catch(() => null),
       fetchYahooChart("^VIX", "1d", "1d").catch(() => null),
-      fetchYahooFxRate().catch(() => null),
       fetchYahooChart("CL=F", "1d", "1d").catch(() => null)
     ]);
 
@@ -751,22 +777,6 @@ async function fetchMacroData() {
       $("macro-vix-note").textContent = "데이터 수신 실패";
     }
 
-    // KRW
-    let krwVal = null;
-    if (typeof krwRate === "number") {
-      krwVal = krwRate;
-      if ($("macro-krw"))
-        $("macro-krw").textContent =
-          "₩" + Math.round(krwVal).toLocaleString("ko-KR");
-      let note = "중립 수준";
-      if (krwVal > 1400) note = "원화 약세 · 수출주 우호";
-      else if (krwVal < 1300) note = "원화 강세 · 수출주 부담";
-      if ($("macro-krw-note")) $("macro-krw-note").textContent = note;
-      fxRateKRW = krwVal;
-    } else if ($("macro-krw-note")) {
-      $("macro-krw-note").textContent = "데이터 수신 실패";
-    }
-
     // 유가 (WTI 원유 선물) — 기준값은 최근 5년(2021~2026) 주봉 실데이터 분포로 보정함
     // (하위 10분위 ≈ $62.7, 상위 10분위 ≈ $97.6, 중앙값 $76.3 — 처음엔 감으로 잡은 <60/>90이었는데
     // 실측해보니 대략 맞았어서 반올림한 값으로 다듬기만 함, 큰 변경은 아님)
@@ -789,27 +799,32 @@ async function fetchMacroData() {
   }
 }
 
-// 3-4. 헤드라인 지수 6개 + 펼치기 패널의 선물 3종 — 전부 지수/선물이라 KIS 미지원,
-// 매크로 지표와 동일하게 Yahoo Finance로 조회. 코스피/코스닥도 KIS 종목시세 API가 있긴 하지만
-// 지수 종류가 전부 Yahoo 하나로 통일돼 있어야 코드 경로가 단순해서 그대로 Yahoo를 씀.
+// 3-4. 헤드라인 지수 8개(4열x2행) + 펼치기 패널의 지수/선물 2종 — 전부 지수/선물/환율이라
+// KIS 미지원, 매크로 지표와 동일하게 Yahoo Finance로 조회. 코스피/코스닥도 KIS 종목시세 API가
+// 있긴 하지만 지수 종류가 전부 Yahoo 하나로 통일돼 있어야 코드 경로가 단순해서 그대로 Yahoo를 씀.
+// 환율(KRW=X)은 2026-08-01부터 여기로 옮겨와 다른 지수와 동일한 ▲/▼% 칩 형태로 표시됨(기존
+// "원화 약세 · 수출주 우호" 같은 정성적 멘트 스타일은 폐기).
 const HEADLINE_INDEXES = [
   { id: "kospi", symbol: "^KS11" },
   { id: "kosdaq", symbol: "^KQ11" },
   { id: "nasdaq", symbol: "^IXIC" },
+  { id: "nq-fut", symbol: "NQ=F" },
   { id: "sp500", symbol: "^GSPC" },
+  { id: "es-fut", symbol: "ES=F" },
   { id: "sox", symbol: "^SOX" },
-  { id: "dow", symbol: "^DJI" }
+  { id: "fx", symbol: "KRW=X", prefix: "₩", decimals: 0 }
 ];
 
 // 코스피 선물(KOSPI200 야간선물)은 조사 결과 Yahoo Finance에 해당 티커가 없어서 제외함
 // (KRX/Eurex 야간선물 전용 데이터는 별도 유료 데이터벤더 라이선스가 필요 — 2026-08-01 확인).
-const EXPANDED_FUTURES = [
-  { id: "nq-fut", symbol: "NQ=F" },
-  { id: "es-fut", symbol: "ES=F" },
+// 다우존스는 헤드라인 8개(코스피/코스닥/나스닥/나스닥선물/S&P500/S&P500선물/필라델피아/환율)에서
+// 빠지면서 펼치기 패널로 이동 — 여기도 헤드라인과 같은 칩 스타일로 렌더링(질적 해석 멘트 없음).
+const EXPANDED_CHIPS = [
+  { id: "dow", symbol: "^DJI" },
   { id: "rty-fut", symbol: "RTY=F" }
 ];
 
-function renderIndexChip(id, chartData) {
+function renderIndexChip(id, chartData, opts = {}) {
   const box = $(`idx-${id}`);
   if (!box) return;
   const valueEl = box.querySelector(".index-chip-value");
@@ -827,67 +842,42 @@ function renderIndexChip(id, chartData) {
   const changePct = ((lastClose - previousClose) / previousClose) * 100;
   const arrow = changePct > 0 ? "▲" : changePct < 0 ? "▼" : "-";
   const cls = changePct > 0 ? "sentiment-pos" : changePct < 0 ? "sentiment-neg" : "";
+  const decimals = opts.decimals ?? 2;
+  const prefix = opts.prefix || "";
 
-  valueEl.textContent = lastClose.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
+  animateNumberText(
+    valueEl,
+    lastClose,
+    (v) => prefix + v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+  );
   changeEl.textContent = `${arrow} ${Math.abs(changePct).toFixed(2)}%`;
   changeEl.className = `index-chip-change ${cls}`;
 }
 
-function renderFuturesBox(id, chartData) {
-  const valueEl = $(`macro-${id}`);
-  const noteEl = $(`macro-${id}-note`);
-  if (!valueEl) return;
-
-  if (!chartData || typeof chartData.previousClose !== "number") {
-    valueEl.textContent = "--";
-    if (noteEl) {
-      noteEl.textContent = "데이터 수신 실패";
-      noteEl.className = "macro-note";
-    }
-    return;
-  }
-
-  const { lastClose, previousClose } = chartData;
-  const changePct = ((lastClose - previousClose) / previousClose) * 100;
-  const arrow = changePct > 0 ? "▲" : changePct < 0 ? "▼" : "-";
-  const cls = changePct > 0 ? "sentiment-pos" : changePct < 0 ? "sentiment-neg" : "";
-
-  valueEl.textContent = lastClose.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
-  if (noteEl) {
-    noteEl.textContent = `${arrow} ${Math.abs(changePct).toFixed(2)}%`;
-    noteEl.className = `macro-note ${cls}`;
-  }
-}
-
 async function fetchIndexData() {
-  const defs = [...HEADLINE_INDEXES, ...EXPANDED_FUTURES];
+  const chipDefs = [...HEADLINE_INDEXES, ...EXPANDED_CHIPS];
   const results = await Promise.all(
-    defs.map((def) => fetchYahooChart(def.symbol, "1d", "1d").catch(() => null))
+    chipDefs.map((def) => fetchYahooChart(def.symbol, "1d", "1d").catch(() => null))
   );
 
-  defs.forEach((def, i) => {
-    if (i < HEADLINE_INDEXES.length) {
-      renderIndexChip(def.id, results[i]);
-    } else {
-      renderFuturesBox(def.id, results[i]);
+  chipDefs.forEach((def, i) => {
+    renderIndexChip(def.id, results[i], def);
+    // fetchFxRate()가 쓰는 기존 캐시 변수 — 예전엔 fetchMacroData()의 KRW 블록이 채워주던 부수효과인데,
+    // 환율이 이 칩 파이프라인으로 옮겨오면서 여기서 대신 채움(다른 곳의 환율 캐시 동작은 그대로 유지).
+    if (def.id === "fx" && results[i] && typeof results[i].lastClose === "number") {
+      fxRateKRW = results[i].lastClose;
     }
   });
 }
 
-// 헤드라인 아래 "▼ 전체 지표 보기" 토글 — 선물 3종 + 기존 매크로 4종(10년물/VIX/환율/유가)을 펼침/접음
+// 헤드라인 아래 "▼ 전체 지표 보기" 토글 — 다우존스/러셀2000선물(칩) + 10년물/VIX/유가(기존 매크로박스)를 펼침/접음
 function toggleMacroExpanded() {
   const panel = $("macro-expanded");
   const label = $("macro-toggle-label");
   if (!panel) return;
 
-  const willShow = panel.classList.contains("hidden");
-  panel.classList.toggle("hidden");
+  const willShow = !panel.classList.contains("macro-expanded-open");
+  panel.classList.toggle("macro-expanded-open");
   if (label) label.textContent = willShow ? "▲ 지표 접기" : "▼ 전체 지표 보기 (13)";
 }
 
@@ -2378,7 +2368,15 @@ function updateUI(data, analysis, fxRate, stockName) {
   const isDomestic = isDomesticTicker(data.symbol);
   const formatPrice = isDomestic ? formatKRW : formatUSD;
 
-  if (priceEl) priceEl.textContent = formatPrice(analysis.price);
+  // 티커가 바뀌면 이전 종목 가격에서 굴러오는 게 아니라 0에서부터 카운트업(서로 다른 통화/자릿수
+  // 종목 사이를 이어서 굴리면 어색해 보임) — 같은 종목을 재검색한 경우엔 이전 값에서 자연스럽게 이어짐.
+  if (priceEl) {
+    if (priceEl.dataset.animSymbol !== data.symbol) {
+      delete priceEl.dataset.animFrom;
+      priceEl.dataset.animSymbol = data.symbol;
+    }
+    animateNumberText(priceEl, analysis.price, formatPrice);
+  }
 
   // 원화 환산가는 메인 가격과 무게감을 다르게 — 작은 보조 표기로 분리
   const priceFxEl = $("ticker-price-fx");
@@ -3696,97 +3694,236 @@ async function removeFromWatchlist(symbol) {
   }
 }
 
-// 관심종목 목록 렌더링 — 헤더에는 토글 버튼(개수 표시)만 두고, 실제 목록은 왼쪽 사이드바에
-// 세로로 나열함(예전엔 헤더에 가로 pill로 늘어놓아서 종목이 많아지면 한 줄에 다 안 들어갔음).
+// 종목 현재가/등락률 조회(관심종목 패널 각 줄에 표시용) — 기존 /api/kis/candles를 count=2로 호출해서
+// 최신 종가/전일 종가만 뽑아 씀(국내/해외 모두 이 엔드포인트 하나로 처리됨, 신규 API 불필요).
+// 응답은 최신순이라 candles[0]=오늘, candles[1]=전일(kisMarket.js의 fetchCandles 규약).
+async function fetchWatchlistItemQuote(symbol) {
+  try {
+    const res = await fetch(`${API_BASE}/api/kis/candles?symbol=${encodeURIComponent(symbol)}&interval=1d&count=2`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const candles = json.result && json.result.candles;
+    if (!Array.isArray(candles) || candles.length < 2) return null;
+    const last = Number(candles[0].closePrice);
+    const prev = Number(candles[1].closePrice);
+    if (!Number.isFinite(last) || !Number.isFinite(prev) || !prev) return null;
+    return { last, changePct: ((last - prev) / prev) * 100 };
+  } catch (e) {
+    return null;
+  }
+}
+
+async function updateWatchlistItemGroup(symbol, groupName) {
+  try {
+    const res = await fetch(`${API_BASE}/api/watchlist/${encodeURIComponent(symbol)}/group`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ group_name: groupName })
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn("[RAVEN] 관심종목 그룹 변경 실패:", e);
+    return false;
+  }
+}
+
+// 관심종목 항목 한 줄 생성 — 이름(코드 괄호 없이)/현재가·등락률(비동기 채움)/그룹 이동 select/삭제 버튼
+function buildWatchlistItemRow(item, groupNames) {
+  const row = document.createElement("div");
+  row.className = "watchlist-sidebar-item";
+
+  const star = document.createElement("span");
+  star.className = "watchlist-sidebar-item-star";
+  star.textContent = "★";
+  row.appendChild(star);
+
+  const main = document.createElement("div");
+  main.className = "watchlist-sidebar-item-main";
+
+  const label = document.createElement("span");
+  label.className = "watchlist-sidebar-item-label";
+  label.textContent = item.name || item.symbol;
+  main.appendChild(label);
+
+  const priceEl = document.createElement("span");
+  priceEl.className = "watchlist-sidebar-item-price";
+  priceEl.textContent = "…";
+  main.appendChild(priceEl);
+
+  main.addEventListener("click", () => {
+    runAnalysisForTicker(item.symbol);
+    closeWatchlistSidebarOnMobile();
+  });
+  row.appendChild(main);
+
+  // 그룹 이동 select — "미분류" + 기존 그룹명들 + "새 그룹 만들기"
+  const groupSelect = document.createElement("select");
+  groupSelect.className = "watchlist-sidebar-item-group";
+  groupSelect.title = "그룹 이동";
+  const currentGroup = item.group_name || "미분류";
+  const optionValues = ["미분류", ...groupNames.filter((g) => g !== "미분류"), "+ 새 그룹"];
+  optionValues.forEach((g) => {
+    const opt = document.createElement("option");
+    opt.value = g;
+    opt.textContent = g;
+    if (g === currentGroup) opt.selected = true;
+    groupSelect.appendChild(opt);
+  });
+  groupSelect.addEventListener("click", (e) => e.stopPropagation());
+  groupSelect.addEventListener("change", async () => {
+    let target = groupSelect.value;
+    if (target === "+ 새 그룹") {
+      const typed = window.prompt("새 그룹 이름을 입력하세요");
+      if (!typed || !typed.trim()) {
+        groupSelect.value = currentGroup;
+        return;
+      }
+      target = typed.trim();
+    }
+    const finalGroup = target === "미분류" ? null : target;
+    const ok = await updateWatchlistItemGroup(item.symbol, finalGroup);
+    if (ok) {
+      const cacheItem = watchlistCache.find((w) => w.symbol === item.symbol);
+      if (cacheItem) cacheItem.group_name = finalGroup;
+      renderWatchlistSidebar(watchlistCache);
+    } else {
+      showToast("그룹 변경에 실패했습니다.");
+      groupSelect.value = currentGroup;
+    }
+  });
+  row.appendChild(groupSelect);
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "watchlist-sidebar-item-remove";
+  removeBtn.textContent = "×";
+  removeBtn.title = "관심종목에서 삭제";
+  removeBtn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const ok = await removeFromWatchlist(item.symbol);
+    if (ok) {
+      renderWatchlistSidebar(watchlistCache.filter((w) => w.symbol !== item.symbol));
+      updateWatchlistStarState();
+    } else {
+      showToast("관심종목 삭제에 실패했습니다.");
+    }
+  });
+  row.appendChild(removeBtn);
+
+  return row;
+}
+
+// 관심종목 목록 렌더링 — 그룹별로 묶어서 표시(그룹 없는 종목은 "미분류"). 각 줄의 현재가/등락률은
+// KIS 호출이 필요해서 렌더링을 막지 않도록 종목마다 약간의 시차를 두고 비동기로 채움(레이트리밋 방지).
 function renderWatchlistSidebar(list) {
-  const row = $("watchlist-row");
   const countEl = $("watchlist-count");
   const listEl = $("watchlist-sidebar-list");
   const emptyEl = $("watchlist-sidebar-empty");
-  if (!row || !listEl) return;
+  if (!listEl) return;
 
   watchlistCache = list;
 
   if (!list.length) {
-    row.classList.add("hidden");
     listEl.innerHTML = "";
+    if (countEl) countEl.textContent = "";
     if (emptyEl) emptyEl.classList.remove("hidden");
-    closeWatchlistSidebar();
     return;
   }
 
   if (countEl) countEl.textContent = `(${list.length})`;
   if (emptyEl) emptyEl.classList.add("hidden");
 
-  listEl.innerHTML = "";
+  // 그룹명 순서: 처음 등장한 순서대로(안정적인 표시 순서), "미분류"는 항상 맨 뒤
+  const groupOrder = [];
   list.forEach((item) => {
-    const row2 = document.createElement("div");
-    row2.className = "watchlist-sidebar-item";
+    const g = item.group_name || "미분류";
+    if (g !== "미분류" && !groupOrder.includes(g)) groupOrder.push(g);
+  });
+  if (list.some((item) => !item.group_name)) groupOrder.push("미분류");
 
-    const star = document.createElement("span");
-    star.className = "watchlist-sidebar-item-star";
-    star.textContent = "★";
-    row2.appendChild(star);
+  listEl.innerHTML = "";
+  const priceTargets = []; // { symbol, el } — 렌더링 끝난 뒤 시차를 두고 순차 조회
 
-    const label = document.createElement("span");
-    label.className = "watchlist-sidebar-item-label";
-    label.textContent = item.name ? `${item.name} (${item.symbol})` : item.symbol;
-    label.addEventListener("click", () => {
-      runAnalysisForTicker(item.symbol);
-      closeWatchlistSidebar();
-    });
-    row2.appendChild(label);
+  groupOrder.forEach((groupName) => {
+    const header = document.createElement("div");
+    header.className = "watchlist-group-header";
+    header.textContent = groupName;
+    listEl.appendChild(header);
 
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.className = "watchlist-sidebar-item-remove";
-    removeBtn.textContent = "×";
-    removeBtn.title = "관심종목에서 삭제";
-    removeBtn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const ok = await removeFromWatchlist(item.symbol);
-      if (ok) {
-        renderWatchlistSidebar(watchlistCache.filter((w) => w.symbol !== item.symbol));
-        updateWatchlistStarState();
-      } else {
-        showToast("관심종목 삭제에 실패했습니다.");
-      }
-    });
-    row2.appendChild(removeBtn);
-
-    listEl.appendChild(row2);
+    list
+      .filter((item) => (item.group_name || "미분류") === groupName)
+      .forEach((item) => {
+        const rowEl = buildWatchlistItemRow(item, groupOrder);
+        listEl.appendChild(rowEl);
+        priceTargets.push({ symbol: item.symbol, el: rowEl.querySelector(".watchlist-sidebar-item-price") });
+      });
   });
 
-  row.classList.remove("hidden");
+  priceTargets.forEach(({ symbol, el }, i) => {
+    setTimeout(async () => {
+      const quote = await fetchWatchlistItemQuote(symbol);
+      if (!el) return;
+      if (!quote) {
+        el.textContent = "시세 조회 실패";
+        return;
+      }
+      const isDomestic = isDomesticTicker(symbol);
+      const priceTxt = isDomestic ? formatKRW(quote.last) : formatUSD(quote.last);
+      const arrow = quote.changePct > 0 ? "▲" : quote.changePct < 0 ? "▼" : "-";
+      el.textContent = `${priceTxt} ${arrow}${Math.abs(quote.changePct).toFixed(2)}%`;
+      el.classList.add(quote.changePct > 0 ? "sentiment-pos" : quote.changePct < 0 ? "sentiment-neg" : "");
+    }, i * 350);
+  });
 }
 
 async function refreshWatchlistPanel() {
   renderWatchlistSidebar(await fetchWatchlist());
 }
 
-// 사이드바 열기/닫기 — backdrop은 display:none(.hidden)과 opacity 트랜지션을 같이 쓰기 때문에,
-// 열 때는 hidden을 먼저 지우고 다음 프레임에 opacity를 올리고, 닫을 때는 opacity를 먼저 내리고
-// 트랜지션이 끝난 뒤 hidden을 다시 붙여야 자연스럽게 페이드된다.
+// 좌측 상시 패널 열기/닫기 — 2026-08-01부터 배경을 어둡게 가리는 backdrop 없이 화살표 버튼 하나로만
+// 여닫음(토스증권처럼 패널이 본문 위에 뜰 뿐 나머지 화면 조작은 막지 않음).
 function openWatchlistSidebar() {
   const sidebar = $("watchlist-sidebar");
-  const backdrop = $("watchlist-sidebar-backdrop");
-  if (!sidebar || !backdrop) return;
-
-  backdrop.classList.remove("hidden");
-  requestAnimationFrame(() => {
-    backdrop.classList.add("open");
-    sidebar.classList.add("open");
-  });
+  const toggleBtn = $("watchlist-rail-toggle");
+  const icon = $("watchlist-rail-toggle-icon");
+  if (!sidebar) return;
+  sidebar.classList.add("open");
+  if (toggleBtn) toggleBtn.classList.add("rail-open");
+  if (icon) icon.textContent = "«";
 }
 
 function closeWatchlistSidebar() {
   const sidebar = $("watchlist-sidebar");
-  const backdrop = $("watchlist-sidebar-backdrop");
-  if (!sidebar || !backdrop) return;
-
+  const toggleBtn = $("watchlist-rail-toggle");
+  const icon = $("watchlist-rail-toggle-icon");
+  if (!sidebar) return;
   sidebar.classList.remove("open");
-  backdrop.classList.remove("open");
-  setTimeout(() => backdrop.classList.add("hidden"), 250);
+  if (toggleBtn) toggleBtn.classList.remove("rail-open");
+  if (icon) icon.textContent = "»";
+}
+
+function toggleWatchlistSidebar() {
+  const sidebar = $("watchlist-sidebar");
+  if (!sidebar) return;
+  if (sidebar.classList.contains("open")) closeWatchlistSidebar();
+  else openWatchlistSidebar();
+}
+
+// 좁은 화면(모바일)에서는 패널이 본문을 거의 다 가리므로, 종목을 클릭해 분석을 실행한 뒤엔 자동으로
+// 닫아줌 — 데스크톱 폭에서는 상시 패널 컨셉이라 그대로 열어둠(토스도 종목 클릭으로 패널이 안 닫힘).
+function closeWatchlistSidebarOnMobile() {
+  if (window.innerWidth < 768) closeWatchlistSidebar();
+}
+
+// 페이지 로드 시 뷰포트 폭에 따라 기본 열림/닫힘 상태 결정 + 화살표 버튼 이벤트 연결.
+// 데스크톱(≥768px)에서는 토스처럼 기본 열림, 모바일은 패널이 화면을 거의 다 가려서 기본 닫힘으로 시작.
+function initWatchlistRail() {
+  const toggleBtn = $("watchlist-rail-toggle");
+  if (toggleBtn) toggleBtn.addEventListener("click", toggleWatchlistSidebar);
+
+  if (window.matchMedia("(min-width: 768px)").matches) {
+    openWatchlistSidebar();
+  }
 }
 
 // 현재 분석 중인 종목이 관심종목에 있는지에 따라 별표 아이콘 상태 갱신
@@ -4039,23 +4176,12 @@ document.addEventListener("DOMContentLoaded", () => {
   attachTickerAutocomplete($("entry-ticker"));
   attachTickerAutocomplete($("ticker-input"));
 
-  // ★ 관심종목 — 사이드바 목록 초기 로드 + 별표 토글 버튼 + 사이드바 열기/닫기
+  // ★ 관심종목 — 좌측 상시 패널 초기화(뷰포트 폭에 따라 기본 열림/닫힘) + 목록 로드 + 별표 토글 버튼
+  initWatchlistRail();
   refreshWatchlistPanel();
   const watchlistStarBtn = $("watchlist-toggle-btn");
   if (watchlistStarBtn) {
     watchlistStarBtn.addEventListener("click", toggleWatchlistForCurrentTicker);
-  }
-  const watchlistOpenBtn = $("watchlist-open-btn");
-  if (watchlistOpenBtn) {
-    watchlistOpenBtn.addEventListener("click", openWatchlistSidebar);
-  }
-  const watchlistSidebarClose = $("watchlist-sidebar-close");
-  if (watchlistSidebarClose) {
-    watchlistSidebarClose.addEventListener("click", closeWatchlistSidebar);
-  }
-  const watchlistSidebarBackdrop = $("watchlist-sidebar-backdrop");
-  if (watchlistSidebarBackdrop) {
-    watchlistSidebarBackdrop.addEventListener("click", closeWatchlistSidebar);
   }
 
   // 🤖 AI 서술 분석 요청 버튼

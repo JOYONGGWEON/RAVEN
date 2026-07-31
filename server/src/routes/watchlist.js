@@ -6,10 +6,23 @@ const { checkWatchlistAndAlert } = require("../scheduler");
 
 router.get("/", async (req, res) => {
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("watchlist")
-      .select("symbol, name, domestic, added_at")
+      .select("symbol, name, domestic, added_at, group_name")
       .order("added_at", { ascending: false });
+
+    // 42703 = undefined_column — group_name 마이그레이션(schema.sql의 alter문)을 아직 Supabase에서
+    // 안 돌린 상태일 수 있음. 그룹핑 기능 자체를 못 쓰는 것만 빼고 관심종목 목록 전체가 깨지면 안 되니,
+    // 이 컬럼만 빼고 한 번 더 시도해서 마이그레이션 전에도 기존 기능은 그대로 동작하게 함.
+    if (error && error.code === "42703") {
+      const fallback = await supabase
+        .from("watchlist")
+        .select("symbol, name, domestic, added_at")
+        .order("added_at", { ascending: false });
+      data = (fallback.data || []).map((row) => ({ ...row, group_name: null }));
+      error = fallback.error;
+    }
+
     if (error) throw error;
     res.json({ result: data });
   } catch (e) {
@@ -33,6 +46,26 @@ router.post("/", async (req, res) => {
   } catch (e) {
     console.error("[RAVEN] /api/watchlist POST error:", e);
     res.status(502).json({ error: "watchlist add error" });
+  }
+});
+
+// 그룹명만 변경 — POST(upsert)를 재사용하지 않고 별도 라우트로 분리한 이유: upsert에 symbol/domestic
+// 없이 group_name만 보내면 신규 insert 시도 시 NOT NULL 제약(domestic)에 걸릴 수 있어서, 항상 update만
+// 하는 게 더 안전함(그룹 지정은 이미 목록에 있는 종목에만 적용되는 동작이라 update 전용으로 충분함).
+router.patch("/:symbol/group", async (req, res) => {
+  const { symbol } = req.params;
+  const { group_name } = req.body || {};
+
+  try {
+    const { error } = await supabase
+      .from("watchlist")
+      .update({ group_name: group_name || null })
+      .eq("symbol", symbol);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[RAVEN] /api/watchlist/:symbol/group PATCH error:", e);
+    res.status(502).json({ error: "watchlist group update error" });
   }
 });
 
