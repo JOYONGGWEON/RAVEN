@@ -356,7 +356,11 @@ async function fetchYahooChart(symbol, range = "1d", interval = "1d") {
       ? meta.regularMarketPrice
       : closes[closes.length - 1];
 
-  return { meta, closes, lastClose };
+  // chartPreviousClose = 전일 종가 — 지수/선물 카드의 등락률(%) 계산용
+  const previousClose =
+    typeof meta.chartPreviousClose === "number" ? meta.chartPreviousClose : null;
+
+  return { meta, closes, lastClose, previousClose };
 }
 
 // 국내(KOSPI/KOSDAQ) 종목코드는 숫자 6자리, 해외는 알파벳 티커
@@ -753,6 +757,108 @@ async function fetchMacroData() {
   } catch (e) {
     console.warn("[RAVEN] Macro fetch error:", e);
   }
+}
+
+// 3-4. 헤드라인 지수 6개 + 펼치기 패널의 선물 3종 — 전부 지수/선물이라 KIS 미지원,
+// 매크로 지표와 동일하게 Yahoo Finance로 조회. 코스피/코스닥도 KIS 종목시세 API가 있긴 하지만
+// 지수 종류가 전부 Yahoo 하나로 통일돼 있어야 코드 경로가 단순해서 그대로 Yahoo를 씀.
+const HEADLINE_INDEXES = [
+  { id: "kospi", symbol: "^KS11" },
+  { id: "kosdaq", symbol: "^KQ11" },
+  { id: "nasdaq", symbol: "^IXIC" },
+  { id: "sp500", symbol: "^GSPC" },
+  { id: "sox", symbol: "^SOX" },
+  { id: "dow", symbol: "^DJI" }
+];
+
+// 코스피 선물(KOSPI200 야간선물)은 조사 결과 Yahoo Finance에 해당 티커가 없어서 제외함
+// (KRX/Eurex 야간선물 전용 데이터는 별도 유료 데이터벤더 라이선스가 필요 — 2026-08-01 확인).
+const EXPANDED_FUTURES = [
+  { id: "nq-fut", symbol: "NQ=F" },
+  { id: "es-fut", symbol: "ES=F" },
+  { id: "rty-fut", symbol: "RTY=F" }
+];
+
+function renderIndexChip(id, chartData) {
+  const box = $(`idx-${id}`);
+  if (!box) return;
+  const valueEl = box.querySelector(".index-chip-value");
+  const changeEl = box.querySelector(".index-chip-change");
+  if (!valueEl || !changeEl) return;
+
+  if (!chartData || typeof chartData.previousClose !== "number") {
+    valueEl.textContent = "--";
+    changeEl.textContent = "데이터 없음";
+    changeEl.className = "index-chip-change";
+    return;
+  }
+
+  const { lastClose, previousClose } = chartData;
+  const changePct = ((lastClose - previousClose) / previousClose) * 100;
+  const arrow = changePct > 0 ? "▲" : changePct < 0 ? "▼" : "-";
+  const cls = changePct > 0 ? "sentiment-pos" : changePct < 0 ? "sentiment-neg" : "";
+
+  valueEl.textContent = lastClose.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+  changeEl.textContent = `${arrow} ${Math.abs(changePct).toFixed(2)}%`;
+  changeEl.className = `index-chip-change ${cls}`;
+}
+
+function renderFuturesBox(id, chartData) {
+  const valueEl = $(`macro-${id}`);
+  const noteEl = $(`macro-${id}-note`);
+  if (!valueEl) return;
+
+  if (!chartData || typeof chartData.previousClose !== "number") {
+    valueEl.textContent = "--";
+    if (noteEl) {
+      noteEl.textContent = "데이터 수신 실패";
+      noteEl.className = "macro-note";
+    }
+    return;
+  }
+
+  const { lastClose, previousClose } = chartData;
+  const changePct = ((lastClose - previousClose) / previousClose) * 100;
+  const arrow = changePct > 0 ? "▲" : changePct < 0 ? "▼" : "-";
+  const cls = changePct > 0 ? "sentiment-pos" : changePct < 0 ? "sentiment-neg" : "";
+
+  valueEl.textContent = lastClose.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+  if (noteEl) {
+    noteEl.textContent = `${arrow} ${Math.abs(changePct).toFixed(2)}%`;
+    noteEl.className = `macro-note ${cls}`;
+  }
+}
+
+async function fetchIndexData() {
+  const defs = [...HEADLINE_INDEXES, ...EXPANDED_FUTURES];
+  const results = await Promise.all(
+    defs.map((def) => fetchYahooChart(def.symbol, "1d", "1d").catch(() => null))
+  );
+
+  defs.forEach((def, i) => {
+    if (i < HEADLINE_INDEXES.length) {
+      renderIndexChip(def.id, results[i]);
+    } else {
+      renderFuturesBox(def.id, results[i]);
+    }
+  });
+}
+
+// 헤드라인 아래 "▼ 전체 지표 보기" 토글 — 선물 3종 + 기존 매크로 4종(10년물/VIX/환율/유가)을 펼침/접음
+function toggleMacroExpanded() {
+  const panel = $("macro-expanded");
+  const label = $("macro-toggle-label");
+  if (!panel) return;
+
+  const willShow = panel.classList.contains("hidden");
+  panel.classList.toggle("hidden");
+  if (label) label.textContent = willShow ? "▲ 지표 접기" : "▼ 전체 지표 보기 (13)";
 }
 
 // ===== 지표 헬퍼: EMA / RSI(Wilder) / MACD =====
@@ -3709,5 +3815,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   fetchMacroData().catch((e) =>
     console.warn("[RAVEN] macro fetch on load failed:", e)
+  );
+  fetchIndexData().catch((e) =>
+    console.warn("[RAVEN] index fetch on load failed:", e)
   );
 });
