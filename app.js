@@ -2827,6 +2827,48 @@ function updateUI(data, analysis, fxRate, stockName) {
       return lines;
     };
 
+    // ⚠️ 실제로 발견된 누락: MACD 크로스오버/다이버전스·ADX·RS 체크가 "지지선 근처 매수"/"저항선
+    // 근처 매도" 두 분기에만 있고, "과매도 역추세"·"R:R 불리"·"중립/관망" 세 분기엔 아예 없어서
+    // MACD 지표박스엔 골든크로스가 뜨는데 RAVEN SIGNAL엔 언급이 통째로 빠지는 문의를 받음(FLNC로
+    // 재현됨 — 아마 R:R이 애매해 NEUTRAL로 떨어진 케이스). 5개 분기 전부 같은 로직을 쓰도록 통일.
+    // direction: 이 분기가 암시하는 방향("BUY"|"SELL"|"NEUTRAL") — 같은 방향 신호는 뒷받침 근거로
+    // 강조(highlight), 반대 방향 신호는 "다만 ~"로 주의 요인으로 표시, NEUTRAL은 방향성 없이 사실만 나열.
+    const buildIndicatorBits = (direction) => {
+      const bits = [];
+
+      if (typeof adx === "number") {
+        if (adx >= 25) bits.push(`ADX ${adx.toFixed(1)}로 추세 강도까지 뚜렷`);
+        else if (adx < 20) bits.push(`ADX ${adx.toFixed(1)}로 추세 신뢰도는 낮은 편`);
+      }
+      if (adxTrend === "RISING") bits.push("추세 강도 강화 중");
+      else if (adxTrend === "FALLING") bits.push("추세 강도는 약화 중");
+
+      if (analysis.macdCrossover === "GOLDEN") {
+        const txt = "MACD 골든크로스 동반";
+        if (direction === "BUY") bits.push(toneSpan(txt, "highlight"));
+        else if (direction === "SELL") bits.push(`다만 ${txt}`);
+        else bits.push(txt);
+      } else if (analysis.macdCrossover === "DEAD") {
+        const txt = "MACD 데드크로스 동반";
+        if (direction === "SELL") bits.push(toneSpan(txt, "highlight"));
+        else if (direction === "BUY") bits.push(`다만 ${txt}`);
+        else bits.push(txt);
+      }
+
+      if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BULLISH") {
+        bits.push(direction === "SELL" ? "다만 MACD 강세 다이버전스 감지" : "MACD 강세 다이버전스 동반");
+      } else if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BEARISH") {
+        bits.push(direction === "BUY" ? "다만 MACD 약세 다이버전스 감지" : "MACD 약세 다이버전스 동반");
+      }
+
+      if (rsInfo && Number.isFinite(rsInfo.rs20)) {
+        if (rsInfo.rs20 >= 5) bits.push(direction === "SELL" ? "다만 지수 대비 아웃퍼폼 중" : "지수 대비 아웃퍼폼 중");
+        else if (rsInfo.rs20 <= -5) bits.push(direction === "BUY" ? "다만 지수 대비 언더퍼폼 중" : "지수 대비 언더퍼폼 중");
+      }
+
+      return bits;
+    };
+
     // 위쪽 "수급"/"패턴" 탭에서 이미 계산해둔 신호를 전략요약에도 반영 —
     // 예전엔 지지·저항·R:R만 보고 판단해서 같은 화면 안의 수급/패턴 정보와 따로 놀았음
     // [수급 상태]/[캔들 패턴]은 눈에 잘 띄어야 하는 핵심 키워드라 노란색으로 강조(toneSpan highlight)
@@ -2844,14 +2886,13 @@ function updateUI(data, analysis, fxRate, stockName) {
 
     let mainTxt = "중립 / 관망 구간";
     let detailLines = [
-      "지지선·저항선·RSI·R:R를 종합했을 때 뚜렷한 매수/매도 우위가 아닌 구간입니다.",
-      "레버리지/단기 트레이딩보다는 관망 또는 소량만 대응하는 것을 권장합니다."
+      "지지선·저항선·RSI·R:R를 종합했을 때 뚜렷한 매수/매도 우위가 아닌 구간입니다."
     ];
-    if (typeof adx === "number" && adx < 20) {
-      detailLines.push(
-        `ADX ${adx.toFixed(1)}로 추세 강도 자체가 약해, 지금은 방향성 베팅보다 관망이 더 유리한 구간입니다.`
-      );
+    const neutralBits = buildIndicatorBits("NEUTRAL");
+    if (neutralBits.length) {
+      detailLines.push(`참고할 지표: ${neutralBits.join(", ")}.`);
     }
+    detailLines.push("레버리지/단기 트레이딩보다는 관망 또는 소량만 대응하는 것을 권장합니다.");
     detailLines.push(
       ...buildActionLines(
         "여기까지 오르면 돌파 여부를 보고 추종 매수 재검토",
@@ -2863,11 +2904,11 @@ function updateUI(data, analysis, fxRate, stockName) {
     if (verdict.tier === "BUY") {
       if (typeof rsiVal === "number" && rsiVal < 30) {
         mainTxt = "과매도 역추세 (고위험)";
-        detailLines = [
-          `RSI가 ${rsiVal.toFixed(1)}로 과매도 구간에 진입한 상태입니다.`,
-          "단기 기술적 반등 가능성은 있지만, 추세 자체가 약세라 고위험 역추세 전략입니다.",
-          "포지션 크기를 줄이고, 지지선 이탈 시 재진입을 포기하는 강한 손절 기준이 필요합니다."
-        ];
+        const oversoldBits = buildIndicatorBits("BUY");
+        detailLines = [`RSI가 ${rsiVal.toFixed(1)}로 과매도 구간에 진입한 상태입니다.`];
+        if (oversoldBits.length) detailLines.push(`추가로 ${oversoldBits.join(", ")} 상태입니다.`);
+        detailLines.push("단기 기술적 반등 가능성은 있지만, 추세 자체가 약세라 고위험 역추세 전략입니다.");
+        detailLines.push("포지션 크기를 줄이고, 지지선 이탈 시 재진입을 포기하는 강한 손절 기준이 필요합니다.");
         detailLines.push(
           ...buildActionLines(
             "반등 목표가 — 추세가 약하므로 도달 시 빠른 분할 익절 권장",
@@ -2879,14 +2920,7 @@ function updateUI(data, analysis, fxRate, stockName) {
         mainTxt = "지지선 근처 눌림 매수 우위";
         const bits = [];
         if (nearSupport) bits.push(`1차 지지선(${s1 ? s1.toFixed(2) : "N/A"}) 근처`);
-        if (typeof adx === "number" && adx >= 25) bits.push(`ADX ${adx.toFixed(1)}로 추세 강도까지 뚜렷`);
-        // ⚠️ ADX/MACD크로스/RS는 이미 근거로 들어가는데 MACD 다이버전스만 빠져있던 실제 누락 —
-        // 모멘텀 탭엔 다이버전스 문장이 있는데 정작 종합 요약(RAVEN SIGNAL)엔 안 보이던 게 이 부분.
-        if (analysis.macdCrossover === "GOLDEN") bits.push(toneSpan("MACD 골든크로스 동반", "highlight"));
-        if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BULLISH") {
-          bits.push("MACD 강세 다이버전스 동반");
-        }
-        if (rsInfo && Number.isFinite(rsInfo.rs20) && rsInfo.rs20 >= 5) bits.push("지수 대비 아웃퍼폼 중");
+        bits.push(...buildIndicatorBits("BUY"));
 
         detailLines = [];
         if (bits.length) detailLines.push(`현재가가 ${bits.join(", ")} 상태입니다.`);
@@ -2904,11 +2938,7 @@ function updateUI(data, analysis, fxRate, stockName) {
       if (nearResistance) {
         mainTxt = "저항선 근처 리스크 우위";
         const bits = [`1차 저항선(${r1 ? r1.toFixed(2) : "N/A"}) 근처 상단 파동`];
-        if (analysis.macdCrossover === "DEAD") bits.push(toneSpan("MACD 데드크로스 동반", "highlight"));
-        if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BEARISH") {
-          bits.push("MACD 약세 다이버전스 동반");
-        }
-        if (typeof adx === "number" && adx < 20) bits.push(`ADX ${adx.toFixed(1)}로 추세 신뢰도 낮음`);
+        bits.push(...buildIndicatorBits("SELL"));
 
         detailLines = [
           `현재가가 ${bits.join(", ")}에 위치해 있고, ${rrTxt}로 아래쪽 리스크가 더 큰 구조입니다.`,
@@ -2923,16 +2953,12 @@ function updateUI(data, analysis, fxRate, stockName) {
         );
       } else {
         mainTxt = "R:R 불리 (위험 대비 보상 부족)";
+        const rrBits = buildIndicatorBits("SELL");
         detailLines = [
-          `현재 ${rrTxt}로, 손절 폭 대비 위쪽 기대 수익이 충분히 보상되지 않는 자리입니다.`,
-          "추세·수급이 좋아 보여도 진입보다는 다음 더 유리한 R:R 구간을 기다리는 것이 효율적입니다."
+          `현재 ${rrTxt}로, 손절 폭 대비 위쪽 기대 수익이 충분히 보상되지 않는 자리입니다.`
         ];
-        if (analysis.macdCrossover === "DEAD") {
-          detailLines.push("MACD 데드크로스까지 겹쳐 있어 더 보수적으로 접근해야 합니다.");
-        }
-        if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BEARISH") {
-          detailLines.push("MACD 약세 다이버전스까지 나타나 상승 동력이 약해지는 신호도 있습니다.");
-        }
+        if (rrBits.length) detailLines.push(`추가로 ${rrBits.join(", ")} 상태입니다.`);
+        detailLines.push("추세·수급이 좋아 보여도 진입보다는 다음 더 유리한 R:R 구간을 기다리는 것이 효율적입니다.");
         detailLines.push(
           ...buildActionLines(
             "여기까지 오르면 R:R이 개선되니 그때 재검토",
