@@ -577,9 +577,10 @@ async function fetchBenchmarkData(domestic) {
   }
 }
 
-// 장중 초단기 흐름(1분봉) — KIS 전환 시 분봉은 미구현(서버가 일부러 400을 줌, kis.js 참고)이라
-// 이 호출은 항상 실패하고 아래 catch에서 조용히 null을 반환함. "지금 장중 흐름이 일봉 추세와
-// 같은 방향인지" 보는 보조 지표였는데, 실패해도 메인 분석에는 영향 없음(원래도 soft-fail 설계).
+// 장중 초단기 흐름(1분봉) — 2026-07-31에 KIS 실측 후 실제 연동함(국내는 당일 최대 30건,
+// 해외는 당일 최대 120건 — server/src/lib/kisMarket.js의 fetchIntradayCandles 참고). "지금 장중
+// 흐름이 일봉 추세와 같은 방향인지" 보는 보조 지표. 장 마감 후/개장 전엔 데이터가 부족하거나
+// 다 같은 값일 수 있어 그 경우엔 여전히 soft-fail로 null 반환(메인 분석엔 영향 없음).
 async function fetchIntradayCandles(symbol) {
   const finalUrl = `${API_BASE}/api/kis/candles?symbol=${encodeURIComponent(
     symbol

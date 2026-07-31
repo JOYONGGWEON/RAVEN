@@ -3,7 +3,7 @@ const router = express.Router();
 const { getKisAccessToken } = require("../lib/kisAuth");
 const { collectSupplyDemandForSymbol } = require("../lib/supplyDemandCollector");
 const { interpretSupplyDemand } = require("../lib/supplyDemandInterpreter");
-const { fetchCandles, fetchOverseasStockName } = require("../lib/kisMarket");
+const { fetchCandles, fetchOverseasStockName, fetchIntradayCandles } = require("../lib/kisMarket");
 
 const KIS_API_BASE = "https://openapi.koreainvestment.com:9443";
 
@@ -123,18 +123,22 @@ router.get("/loan-trans", async (req, res) => {
   }
 });
 
-// 종목 캔들(OHLCV) 일봉 조회 — 국내(6자리 코드)/해외(티커) 자동 판별, 토스 응답과 같은 형태로 반환
-// ⚠️ 일봉(1d)만 지원. 분봉은 KIS 쪽 미검증이라 일부러 400을 줘서 호출측(app.js)의 기존
-// 실패시 null 폴백 로직을 그대로 타게 함 — 다른 데이터를 분봉인 것처럼 잘못 주는 것보단 안전.
+// 종목 캔들(OHLCV) 조회 — 국내(6자리 코드)/해외(티커) 자동 판별, 토스 응답과 같은 형태로 반환
+// interval=1d(일봉, 기본) 또는 1m(당일 1분봉 — 실시간 장중 흐름 보조지표용, 2026-07-31 KIS 실측 후 활성화).
+// ⚠️ 1m은 국내/해외 모두 "당일" 데이터만 됨(국내는 그마저도 KIS 원본 제약으로 최대 30건) —
+// 여러 날짜에 걸친 분봉 이력이 필요하면 별도 확장 필요.
 router.get("/candles", async (req, res) => {
   const { symbol, count = 180, interval = "1d" } = req.query;
   if (!symbol) return res.status(400).json({ error: "symbol query param required" });
-  if (interval !== "1d") {
-    return res.status(400).json({ error: "only interval=1d is supported" });
+  if (interval !== "1d" && interval !== "1m") {
+    return res.status(400).json({ error: "only interval=1d or 1m is supported" });
   }
 
   try {
-    const candles = await fetchCandles(symbol, Number(count) || 180);
+    const candles =
+      interval === "1m"
+        ? await fetchIntradayCandles(symbol)
+        : await fetchCandles(symbol, Number(count) || 180);
     res.json({ result: { candles } });
   } catch (e) {
     console.error("[RAVEN] /api/kis/candles error:", e);

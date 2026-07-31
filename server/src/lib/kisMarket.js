@@ -190,6 +190,71 @@ async function fetchOverseasCandles(symbol, count) {
   }));
 }
 
+// ---------- 분봉(당일 초단기 — "장중 실시간 흐름"용, 다일치 이력 아님) ----------
+// 국내: 1분봉만, 당일만, 1회 호출 최대 30건(실측 확인, inquire-time-itemchartprice 국내 버전의
+// 근본적 한계). 해외: 같은 이름의 엔드포인트지만 NMIN으로 분단위를 직접 지정 가능하고 다일치 이력도
+// 되지만(위 fetchOverseasStockName 옆 60분봉 실측 참고), 여기선 "지금 장중 흐름"만 필요해서
+// 1분봉·당일(PINC=0)·최대 120건만 받음 — calcIntradayMomentum()이 요구하는 최소 30개는 항상 충분히 확보됨.
+function nowHHMMSS() {
+  const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+  const pad = (v) => String(v).padStart(2, "0");
+  return `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+async function fetchDomesticIntradayCandles(symbol) {
+  const json = await kisGet(
+    "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
+    "FHKST03010200",
+    {
+      FID_COND_MRKT_DIV_CODE: "J",
+      FID_INPUT_ISCD: symbol,
+      FID_INPUT_HOUR_1: nowHHMMSS(),
+      FID_PW_DATA_INCU_YN: "Y",
+      FID_ETC_CLS_CODE: "",
+    }
+  );
+  const rows = json.output2 || [];
+  return rows.map((r) => ({
+    date: r.stck_bsop_date,
+    openPrice: Number(r.stck_oprc),
+    closePrice: Number(r.stck_prpr),
+    highPrice: Number(r.stck_hgpr),
+    lowPrice: Number(r.stck_lwpr),
+    volume: Number(r.cntg_vol),
+  }));
+}
+
+async function fetchOverseasIntradayCandles(symbol) {
+  const excd = await resolveOverseasExchange(symbol);
+  await sleep(600);
+  const json = await kisGet(
+    "/uapi/overseas-price/v1/quotations/inquire-time-itemchartprice",
+    "HHDFS76950200",
+    { AUTH: "", EXCD: excd, SYMB: symbol, NMIN: "1", PINC: "0", NEXT: "", NREC: "120", FILL: "", KEYB: "" }
+  );
+  const rows = json.output2 || [];
+  return rows.map((r) => ({
+    date: r.xymd,
+    openPrice: Number(r.open),
+    closePrice: Number(r.last),
+    highPrice: Number(r.high),
+    lowPrice: Number(r.low),
+    volume: Number(r.evol),
+  }));
+}
+
+// symbol만 보고 국내/해외 자동 판별해 "당일 1분봉"을 가져옴 (최신순 — 호출측이 chronological로 뒤집어 씀,
+// 기존 fetchCandles와 같은 규약). 장 마감 후·개장 전엔 데이터가 다 같은 값으로 채워질 수 있음(정상 — 실측 확인).
+async function fetchIntradayCandles(symbol) {
+  const trimmed = (symbol || "").trim();
+  const rows = isDomesticSymbol(trimmed)
+    ? await fetchDomesticIntradayCandles(trimmed)
+    : await fetchOverseasIntradayCandles(trimmed.toUpperCase());
+
+  if (!rows.length) throw new Error(`No intraday candle result for ${symbol}`);
+  return rows;
+}
+
 // ---------- 공용 ----------
 
 // symbol만 보고 국내/해외 자동 판별해 일봉 캔들을 가져옴 (최신순, count 이상 확보 시도).
@@ -205,4 +270,4 @@ async function fetchCandles(symbol, count = 180) {
   return rows;
 }
 
-module.exports = { fetchCandles, isDomesticSymbol, fetchOverseasStockName };
+module.exports = { fetchCandles, isDomesticSymbol, fetchOverseasStockName, fetchIntradayCandles };
