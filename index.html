@@ -143,13 +143,27 @@
       </form>
     </div>
 
-    <!-- 관심종목 -->
+    <!-- 관심종목: 종목 수가 늘어도 한 줄에 다 안 들어가는 문제가 있어서(예전엔 헤더에 가로 pill
+         나열) 헤더엔 토글 버튼 하나만 두고 실제 목록은 왼쪽 사이드바로 확장함 -->
     <div id="watchlist-row" class="watchlist-row hidden">
-      <span class="watchlist-row-label">★ 관심종목</span>
-      <div id="watchlist-pills" class="watchlist-pills"></div>
+      <button id="watchlist-open-btn" type="button" class="watchlist-open-btn">
+        <span class="watchlist-row-label">★ 관심종목</span>
+        <span id="watchlist-count" class="watchlist-count"></span>
+      </button>
     </div>
 
   </header>
+
+  <!-- 관심종목 사이드바 -->
+  <div id="watchlist-sidebar-backdrop" class="watchlist-sidebar-backdrop hidden"></div>
+  <aside id="watchlist-sidebar" class="watchlist-sidebar">
+    <div class="watchlist-sidebar-header">
+      <span class="watchlist-sidebar-title">★ 관심종목</span>
+      <button id="watchlist-sidebar-close" type="button" class="watchlist-sidebar-close" title="닫기">×</button>
+    </div>
+    <div id="watchlist-sidebar-list" class="watchlist-sidebar-list"></div>
+    <p id="watchlist-sidebar-empty" class="watchlist-sidebar-empty hidden">관심종목이 없습니다.</p>
+  </aside>
 
   <!-- 로딩 인디케이터 -->
   <div id="loading-indicator" class="loading-container hidden">

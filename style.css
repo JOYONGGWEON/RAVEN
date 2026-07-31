@@ -117,15 +117,30 @@ body.raven-result-bg {
 }
 
 
-/* ───────── Watchlist Row ───────── */
+/* ───────── Watchlist Row (헤더의 토글 버튼) ───────── */
+/* 종목이 늘어나면 헤더에 가로로 다 못 늘어놓는 문제가 있어서(예전 pill 방식) 헤더엔 이 토글
+   버튼 하나만 두고, 실제 목록은 아래 "Watchlist Sidebar" 섹션의 왼쪽 사이드바로 확장함. */
 
 .watchlist-row {
   margin-top: 1.5rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  flex-wrap: wrap;
+}
+
+.watchlist-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(30, 64, 175, 0.15);
+  border: 1px solid rgba(129, 140, 248, 0.6);
+  cursor: pointer;
+}
+
+.watchlist-open-btn:hover {
+  background: rgba(30, 64, 175, 0.3);
 }
 
 .watchlist-row-label {
@@ -134,49 +149,137 @@ body.raven-result-bg {
   color: var(--text-main);
 }
 
-.watchlist-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: center;
-}
-
-.watchlist-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0.25rem 0.5rem 0.25rem 0.7rem;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  background: rgba(30, 64, 175, 0.15);
-  border: 1px solid rgba(129, 140, 248, 0.6);
-  color: #e5e7eb;
-  cursor: pointer;
-}
-
-.watchlist-pill:hover {
-  background: rgba(30, 64, 175, 0.3);
-}
-
-/* 종목마다 글자수가 달라도 항상 별표가 같은 위치에서 시작하도록 라벨 앞에 고정 배치 */
-.watchlist-pill-star {
+.watchlist-count {
+  font-size: 0.8rem;
+  font-weight: 700;
   color: var(--macro-note);
-  font-size: 11px;
 }
 
-.watchlist-pill-remove {
+/* ───────── Watchlist Sidebar ───────── */
+
+.watchlist-sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 5000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.watchlist-sidebar-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.watchlist-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(320px, 82vw);
+  background: var(--bg-card);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 8px 0 30px rgba(0, 0, 0, 0.4);
+  z-index: 5001;
+  transform: translateX(-100%);
+  transition: transform 0.28s ease;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.watchlist-sidebar.open {
+  transform: translateX(0);
+}
+
+.watchlist-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.watchlist-sidebar-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.watchlist-sidebar-close {
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.watchlist-sidebar-close:hover {
+  color: #f87171;
+}
+
+.watchlist-sidebar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.watchlist-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.6rem 0.7rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.watchlist-sidebar-item:hover {
+  background: rgba(30, 64, 175, 0.2);
+}
+
+.watchlist-sidebar-item-star {
+  color: var(--macro-note);
+  font-size: 13px;
+  flex: 0 0 auto;
+}
+
+.watchlist-sidebar-item-label {
+  flex: 1 1 auto;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-main);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.watchlist-sidebar-item-remove {
+  flex: 0 0 auto;
   border: none;
   background: transparent;
   color: #ffffff99;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1;
   cursor: pointer;
-  padding: 2px;
+  padding: 2px 4px;
 }
 
-.watchlist-pill-remove:hover {
+.watchlist-sidebar-item-remove:hover {
   color: #f87171;
+}
+
+.watchlist-sidebar-empty {
+  color: var(--text-sub);
+  font-size: 0.85rem;
+  text-align: center;
+  margin-top: 1rem;
 }
 
 .ticker-symbol-row {

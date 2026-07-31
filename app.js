@@ -3187,59 +3187,97 @@ async function removeFromWatchlist(symbol) {
   }
 }
 
-function renderWatchlistPills(list) {
+// 관심종목 목록 렌더링 — 헤더에는 토글 버튼(개수 표시)만 두고, 실제 목록은 왼쪽 사이드바에
+// 세로로 나열함(예전엔 헤더에 가로 pill로 늘어놓아서 종목이 많아지면 한 줄에 다 안 들어갔음).
+function renderWatchlistSidebar(list) {
   const row = $("watchlist-row");
-  const pillsEl = $("watchlist-pills");
-  if (!row || !pillsEl) return;
+  const countEl = $("watchlist-count");
+  const listEl = $("watchlist-sidebar-list");
+  const emptyEl = $("watchlist-sidebar-empty");
+  if (!row || !listEl) return;
 
   watchlistCache = list;
 
   if (!list.length) {
     row.classList.add("hidden");
-    pillsEl.innerHTML = "";
+    listEl.innerHTML = "";
+    if (emptyEl) emptyEl.classList.remove("hidden");
+    closeWatchlistSidebar();
     return;
   }
 
-  pillsEl.innerHTML = "";
+  if (countEl) countEl.textContent = `(${list.length})`;
+  if (emptyEl) emptyEl.classList.add("hidden");
+
+  listEl.innerHTML = "";
   list.forEach((item) => {
-    const pill = document.createElement("span");
-    pill.className = "watchlist-pill";
+    const row2 = document.createElement("div");
+    row2.className = "watchlist-sidebar-item";
 
     const star = document.createElement("span");
-    star.className = "watchlist-pill-star";
+    star.className = "watchlist-sidebar-item-star";
     star.textContent = "★";
-    pill.appendChild(star);
+    row2.appendChild(star);
 
     const label = document.createElement("span");
-    label.textContent = item.name || item.symbol;
-    label.addEventListener("click", () => runAnalysisForTicker(item.symbol));
-    pill.appendChild(label);
+    label.className = "watchlist-sidebar-item-label";
+    label.textContent = item.name ? `${item.name} (${item.symbol})` : item.symbol;
+    label.addEventListener("click", () => {
+      runAnalysisForTicker(item.symbol);
+      closeWatchlistSidebar();
+    });
+    row2.appendChild(label);
 
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
-    removeBtn.className = "watchlist-pill-remove";
+    removeBtn.className = "watchlist-sidebar-item-remove";
     removeBtn.textContent = "×";
     removeBtn.title = "관심종목에서 삭제";
     removeBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
       const ok = await removeFromWatchlist(item.symbol);
       if (ok) {
-        renderWatchlistPills(watchlistCache.filter((w) => w.symbol !== item.symbol));
+        renderWatchlistSidebar(watchlistCache.filter((w) => w.symbol !== item.symbol));
         updateWatchlistStarState();
       } else {
         showToast("관심종목 삭제에 실패했습니다.");
       }
     });
-    pill.appendChild(removeBtn);
+    row2.appendChild(removeBtn);
 
-    pillsEl.appendChild(pill);
+    listEl.appendChild(row2);
   });
 
   row.classList.remove("hidden");
 }
 
 async function refreshWatchlistPanel() {
-  renderWatchlistPills(await fetchWatchlist());
+  renderWatchlistSidebar(await fetchWatchlist());
+}
+
+// 사이드바 열기/닫기 — backdrop은 display:none(.hidden)과 opacity 트랜지션을 같이 쓰기 때문에,
+// 열 때는 hidden을 먼저 지우고 다음 프레임에 opacity를 올리고, 닫을 때는 opacity를 먼저 내리고
+// 트랜지션이 끝난 뒤 hidden을 다시 붙여야 자연스럽게 페이드된다.
+function openWatchlistSidebar() {
+  const sidebar = $("watchlist-sidebar");
+  const backdrop = $("watchlist-sidebar-backdrop");
+  if (!sidebar || !backdrop) return;
+
+  backdrop.classList.remove("hidden");
+  requestAnimationFrame(() => {
+    backdrop.classList.add("open");
+    sidebar.classList.add("open");
+  });
+}
+
+function closeWatchlistSidebar() {
+  const sidebar = $("watchlist-sidebar");
+  const backdrop = $("watchlist-sidebar-backdrop");
+  if (!sidebar || !backdrop) return;
+
+  sidebar.classList.remove("open");
+  backdrop.classList.remove("open");
+  setTimeout(() => backdrop.classList.add("hidden"), 250);
 }
 
 // 현재 분석 중인 종목이 관심종목에 있는지에 따라 별표 아이콘 상태 갱신
@@ -3460,11 +3498,23 @@ document.addEventListener("DOMContentLoaded", () => {
   attachTickerAutocomplete($("entry-ticker"));
   attachTickerAutocomplete($("ticker-input"));
 
-  // ★ 관심종목 — 헤더 패널 초기 로드 + 별표 토글 버튼
+  // ★ 관심종목 — 사이드바 목록 초기 로드 + 별표 토글 버튼 + 사이드바 열기/닫기
   refreshWatchlistPanel();
   const watchlistStarBtn = $("watchlist-toggle-btn");
   if (watchlistStarBtn) {
     watchlistStarBtn.addEventListener("click", toggleWatchlistForCurrentTicker);
+  }
+  const watchlistOpenBtn = $("watchlist-open-btn");
+  if (watchlistOpenBtn) {
+    watchlistOpenBtn.addEventListener("click", openWatchlistSidebar);
+  }
+  const watchlistSidebarClose = $("watchlist-sidebar-close");
+  if (watchlistSidebarClose) {
+    watchlistSidebarClose.addEventListener("click", closeWatchlistSidebar);
+  }
+  const watchlistSidebarBackdrop = $("watchlist-sidebar-backdrop");
+  if (watchlistSidebarBackdrop) {
+    watchlistSidebarBackdrop.addEventListener("click", closeWatchlistSidebar);
   }
 
   // 🤖 AI 서술 분석 요청 버튼
