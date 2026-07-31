@@ -95,34 +95,55 @@ function detectVolumeSurge(opens, closes, volumes) {
 // (3일=경계, 5일=확실한 신호)이 공통적으로 "5일부터 확실한 신호"로 보는 것과 일치시킴
 // (2026-07-31 리서치 후 결정 — project memory 참고).
 const INVESTOR_STREAK_ALERT_MIN_DAYS = 5;
+// 5일 미만이라 단독 트리거는 못 되지만, 다른 신호가 이미 뜬 경우 "참고 근거"로 신뢰도에 반영하는
+// 하한선 — 사용자 요청("3일 연속 수급까지 붙으면 신뢰도 상승")에 맞춰 화면 서술과 같은 3일로 통일.
+const INVESTOR_STREAK_CONFIRM_MIN_DAYS = 3;
 
+// 외국인/기관 각각의 스트릭을 "5일+ 독립 트리거"와 "3~4일 참고용(신뢰도 보너스)"으로 분류.
+// 같은 투자자 유형(예: 외국인)이 두 버킷에 동시에 들어가는 일은 없음(streak.days로 한쪽만 해당).
 async function detectInvestorStreakSignal(symbol) {
-  if (!isDomesticSymbol(symbol)) return { signal: "NONE", reasons: [] };
+  if (!isDomesticSymbol(symbol)) {
+    return { signal: "NONE", reasons: [], confirmSignal: "NONE", confirmReasons: [] };
+  }
 
   const history = await getInvestorTrendHistory(symbol, 15);
   const frgnStreak = computeStreak(history, "frgn_ntby_qty");
   const orgnStreak = computeStreak(history, "orgn_ntby_qty");
 
   const reasons = [];
+  const confirmReasons = [];
   let signal = "NONE";
+  let confirmSignal = "NONE";
 
-  if (frgnStreak && frgnStreak.days >= INVESTOR_STREAK_ALERT_MIN_DAYS) {
-    const verb = frgnStreak.direction === "BUY" ? "순매수" : "순매도";
-    reasons.push(
-      `외국인 ${frgnStreak.days}일 연속 ${verb}(누적 ${Math.abs(frgnStreak.cumulative).toLocaleString()}주)`
-    );
-    signal = frgnStreak.direction;
-  }
-  if (orgnStreak && orgnStreak.days >= INVESTOR_STREAK_ALERT_MIN_DAYS) {
-    const verb = orgnStreak.direction === "BUY" ? "순매수" : "순매도";
-    reasons.push(
-      `기관 ${orgnStreak.days}일 연속 ${verb}(누적 ${Math.abs(orgnStreak.cumulative).toLocaleString()}주)`
-    );
-    // 매도 우선 정책 — 외국인이 BUY 스트릭이어도 기관이 SELL 스트릭이면 SELL로 덮어씀
-    if (orgnStreak.direction === "SELL" || signal === "NONE") signal = orgnStreak.direction;
-  }
+  const consider = (streak, label) => {
+    if (!streak || streak.days < INVESTOR_STREAK_CONFIRM_MIN_DAYS) return;
+    const verb = streak.direction === "BUY" ? "순매수" : "순매도";
+    const text = `${label} ${streak.days}일 연속 ${verb}(누적 ${Math.abs(streak.cumulative).toLocaleString()}주)`;
 
-  return { signal, reasons };
+    if (streak.days >= INVESTOR_STREAK_ALERT_MIN_DAYS) {
+      reasons.push(text);
+      // 매도 우선 정책 — 이미 BUY였어도 SELL 스트릭이면 덮어씀
+      if (streak.direction === "SELL" || signal === "NONE") signal = streak.direction;
+    } else {
+      confirmReasons.push(text);
+      if (streak.direction === "SELL" || confirmSignal === "NONE") confirmSignal = streak.direction;
+    }
+  };
+
+  consider(frgnStreak, "외국인");
+  consider(orgnStreak, "기관");
+
+  return { signal, reasons, confirmSignal, confirmReasons };
+}
+
+// 몇 개의 "독립 근거 카테고리"(골든/데드크로스, 거래량급증, 연속매매 5일+)가 최종 신호와 같은
+// 방향을 가리키는지로 신뢰도를 매김 — 사용자 요청: "기존 알고리즘에 +알파로 신뢰도를 쌓는" 개념.
+// 3~4일 연속매매(confirmSignal)는 그 자체로 카테고리는 아니지만, 방향이 일치하면 보너스로 +1.
+function rateConfidence(matchingCategories) {
+  if (matchingCategories >= 3) return "매우 높음";
+  if (matchingCategories === 2) return "높음";
+  if (matchingCategories === 1) return "보통";
+  return "NONE";
 }
 
 // 종목 하나에 대해 골든/데드크로스 + 거래량 급증 + 외국인/기관 연속매매(5일+)를 합쳐
@@ -135,7 +156,7 @@ async function checkSignal(symbol) {
   const volSurge = detectVolumeSurge(opens, closes, volumes);
   const streakResult = await detectInvestorStreakSignal(symbol).catch((e) => {
     console.error(`[RAVEN] 연속매매 신호 체크 실패 (${symbol}):`, e.message);
-    return { signal: "NONE", reasons: [] };
+    return { signal: "NONE", reasons: [], confirmSignal: "NONE", confirmReasons: [] };
   });
   // 프로그램매매/공매도·대차 조합도 국내(KIS 수급데이터)만 가능 — 해외는 애초에 캐시가 없어서
   // 호출해도 항상 NONE이지만, 불필요한 Supabase 조회 자체를 스킵하도록 미리 걸러둠.
@@ -146,42 +167,67 @@ async function checkSignal(symbol) {
       })
     : { signal: "NONE", reasons: [] };
 
+  // 카테고리별 방향/근거를 먼저 각자 계산 — 최종 신호를 정하기 전에 "몇 개가 같은 방향을
+  // 가리키는지"를 신뢰도 산정에 써야 하므로, 매도 우선 override와 분리해서 처리함.
+  const categories = [
+    {
+      dir: maCross === "GOLDEN" ? "BUY" : maCross === "DEAD" ? "SELL" : "NONE",
+      reasons:
+        maCross === "GOLDEN"
+          ? ["MA20이 MA60을 상향 돌파 (골든크로스)"]
+          : maCross === "DEAD"
+          ? ["MA20이 MA60을 하향 돌파 (데드크로스)"]
+          : [],
+    },
+    {
+      dir: volSurge,
+      reasons:
+        volSurge === "BUY"
+          ? ["평균 대비 2배 이상 거래량 급증 + 상승 마감"]
+          : volSurge === "SELL"
+          ? ["평균 대비 2배 이상 거래량 급증 + 하락 마감"]
+          : [],
+    },
+    { dir: streakResult.signal, reasons: streakResult.reasons },
+  ];
+
   let signal = "NONE";
+  if (categories.some((c) => c.dir === "SELL")) signal = "SELL";
+  else if (categories.some((c) => c.dir === "BUY")) signal = "BUY";
+
   const reasons = [];
+  let matchingCategories = 0;
+  if (signal !== "NONE") {
+    categories.forEach((c) => {
+      if (c.dir === signal) {
+        reasons.push(...c.reasons);
+        matchingCategories++;
+      }
+    });
 
-  if (maCross === "GOLDEN") {
-    signal = "BUY";
-    reasons.push("MA20이 MA60을 상향 돌파 (골든크로스)");
-  }
-  if (maCross === "DEAD") {
-    signal = "SELL";
-    reasons.push("MA20이 MA60을 하향 돌파 (데드크로스)");
-  }
-  if (volSurge === "BUY" && signal !== "SELL") {
-    signal = "BUY";
-    reasons.push("평균 대비 2배 이상 거래량 급증 + 상승 마감");
-  }
-  if (volSurge === "SELL") {
-    signal = "SELL";
-    reasons.push("평균 대비 2배 이상 거래량 급증 + 하락 마감");
-  }
-  if (streakResult.signal === "BUY" && signal !== "SELL") {
-    signal = "BUY";
-    reasons.push(...streakResult.reasons);
-  }
-  if (streakResult.signal === "SELL") {
-    signal = "SELL";
-    reasons.push(...streakResult.reasons);
-  }
+    // 프로그램매매/공매도·대차 조합은 하루 스냅샷이라 그 자체로 독립 카테고리는 아니지만,
+    // 방향이 일치하면 근거+신뢰도 둘 다에 반영(2026-07-31 설계 결정 — 알림 스팸 방지 위해
+    // 단독 트리거로는 안 씀).
+    if (comboResult.signal === signal && comboResult.reasons.length) {
+      reasons.push(...comboResult.reasons);
+      matchingCategories++;
+    }
 
-  // 프로그램매매/공매도·대차 조합은 하루 스냅샷이라 그 자체로 독립 알림을 만들지 않고, 위에서 이미
-  // 신호가 확정된 경우에만(방향이 같을 때) 근거 문구로 덧붙임 — 지속성 근거가 있는 연속매매와 달리
-  // 단독 트리거로 쓰기엔 매일 나올 수 있어 알림 스팸 위험이 있다고 판단(2026-07-31 설계 결정).
-  if (signal !== "NONE" && comboResult.signal === signal) {
-    reasons.push(...comboResult.reasons);
+    // 연속매매가 5일 미만(3~4일)이라 독립 트리거는 아니었어도, 이미 다른 신호로 방향이 정해졌다면
+    // "참고 근거"로 신뢰도에 반영 — 사용자 요청("3일 연속 수급까지 붙으면 신뢰도 상승").
+    if (streakResult.confirmSignal === signal && streakResult.confirmReasons.length) {
+      reasons.push(...streakResult.confirmReasons);
+      matchingCategories++;
+    }
   }
 
-  return { symbol, signal, reasons, price: closes[closes.length - 1] };
+  return {
+    symbol,
+    signal,
+    reasons,
+    confidence: rateConfidence(matchingCategories),
+    price: closes[closes.length - 1],
+  };
 }
 
 module.exports = { checkSignal };

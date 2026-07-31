@@ -15,6 +15,15 @@ function formatSymbolLabel(symbol, name) {
   return name ? `${name} (${symbol})` : symbol;
 }
 
+// 신뢰도(confidence)는 몇 개의 독립 근거(골든/데드크로스, 거래량급증, 연속매매 5일+, 수급조합/3일+
+// 참고근거)가 같은 방향을 가리키는지로 매겨짐(signalDetector.js의 rateConfidence 참고) — 근거가
+// 하나뿐인 신호와 여러 개가 겹친 신호를 한눈에 구분할 수 있게 메시지에 노출.
+function formatConfidenceLabel(confidence) {
+  if (confidence === "매우 높음") return "🔥 신뢰도 매우 높음";
+  if (confidence === "높음") return "⭐ 신뢰도 높음";
+  return "신뢰도 보통";
+}
+
 function formatAlertMessage(result, domestic, name) {
   const label = result.signal === "BUY" ? "🟢 매수 신호" : "🔴 매도 신호";
   const priceTxt = domestic
@@ -22,6 +31,7 @@ function formatAlertMessage(result, domestic, name) {
     : `$${result.price.toFixed(2)}`;
   return (
     `<b>[RAVEN 알림] ${formatSymbolLabel(result.symbol, name)} — ${label}</b>\n` +
+    `${formatConfidenceLabel(result.confidence)}\n` +
     `현재가: ${priceTxt}\n` +
     result.reasons.map((r) => `• ${r}`).join("\n")
   );
