@@ -277,56 +277,54 @@
       </div>
     </div>
 
-    <!-- 차트 영역 -->
-    <div id="tv-chart" class="chart-container"></div>
+    <!-- 데스크톱(≥1024px)에서는 이 두 컬럼이 좌우로 나란히 배치됨(style.css의 .result-columns 참고) —
+         왼쪽: 차트+RAVEN SIGNAL+목표가(한눈에 보는 요약), 오른쪽: 상세 탭+AI 분석(더 깊이 보고 싶을 때).
+         모바일(기본값)에서는 각 컬럼이 그냥 평범한 블록이라 기존 세로 스택 순서 그대로 유지됨. -->
+    <div class="result-columns">
+      <div class="result-col-left">
+        <!-- 차트 영역 -->
+        <div id="tv-chart" class="chart-container"></div>
 
-    <!-- ===== 섹션 1: 최종 요약 (항상 표시) ===== -->
-    <div class="strategy-box">
-      <h3>⚡ RAVEN SIGNAL</h3>
-      <p id="strategy-main" class="strategy-main">
-        현재 자리의 전략적 의미가 여기에 표시됩니다.
-      </p>
-      <div id="strategy-detail" class="strategy-detail">
-        지지·저항, R:R, 모멘텀을 종합해 진입/관망 여부를 요약합니다.
-      </div>
-    </div>
+        <!-- ===== 섹션 1: 최종 요약 (항상 표시) ===== -->
+        <div class="strategy-box">
+          <h3>⚡ RAVEN SIGNAL</h3>
+          <p id="strategy-main" class="strategy-main">
+            현재 자리의 전략적 의미가 여기에 표시됩니다.
+          </p>
+          <div id="strategy-detail" class="strategy-detail">
+            지지·저항, R:R, 모멘텀을 종합해 진입/관망 여부를 요약합니다.
+          </div>
+        </div>
 
-    <!-- 가격 타겟 (Wave 수치 통합) -->
-    <div class="target-row">
-      <div class="target-box target-1">
-        <h4>🎯 1차 목표가</h4>
-        <p id="target1-txt">$0.00</p>
+        <!-- 가격 타겟 (Wave 수치 통합) -->
+        <div class="target-row">
+          <div class="target-box target-1">
+            <h4>🎯 1차 목표가</h4>
+            <p id="target1-txt">$0.00</p>
+          </div>
+          <div class="target-box target-2">
+            <h4>🎯 2차 목표가</h4>
+            <p id="target2-txt">$0.00</p>
+          </div>
+          <div class="target-box stop-loss">
+            <h4>🛑 손절가 (Stop)</h4>
+            <p id="stop-txt">$0.00</p>
+          </div>
+        </div>
       </div>
-      <div class="target-box target-2">
-        <h4>🎯 2차 목표가</h4>
-        <p id="target2-txt">$0.00</p>
-      </div>
-      <div class="target-box stop-loss">
-        <h4>🛑 손절가 (Stop)</h4>
-        <p id="stop-txt">$0.00</p>
-      </div>
-    </div>
 
-    <!-- 🤖 AI 서술 분석 (버튼 클릭 시에만 호출 — 호출당 비용 발생하므로 자동 실행 안 함) -->
-    <div class="ai-analysis-box">
-      <button type="button" id="ai-analyze-btn" class="ai-analyze-btn">🤖 AI 분석 요청</button>
-      <div id="ai-analysis-result" class="ai-analysis-result hidden">
-        <h3>🤖 AI 서술 분석</h3>
-        <p id="ai-analysis-txt"></p>
-      </div>
-    </div>
+      <div class="result-col-right">
+        <!-- ===== 탭 영역: 추세·모멘텀 / 수급 / 패턴·신호 / 실적 / 뉴스 ===== -->
+        <div class="tabs-bar" role="tablist">
+          <button type="button" class="tab-btn active" data-tab="trend">📈 추세·모멘텀</button>
+          <button type="button" class="tab-btn" data-tab="supply">💰 수급</button>
+          <button type="button" class="tab-btn" data-tab="pattern">📊 패턴·신호</button>
+          <button type="button" class="tab-btn" data-tab="fund">🏦 실적</button>
+          <button type="button" class="tab-btn" data-tab="news">📰 뉴스</button>
+        </div>
 
-    <!-- ===== 탭 영역: 추세·모멘텀 / 수급 / 패턴·신호 / 실적 / 뉴스 ===== -->
-    <div class="tabs-bar" role="tablist">
-      <button type="button" class="tab-btn active" data-tab="trend">📈 추세·모멘텀</button>
-      <button type="button" class="tab-btn" data-tab="supply">💰 수급</button>
-      <button type="button" class="tab-btn" data-tab="pattern">📊 패턴·신호</button>
-      <button type="button" class="tab-btn" data-tab="fund">🏦 실적</button>
-      <button type="button" class="tab-btn" data-tab="news">📰 뉴스</button>
-    </div>
-
-    <div class="tabs-viewport">
-      <div id="tabs-track" class="tabs-track">
+        <div class="tabs-viewport">
+          <div id="tabs-track" class="tabs-track">
         <div class="tab-panel" data-tab-panel="trend">
           <div class="section-box">
             <h3>📈 추세</h3>
@@ -428,6 +426,19 @@
             <h3>📰 관련 뉴스</h3>
             <div id="news-empty" class="earnings-empty hidden">분석 중...</div>
             <ul id="news-list" class="news-list hidden"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+        <!-- 🤖 AI 서술 분석 (버튼 클릭 시에만 호출 — 호출당 비용 발생하므로 자동 실행 안 함) —
+             데스크톱 2컬럼 레이아웃에서는 상세 탭과 같은 오른쪽 컬럼 맨 아래에 위치(왼쪽은 "한눈에
+             보는 요약", 오른쪽은 "더 파고드는 상세"라는 역할 분리를 따름). -->
+        <div class="ai-analysis-box">
+          <button type="button" id="ai-analyze-btn" class="ai-analyze-btn">🤖 AI 분석 요청</button>
+          <div id="ai-analysis-result" class="ai-analysis-result hidden">
+            <h3>🤖 AI 서술 분석</h3>
+            <p id="ai-analysis-txt"></p>
           </div>
         </div>
       </div>

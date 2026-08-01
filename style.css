@@ -535,6 +535,34 @@ body.raven-result-bg {
   border: 1px solid rgba(255,255,255,0.05);
 }
 
+/* ───────── 결과 화면 데스크톱 2컬럼 레이아웃 (2026-08-01) ─────────
+   모바일(기본값)에서는 .result-col-left/.result-col-right가 그냥 평범한 블록이라
+   기존 세로 스택 순서 그대로 유지됨 — 아래 미디어쿼리만 데스크톱 폭에서 좌우로 갈라놓음.
+   토스증권 데스크톱 UI(차트가 넓은 메인 패널, 상세정보가 옆 패널)에서 배치 감각만 참고함. */
+@media (min-width: 1024px) {
+  .card {
+    max-width: 1320px;
+  }
+
+  .result-columns {
+    display: grid;
+    grid-template-columns: 1.15fr 0.9fr;
+    gap: 1.75rem;
+    align-items: start;
+  }
+
+  .result-col-left,
+  .result-col-right {
+    min-width: 0; /* 그리드 자식이 내용물 때문에 억지로 넓어지는 것 방지 */
+  }
+
+  /* 오른쪽 컬럼(상세 탭)이 왼쪽보다 좁아서, 지표 5칸을 그대로 두면 칸이 너무 좁아짐 —
+     이 폭에서는 3칸(2줄)으로 줄여서 여유있게 보이게 함. */
+  .result-col-right .indicator-row {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 .hidden {
   display: none;
 }
