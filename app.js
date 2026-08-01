@@ -20,7 +20,7 @@ let fxRateKRW = null;
 
 // 헤드라인 지수/매크로 지표의 마지막 값 스냅샷 — { value, changePct } 형태로 id별 저장.
 // AI 분석 요청 시 "화면에 보이는 개별 종목 지표뿐 아니라 오늘 시장 전반 분위기"를 같이 보내기 위한
-// 용도(요청받은 AI 알고리즘 업그레이드, 2026-08-01) — renderIndexChip()과 fetchMacroData()에서 채움.
+// 용도(요청받은 AI 알고리즘 업그레이드, 2026-08-01) — renderIndexChip()에서 채움.
 let marketSnapshot = {};
 let lastAnalysis = null;
 
@@ -744,68 +744,6 @@ async function fetchFxRate() {
   return null;
 }
 
-// 3-3. 매크로 바 데이터 (+ Regime 태그) — 환율은 2026-08-01부터 헤드라인 지수 칩(fetchIndexData)으로
-// 이동해서 여기서는 더 이상 다루지 않음(정성적 "원화 약세" 멘트 스타일 자체를 없애고 다른 지수들과
-// 동일한 ▲/▼% 칩 형태로 통일하기 위함 — 사용자 요청).
-async function fetchMacroData() {
-  try {
-    const [tnx, vix, oil] = await Promise.all([
-      fetchYahooChart("^TNX", "1d", "1d").catch(() => null),
-      fetchYahooChart("^VIX", "1d", "1d").catch(() => null),
-      fetchYahooChart("CL=F", "1d", "1d").catch(() => null)
-    ]);
-
-    // 미국10년물 — Yahoo ^TNX(CBOE Interest Rate 10 Year T No)는 이미 실제 금리(%) 값을 그대로 줌
-    // (예: 4.679 = 4.679%). 예전엔 10배 스케일 지수로 착각해 /10을 해서 0.47%처럼 잘못 표시되던 버그가 있었음.
-    let rate = null;
-    if (tnx) {
-      rate = tnx.lastClose;
-      if ($("macro-rate")) $("macro-rate").textContent = rate.toFixed(2) + "%";
-      let note = "중립 구간";
-      if (rate < 3) note = "저금리, 성장주 우호";
-      else if (rate > 5) note = "고금리, 변동성 주의";
-      if ($("macro-rate-note")) $("macro-rate-note").textContent = note;
-      marketSnapshot.rate10y = { value: rate, note };
-    } else if ($("macro-rate-note")) {
-      $("macro-rate-note").textContent = "데이터 수신 실패";
-    }
-
-    // VIX
-    let vixVal = null;
-    if (vix) {
-      vixVal = vix.lastClose;
-      if ($("macro-vix")) $("macro-vix").textContent = vixVal.toFixed(1);
-      let note = "보통 변동성";
-      if (vixVal < 15) note = "저변동성, 안정 구간";
-      else if (vixVal > 25) note = "고변동성, 주의";
-      if ($("macro-vix-note")) $("macro-vix-note").textContent = note;
-      marketSnapshot.vix = { value: vixVal, note };
-    } else if ($("macro-vix-note")) {
-      $("macro-vix-note").textContent = "데이터 수신 실패";
-    }
-
-    // 유가 (WTI 원유 선물) — 기준값은 최근 5년(2021~2026) 주봉 실데이터 분포로 보정함
-    // (하위 10분위 ≈ $62.7, 상위 10분위 ≈ $97.6, 중앙값 $76.3 — 처음엔 감으로 잡은 <60/>90이었는데
-    // 실측해보니 대략 맞았어서 반올림한 값으로 다듬기만 함, 큰 변경은 아님)
-    let oilVal = null;
-    if (oil) {
-      oilVal = oil.lastClose;
-      if ($("macro-oil"))
-        $("macro-oil").textContent =
-          "$" + oilVal.toFixed(2);
-      let note = "중립 구간";
-      if (oilVal > 95) note = "고유가, 인플레이션 압력 주의";
-      else if (oilVal < 65) note = "저유가, 에너지주 부담";
-      if ($("macro-oil-note")) $("macro-oil-note").textContent = note;
-      marketSnapshot.oil = { value: oilVal, note };
-    } else if ($("macro-oil-note")) {
-      $("macro-oil-note").textContent = "데이터 수신 실패";
-    }
-
-  } catch (e) {
-    console.warn("[RAVEN] Macro fetch error:", e);
-  }
-}
 
 // 3-4. 헤드라인 지수 8개(4열x2행) + 펼치기 패널의 지수/선물 2종 — 전부 지수/선물/환율이라
 // KIS 미지원, 매크로 지표와 동일하게 Yahoo Finance로 조회. 코스피/코스닥도 KIS 종목시세 API가
@@ -823,13 +761,20 @@ const HEADLINE_INDEXES = [
   { id: "fx", symbol: "KRW=X", prefix: "₩", decimals: 0 }
 ];
 
-// 코스피 선물(KOSPI200 야간선물)은 조사 결과 Yahoo Finance에 해당 티커가 없어서 제외함
-// (KRX/Eurex 야간선물 전용 데이터는 별도 유료 데이터벤더 라이선스가 필요 — 2026-08-01 확인).
-// 다우존스는 헤드라인 8개(코스피/코스닥/나스닥/나스닥선물/S&P500/S&P500선물/필라델피아/환율)에서
-// 빠지면서 펼치기 패널로 이동 — 여기도 헤드라인과 같은 칩 스타일로 렌더링(질적 해석 멘트 없음).
+// 코스피 야간선물(idx-kospi-night)은 HTML에 자리만 마련해두고 여기 목록엔 없음 — Yahoo Finance에
+// 해당 티커가 없고(KRX/Eurex 야간선물은 유료 데이터벤더 라이선스 필요), 조사해둔 비공식 무료
+// API(kred.dev)는 실제 연동 여부를 사용자가 아직 확정하지 않아 "연동 예정" 표시만 해둔 상태.
+// 다우존스/러셀2000선물은 헤드라인 8개에서 빠지면서 펼치기 패널로 이동, 미국10년물/VIX/유가는
+// 2026-08-01부터 기존 macro-box(라벨+값+해석문구) 대신 다른 지수와 동일한 칩 스타일로 통일함
+// (세로 정렬·크기가 서로 달라 보이던 문제 — 사용자 피드백으로 통일).
 const EXPANDED_CHIPS = [
   { id: "dow", symbol: "^DJI" },
-  { id: "rty-fut", symbol: "RTY=F" }
+  { id: "rty-fut", symbol: "RTY=F" },
+  // ^TNX(미국10년물)는 Yahoo가 이미 실제 금리(%) 값을 그대로 줌(예: 4.68=4.68%) — 10배 스케일
+  // 지수로 착각해 /10 하던 예전 버그가 있었으니 재발 방지 차 이 주석을 남겨둠.
+  { id: "rate10y", symbol: "^TNX", suffix: "%" },
+  { id: "vix", symbol: "^VIX", decimals: 1 },
+  { id: "oil", symbol: "CL=F", prefix: "$" }
 ];
 
 function renderIndexChip(id, chartData, opts = {}) {
@@ -852,13 +797,14 @@ function renderIndexChip(id, chartData, opts = {}) {
   const cls = changePct > 0 ? "sentiment-pos" : changePct < 0 ? "sentiment-neg" : "";
   const decimals = opts.decimals ?? 2;
   const prefix = opts.prefix || "";
+  const suffix = opts.suffix || "";
 
   marketSnapshot[id] = { value: lastClose, changePct };
 
   animateNumberText(
     valueEl,
     lastClose,
-    (v) => prefix + v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+    (v) => prefix + v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + suffix
   );
   changeEl.textContent = `${arrow} ${Math.abs(changePct).toFixed(2)}%`;
   changeEl.className = `index-chip-change ${cls}`;
@@ -872,8 +818,8 @@ async function fetchIndexData() {
 
   chipDefs.forEach((def, i) => {
     renderIndexChip(def.id, results[i], def);
-    // fetchFxRate()가 쓰는 기존 캐시 변수 — 예전엔 fetchMacroData()의 KRW 블록이 채워주던 부수효과인데,
-    // 환율이 이 칩 파이프라인으로 옮겨오면서 여기서 대신 채움(다른 곳의 환율 캐시 동작은 그대로 유지).
+    // fetchFxRate()가 쓰는 기존 캐시 변수 — 환율 칩이 렌더링될 때마다 같이 채워서 다른 곳(포지션
+    // 계산기 등)의 환율 캐시도 최신 상태로 유지.
     if (def.id === "fx" && results[i] && typeof results[i].lastClose === "number") {
       fxRateKRW = results[i].lastClose;
     }
@@ -4254,9 +4200,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  fetchMacroData().catch((e) =>
-    console.warn("[RAVEN] macro fetch on load failed:", e)
-  );
   fetchIndexData().catch((e) =>
     console.warn("[RAVEN] index fetch on load failed:", e)
   );

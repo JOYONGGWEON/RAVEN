@@ -27,12 +27,18 @@
     <!-- 🔒 엔트리 → 메인 화면 전환용 백드롭 (오버레이 뒤, 메인 앞 레이어) -->
     <div id="entry-backdrop" class="entry-backdrop hidden"></div>
 
-    <!-- 1) PIN 화면 -->
+    <!-- 1) PIN 화면 — 다른 두 화면(인트로/엔트리)의 정적인 무지개빛 링 대신, 실제 까마귀 로고
+         이미지를 중심에 두고 그 주위를 검은 원호가 로딩 스피너처럼 도는 전용 애니메이션을 씀
+         (사용자 요청: "로딩 링처럼 까만 원형색이 돌아가며 순환하는 느낌"). -->
     <div id="lock-screen" class="z-screen show">
       <div class="raven-smoke-bg">
         <div class="raven-smoke-orb"></div>
       </div>
       <div class="z-screen-content">
+        <div class="raven-loading-wrap">
+          <div class="raven-loading-ring"></div>
+          <img src="icons/raven-logo.png" alt="RAVEN" class="raven-loading-logo" />
+        </div>
         <h1 class="raven-title">RAVEN</h1>
         <p class="raven-sub">AI STOCK MANAGER</p>
 
@@ -94,12 +100,43 @@
     </div>
   </div>
 
-  <!-- 상단 헤더 -->
+  <!-- 상단 헤더 — 데스크톱(≥1024px)에서는 .header-columns가 좌(로고+타이틀+검색)/우(지수 대시보드)
+       2컬럼으로 갈라짐(사용자 제공 배치 참고). 모바일(기본값)은 .header-columns/.header-col-*가
+       display:contents라 레이아웃에 관여 안 하고, 로고 이미지 자체도 숨겨서 기존 텍스트 전용 헤더
+       그대로 유지됨(모바일 UI는 별도 다듬기 예정이라 이번엔 건드리지 않음). -->
   <header class="top-header">
-    <h1 class="app-title">R A V E N</h1>
-    <p class="app-sub">🚀Launched by JYG</p>
-    <p class="app-sub app-sub-engine">Ai Stock Analysis Engine v1.0 • Stable Build</p>
+    <div class="header-columns">
+    <div class="header-col-left">
+    <div class="header-brand">
+      <img src="icons/raven-logo.png" alt="RAVEN" class="header-logo" />
+      <div class="header-brand-text">
+        <h1 class="app-title">R A V E N</h1>
+        <p class="app-sub">🚀Launched by JYG</p>
+        <p class="app-sub app-sub-engine">Ai Stock Analysis Engine v1.0 • Stable Build</p>
+      </div>
+    </div>
 
+    <!-- 검색창 (데스크톱에서는 로고 바로 아래, 왼쪽 컬럼에 위치) -->
+    <div class="search-row">
+      <form class="ticker-form" onsubmit="event.preventDefault(); runRaven();">
+        <input
+          id="ticker-input"
+          type="text"
+          placeholder="티커 입력 (예: AMD, TSLA)"
+          autocomplete="off"
+        />
+        <button
+          id="search-btn"
+          type="button"
+          onclick="runRaven()"
+        >
+          ⚡
+        </button>
+      </form>
+    </div>
+    </div>
+
+    <div class="header-col-right">
     <!-- 매크로 바: 헤드라인 8개 지수(4열x2행 — 코스피/코스닥/나스닥/나스닥100선물 /
          S&P500/S&P500선물/필라델피아/환율) 항상 노출, 나머지 5개(다우존스/러셀2000선물 칩 +
          미국10년물/VIX/유가 기존 매크로박스)는 펼치기 버튼으로 확장 -->
@@ -155,6 +192,10 @@
       <span id="macro-toggle-label">▼ 전체 지표 보기 (13)</span>
     </button>
 
+    <!-- 2026-08-01: 5종 전부 헤드라인과 동일한 index-chip 스타일로 통일함(예전엔 10년물/VIX/유가만
+         라벨+값+정성적 해석문구 3줄짜리 macro-box라서 다우존스/러셀선물 칩과 세로 정렬·크기가 안 맞았음
+         — 사용자 피드백으로 통일). 코스피 야간선물은 자리만 마련해두고 데이터 연동은 보류 상태
+         (kred.dev라는 비공식 무료 API를 찾아뒀지만 신뢰도·기준값 확인이 더 필요해서 사용자 확정 대기 중). -->
     <div id="macro-expanded" class="macro-row">
       <div class="index-chip" id="idx-dow">
         <div class="index-chip-label">다우존스</div>
@@ -166,40 +207,28 @@
         <div class="index-chip-value">--</div>
         <div class="index-chip-change">로딩 중...</div>
       </div>
-      <div class="macro-box">
-        <div class="macro-label">미국 10년물</div>
-        <div id="macro-rate" class="macro-value">--</div>
-        <div id="macro-rate-note" class="macro-note">로딩 중...</div>
+      <div class="index-chip index-chip-pending" id="idx-kospi-night">
+        <div class="index-chip-label">코스피 야간선물</div>
+        <div class="index-chip-value">연동 예정</div>
+        <div class="index-chip-change">-</div>
       </div>
-      <div class="macro-box">
-        <div class="macro-label">VIX</div>
-        <div id="macro-vix" class="macro-value">--</div>
-        <div id="macro-vix-note" class="macro-note">로딩 중...</div>
+      <div class="index-chip" id="idx-rate10y">
+        <div class="index-chip-label">미국 10년물</div>
+        <div class="index-chip-value">--</div>
+        <div class="index-chip-change">로딩 중...</div>
       </div>
-      <div class="macro-box">
-        <div class="macro-label">유가(WTI)</div>
-        <div id="macro-oil" class="macro-value">--</div>
-        <div id="macro-oil-note" class="macro-note">로딩 중...</div>
+      <div class="index-chip" id="idx-vix">
+        <div class="index-chip-label">VIX</div>
+        <div class="index-chip-value">--</div>
+        <div class="index-chip-change">로딩 중...</div>
+      </div>
+      <div class="index-chip" id="idx-oil">
+        <div class="index-chip-label">유가(WTI)</div>
+        <div class="index-chip-value">--</div>
+        <div class="index-chip-change">로딩 중...</div>
       </div>
     </div>
-
-    <!-- 검색창 -->
-    <div class="search-row">
-      <form class="ticker-form" onsubmit="event.preventDefault(); runRaven();">
-        <input
-          id="ticker-input"
-          type="text"
-          placeholder="티커 입력 (예: AMD, TSLA)"
-          autocomplete="off"
-        />
-        <button
-          id="search-btn"
-          type="button"
-          onclick="runRaven()"
-        >
-          ⚡
-        </button>
-      </form>
+    </div>
     </div>
 
   </header>
@@ -242,78 +271,83 @@
 
   <!-- 결과 카드 -->
   <section id="result-card" class="card hidden">
-    <!-- 상단 정보: 티커 & 점수 -->
-    <div class="ticker-header-row">
-      <div class="ticker-main">
-        <div class="ticker-symbol-row">
-          <button id="watchlist-toggle-btn" class="watchlist-star" type="button" title="관심종목 추가/삭제">☆</button>
-          <div id="ticker-symbol" class="ticker-symbol">AMD</div>
-        </div>
-
-        <div class="ticker-price-row">
-          <span id="ticker-price" class="ticker-price">$0.00</span>
-          <span id="ticker-price-fx" class="ticker-price-fx"></span>
-          <span id="ticker-change" class="ticker-change">-</span>
-        </div>
-
-        <div class="ticker-status-row">
-          <span id="status-badge" class="status-badge">대기</span>
-          <span id="main-comment" class="main-comment">분석 결과가 여기에 표시됩니다.</span>
-        </div>
-      </div>
-
-      <!-- ▶ RAVEN SCORE (등급 + 점수 통합) -->
-      <div class="z-metrics-column">
-        <div class="z-metrics">
-          <div class="z-badge">
-            <div class="z-badge-label">RAVEN SCORE</div>
-            <div class="z-badge-value">
-              <span id="ai-rank" class="z-badge-grade">-</span>
-              <span id="ai-score" class="z-badge-points">0</span><span id="ai-score-unit" class="z-badge-points-unit">점</span>
-            </div>
-          </div>
-        </div>
-        <p id="z-metrics-caption" class="z-metrics-caption">ℹ️ RAVEN 분석에 의한 자체 점수입니다</p>
-      </div>
-    </div>
-
-    <!-- 데스크톱(≥1024px)에서는 이 두 컬럼이 좌우로 나란히 배치됨(style.css의 .result-columns 참고) —
-         왼쪽: 차트+RAVEN SIGNAL+목표가(한눈에 보는 요약), 오른쪽: 상세 탭+AI 분석(더 깊이 보고 싶을 때).
-         모바일(기본값)에서는 각 컬럼이 그냥 평범한 블록이라 기존 세로 스택 순서 그대로 유지됨. -->
+    <!-- 데스크톱(≥1024px)에서는 이 두 컬럼이 좌우로 나란히 배치되고, 각 컬럼 안의 .result-box가
+         독립된 둥근 카드로 분리됨(사용자 피드백 — "종목명~목표가 한덩이 / 탭 한덩이 / AI분석 한덩이"로
+         나눠서 배경 여백이 자연스럽게 드러나게). 모바일(기본값)에서는 .result-columns/.result-col-*/
+         .result-box가 전부 display:contents라 레이아웃에 전혀 관여하지 않고, 기존처럼 #result-card
+         하나의 카드 안에 세로로 쭉 이어지는 흐름 그대로 유지됨. -->
     <div class="result-columns">
       <div class="result-col-left">
-        <!-- 차트 영역 -->
-        <div id="tv-chart" class="chart-container"></div>
+        <div class="result-box">
+          <!-- 상단 정보: 티커 & 점수 -->
+          <div class="ticker-header-row">
+            <div class="ticker-main">
+              <div class="ticker-symbol-row">
+                <button id="watchlist-toggle-btn" class="watchlist-star" type="button" title="관심종목 추가/삭제">☆</button>
+                <div id="ticker-symbol" class="ticker-symbol">AMD</div>
+              </div>
 
-        <!-- ===== 섹션 1: 최종 요약 (항상 표시) ===== -->
-        <div class="strategy-box">
-          <h3>⚡ RAVEN SIGNAL</h3>
-          <p id="strategy-main" class="strategy-main">
-            현재 자리의 전략적 의미가 여기에 표시됩니다.
-          </p>
-          <div id="strategy-detail" class="strategy-detail">
-            지지·저항, R:R, 모멘텀을 종합해 진입/관망 여부를 요약합니다.
-          </div>
-        </div>
+              <div class="ticker-price-row">
+                <span id="ticker-price" class="ticker-price">$0.00</span>
+                <span id="ticker-price-fx" class="ticker-price-fx"></span>
+                <span id="ticker-change" class="ticker-change">-</span>
+              </div>
 
-        <!-- 가격 타겟 (Wave 수치 통합) -->
-        <div class="target-row">
-          <div class="target-box target-1">
-            <h4>🎯 1차 목표가</h4>
-            <p id="target1-txt">$0.00</p>
+              <div class="ticker-status-row">
+                <span id="status-badge" class="status-badge">대기</span>
+                <span id="main-comment" class="main-comment">분석 결과가 여기에 표시됩니다.</span>
+              </div>
+            </div>
+
+            <!-- ▶ RAVEN SCORE (등급 + 점수 통합) -->
+            <div class="z-metrics-column">
+              <div class="z-metrics">
+                <div class="z-badge">
+                  <div class="z-badge-label">RAVEN SCORE</div>
+                  <div class="z-badge-value">
+                    <span id="ai-rank" class="z-badge-grade">-</span>
+                    <span id="ai-score" class="z-badge-points">0</span><span id="ai-score-unit" class="z-badge-points-unit">점</span>
+                  </div>
+                </div>
+              </div>
+              <p id="z-metrics-caption" class="z-metrics-caption">ℹ️ RAVEN 분석에 의한 자체 점수입니다</p>
+            </div>
           </div>
-          <div class="target-box target-2">
-            <h4>🎯 2차 목표가</h4>
-            <p id="target2-txt">$0.00</p>
+
+          <!-- 차트 영역 -->
+          <div id="tv-chart" class="chart-container"></div>
+
+          <!-- ===== 섹션 1: 최종 요약 (항상 표시) ===== -->
+          <div class="strategy-box">
+            <h3>⚡ RAVEN SIGNAL</h3>
+            <p id="strategy-main" class="strategy-main">
+              현재 자리의 전략적 의미가 여기에 표시됩니다.
+            </p>
+            <div id="strategy-detail" class="strategy-detail">
+              지지·저항, R:R, 모멘텀을 종합해 진입/관망 여부를 요약합니다.
+            </div>
           </div>
-          <div class="target-box stop-loss">
-            <h4>🛑 손절가 (Stop)</h4>
-            <p id="stop-txt">$0.00</p>
+
+          <!-- 가격 타겟 (Wave 수치 통합) -->
+          <div class="target-row">
+            <div class="target-box target-1">
+              <h4>🎯 1차 목표가</h4>
+              <p id="target1-txt">$0.00</p>
+            </div>
+            <div class="target-box target-2">
+              <h4>🎯 2차 목표가</h4>
+              <p id="target2-txt">$0.00</p>
+            </div>
+            <div class="target-box stop-loss">
+              <h4>🛑 손절가 (Stop)</h4>
+              <p id="stop-txt">$0.00</p>
+            </div>
           </div>
         </div>
       </div>
 
       <div class="result-col-right">
+        <div class="result-box">
         <!-- ===== 탭 영역: 추세·모멘텀 / 수급 / 패턴·신호 / 실적 / 뉴스 ===== -->
         <div class="tabs-bar" role="tablist">
           <button type="button" class="tab-btn active" data-tab="trend">📈 추세·모멘텀</button>
@@ -429,17 +463,19 @@
           </div>
         </div>
       </div>
-    </div>
+        </div>
+        </div>
 
         <!-- 🤖 AI 서술 분석 (버튼 클릭 시에만 호출 — 호출당 비용 발생하므로 자동 실행 안 함) —
-             데스크톱 2컬럼 레이아웃에서는 상세 탭과 같은 오른쪽 컬럼 맨 아래에 위치(왼쪽은 "한눈에
-             보는 요약", 오른쪽은 "더 파고드는 상세"라는 역할 분리를 따름). -->
+             데스크톱 2컬럼 레이아웃에서는 상세 탭 박스와 별개의 독립된 카드로 그 아래에 위치. -->
+        <div class="result-box">
         <div class="ai-analysis-box">
           <button type="button" id="ai-analyze-btn" class="ai-analyze-btn">🤖 AI 분석 요청</button>
           <div id="ai-analysis-result" class="ai-analysis-result hidden">
             <h3>🤖 AI 서술 분석</h3>
             <p id="ai-analysis-txt"></p>
           </div>
+        </div>
         </div>
       </div>
     </div>

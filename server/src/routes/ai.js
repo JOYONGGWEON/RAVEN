@@ -68,13 +68,16 @@ function buildPrompt(payload) {
     nasdaq: "나스닥",
     sp500: "S&P500",
     sox: "필라델피아반도체",
-    dow: "다우존스"
+    dow: "다우존스",
+    vix: "VIX"
   };
+  // vix는 2026-08-01부터 다른 지수와 동일한 칩(값+등락률) 형태로 통일돼서, 여기서도 특별취급 없이
+  // 값 자체를 같이 보여줌(수준 자체가 의미 있는 지표라 등락률만으론 부족 — 예: "VIX 16.5(+2.1%)").
   const marketParts = Object.entries(market || {})
     .filter(([, v]) => v && Number.isFinite(v.value))
     .map(([key, v]) => {
-      if (key === "vix") return `VIX ${fmt(v.value, 1)}(${v.note || ""})`;
       const label = MARKET_LABELS[key] || key;
+      if (key === "vix") return `VIX ${fmt(v.value, 1)}(${fmt(v.changePct, 1)}%)`;
       return `${label} ${fmt(v.changePct, 2)}%`;
     });
   if (marketParts.length > 0) {

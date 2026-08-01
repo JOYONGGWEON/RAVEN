@@ -90,9 +90,11 @@ body.raven-result-bg {
   animation: ravenRing 5s ease-in-out infinite;
 }
 
-/* 최상단 텍스트(타이틀/서브타이틀)는 항상 흰색 */
-.top-header > h1,
-.top-header > p {
+/* 최상단 텍스트(타이틀/서브타이틀)는 항상 흰색 — 2026-08-01 데스크톱 헤더 재구성으로 h1/p가
+   .header-brand-text 등 래퍼 안에 한 단계 더 들어가면서 직계 자식(>) 선택자로는 더 이상 안 걸려서
+   자손(descendant) 선택자로 변경함(.top-header 안에 다른 h1/p가 없어서 범위는 그대로 안전). */
+.top-header h1,
+.top-header p {
   color: #ffffff;
 }
 
@@ -114,6 +116,104 @@ body.raven-result-bg {
 .app-sub-engine {
   opacity: 0.9;
   font-size: 0.9rem;
+}
+
+/* ───────── 상단 헤더 데스크톱 2컬럼 (2026-08-01, 사용자 배치 참고) ─────────
+   모바일(기본값)에서는 .header-columns/.header-col-*/.header-brand/.header-brand-text가 전부
+   display:contents라 완전히 투명 — 로고 이미지도 숨겨서 기존 텍스트 전용 헤더 그대로 유지됨. */
+.header-columns,
+.header-col-left,
+.header-col-right,
+.header-brand,
+.header-brand-text {
+  display: contents;
+}
+
+.header-logo {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  /* 데스크톱에서는 큰 중앙 장식 링 대신 작은 원형 로고 이미지가 브랜드 마크 역할을 함 */
+  .top-header::before {
+    display: none;
+  }
+
+  .top-header {
+    text-align: left;
+    max-width: 1320px;
+    margin: 0 auto;
+  }
+
+  .header-columns {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 2.5rem;
+    flex-wrap: wrap;
+  }
+
+  .header-col-left {
+    display: block;
+    flex: 0 1 420px;
+  }
+
+  .header-col-right {
+    display: block;
+    flex: 0 1 620px;
+  }
+
+  .header-col-right .macro-headline {
+    margin: 0 0 0 auto;
+  }
+
+  .header-col-right .macro-toggle-btn {
+    margin-right: 0;
+    text-align: right;
+    display: block;
+  }
+
+  .header-col-right #macro-expanded {
+    justify-content: flex-end;
+  }
+
+  .header-brand {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .header-logo {
+    display: block;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  }
+
+  .header-brand-text {
+    display: block;
+  }
+
+  .header-brand .app-title {
+    font-size: 1.9rem;
+  }
+
+  .header-brand .app-sub {
+    margin-top: 0.15rem;
+    font-size: 0.8rem;
+  }
+
+  .search-row {
+    text-align: left;
+    margin-top: 1.5rem;
+  }
+
+  .ticker-form {
+    margin-left: 0;
+  }
 }
 
 
@@ -380,6 +480,17 @@ body.raven-result-bg {
   text-align: center;
 }
 
+/* 데이터 연동 전 자리만 예약해둔 칩(코스피 야간선물) — 점선 테두리 + 흐린 텍스트로 "아직 없음" 표시 */
+.index-chip-pending {
+  border-style: dashed;
+  opacity: 0.55;
+}
+
+.index-chip-pending .index-chip-value {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 .index-chip-label {
   font-size: 0.72rem;
   color: var(--text-sub);
@@ -535,13 +646,27 @@ body.raven-result-bg {
   border: 1px solid rgba(255,255,255,0.05);
 }
 
-/* ───────── 결과 화면 데스크톱 2컬럼 레이아웃 (2026-08-01) ─────────
-   모바일(기본값)에서는 .result-col-left/.result-col-right가 그냥 평범한 블록이라
-   기존 세로 스택 순서 그대로 유지됨 — 아래 미디어쿼리만 데스크톱 폭에서 좌우로 갈라놓음.
-   토스증권 데스크톱 UI(차트가 넓은 메인 패널, 상세정보가 옆 패널)에서 배치 감각만 참고함. */
+/* ───────── 결과 화면 데스크톱 2컬럼 + 3박스 레이아웃 (2026-08-01, 사용자 피드백 반영) ─────────
+   모바일(기본값)에서는 .result-columns/.result-col-*/.result-box를 전부 display:contents로 만들어
+   레이아웃에서 완전히 "투명"하게 처리 — 그래서 #result-card.card 하나의 배경 안에서 기존 순서
+   그대로 세로로 이어짐(이 규칙들 자체가 모바일에는 아무 영향이 없음, DOM 래퍼만 추가됐을 뿐).
+   데스크톱(≥1024px)에서만 실제 박스로 승격됨: 왼쪽 큰 박스(종목명~차트~SIGNAL~목표가) / 오른쪽
+   위 박스(상세 탭) / 오른쪽 아래 박스(AI 분석) — 3개가 배경 사이 간격이 드러나게 분리됨
+   (사용자가 스크린샷에 표시한 대로, 여백을 그냥 비워두지 말고 박스 자체를 나누라는 요청). */
+.result-columns,
+.result-col-left,
+.result-col-right,
+.result-box {
+  display: contents;
+}
+
 @media (min-width: 1024px) {
   .card {
     max-width: 1320px;
+    background: none;
+    box-shadow: none;
+    border: none;
+    padding: 0;
   }
 
   .result-columns {
@@ -551,9 +676,25 @@ body.raven-result-bg {
     align-items: start;
   }
 
-  .result-col-left,
-  .result-col-right {
+  .result-col-left {
+    display: block;
     min-width: 0; /* 그리드 자식이 내용물 때문에 억지로 넓어지는 것 방지 */
+  }
+
+  .result-col-right {
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+    min-width: 0;
+  }
+
+  .result-box {
+    display: block;
+    background: var(--bg-card);
+    border-radius: 24px;
+    padding: 2rem;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.05);
   }
 
   /* 오른쪽 컬럼(상세 탭)이 왼쪽보다 좁아서, 지표 5칸을 그대로 두면 칸이 너무 좁아짐 —
@@ -1890,6 +2031,58 @@ body.raven-result-bg {
   }
   50% {
     transform: translate(-50%, -50%) rotate(180deg) scale(1.08);
+  }
+}
+
+/* ───────── PIN 화면 전용 로딩 링 (2026-08-01) ─────────
+   까마귀 로고 이미지를 가운데 두고, 검은 원호(arc)가 얇은 트랙 위를 로딩 스피너처럼 도는 연출.
+   다른 화면(인트로/엔트리)의 무지개빛 raven-smoke-orb와는 의도적으로 다른, 모노톤 전용 애니메이션임. */
+.raven-loading-wrap {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  margin: 0 auto 1.25rem;
+}
+
+.raven-loading-logo {
+  position: absolute;
+  inset: 14px;
+  width: calc(100% - 28px);
+  height: calc(100% - 28px);
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+}
+
+/* 얇은 트랙(항상 보임) + 그 위를 도는 검은 원호(::before) — 트랙이 배경보다 살짝 밝아야
+   어두운 원호가 도는 게 눈에 띔(트랙 없이 검은 원호만 두면 어두운 배경에 묻혀 안 보임). */
+.raven-loading-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.14);
+}
+
+.raven-loading-ring::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(0, 0, 0, 0.95) 0deg,
+    rgba(0, 0, 0, 0.95) 70deg,
+    transparent 110deg,
+    transparent 360deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 7px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 7px));
+  animation: ravenSpin 1.6s linear infinite;
+}
+
+@keyframes ravenSpin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
