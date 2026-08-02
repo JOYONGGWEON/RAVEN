@@ -745,11 +745,13 @@ async function fetchFxRate() {
 }
 
 
-// 3-4. 헤드라인 지수 8개(4열x2행) + 펼치기 패널의 지수/선물 2종 — 전부 지수/선물/환율이라
+// 3-4. 헤드라인 지수 10개(5열x2행) + 펼치기 패널의 지수/선물 4종 — 전부 지수/선물/환율/원자재라
 // KIS 미지원, 매크로 지표와 동일하게 Yahoo Finance로 조회. 코스피/코스닥도 KIS 종목시세 API가
 // 있긴 하지만 지수 종류가 전부 Yahoo 하나로 통일돼 있어야 코드 경로가 단순해서 그대로 Yahoo를 씀.
-// 환율(KRW=X)은 2026-08-01부터 여기로 옮겨와 다른 지수와 동일한 ▲/▼% 칩 형태로 표시됨(기존
-// "원화 약세 · 수출주 우호" 같은 정성적 멘트 스타일은 폐기).
+// 환율(KRW=X)/유가(CL=F)는 2026-08-01부터 여기로 옮겨와 다른 지수와 동일한 ▲/▼% 칩 형태로
+// 표시됨(기존 정성적 해석문구 스타일은 폐기). 코스피 야간선물(idx-kospi-night)은 HTML에 자리만
+// 마련해두고 이 목록엔 없음 — Yahoo에 해당 티커가 없고, 조사해둔 비공식 API(kred.dev)는 실제
+// 연동 여부를 사용자가 아직 확정하지 않아 "연동 예정" 표시만 해둔 상태.
 const HEADLINE_INDEXES = [
   { id: "kospi", symbol: "^KS11" },
   { id: "kosdaq", symbol: "^KQ11" },
@@ -758,23 +760,19 @@ const HEADLINE_INDEXES = [
   { id: "sp500", symbol: "^GSPC" },
   { id: "es-fut", symbol: "ES=F" },
   { id: "sox", symbol: "^SOX" },
-  { id: "fx", symbol: "KRW=X", prefix: "₩", decimals: 0 }
+  { id: "fx", symbol: "KRW=X", prefix: "₩", decimals: 0 },
+  { id: "oil", symbol: "CL=F", prefix: "$" }
 ];
 
-// 코스피 야간선물(idx-kospi-night)은 HTML에 자리만 마련해두고 여기 목록엔 없음 — Yahoo Finance에
-// 해당 티커가 없고(KRX/Eurex 야간선물은 유료 데이터벤더 라이선스 필요), 조사해둔 비공식 무료
-// API(kred.dev)는 실제 연동 여부를 사용자가 아직 확정하지 않아 "연동 예정" 표시만 해둔 상태.
-// 다우존스/러셀2000선물은 헤드라인 8개에서 빠지면서 펼치기 패널로 이동, 미국10년물/VIX/유가는
-// 2026-08-01부터 기존 macro-box(라벨+값+해석문구) 대신 다른 지수와 동일한 칩 스타일로 통일함
-// (세로 정렬·크기가 서로 달라 보이던 문제 — 사용자 피드백으로 통일).
+// 다우존스/러셀2000선물/미국10년물/VIX — 펼치기 패널 한 줄(4개)에 표시. 전부 다른 지수와 동일한
+// 칩 스타일로 통일함(세로 정렬·크기가 서로 달라 보이던 문제 — 2026-08-01 사용자 피드백으로 통일).
 const EXPANDED_CHIPS = [
   { id: "dow", symbol: "^DJI" },
   { id: "rty-fut", symbol: "RTY=F" },
   // ^TNX(미국10년물)는 Yahoo가 이미 실제 금리(%) 값을 그대로 줌(예: 4.68=4.68%) — 10배 스케일
   // 지수로 착각해 /10 하던 예전 버그가 있었으니 재발 방지 차 이 주석을 남겨둠.
   { id: "rate10y", symbol: "^TNX", suffix: "%" },
-  { id: "vix", symbol: "^VIX", decimals: 1 },
-  { id: "oil", symbol: "CL=F", prefix: "$" }
+  { id: "vix", symbol: "^VIX", decimals: 1 }
 ];
 
 function renderIndexChip(id, chartData, opts = {}) {
@@ -826,7 +824,7 @@ async function fetchIndexData() {
   });
 }
 
-// 헤드라인 아래 "▼ 전체 지표 보기" 토글 — 다우존스/러셀2000선물(칩) + 10년물/VIX/유가(기존 매크로박스)를 펼침/접음
+// 헤드라인 아래 "▼ 전체 지표 보기" 토글 — 다우존스/러셀2000선물/10년물/VIX(칩 4개, 한 줄)를 펼침/접음
 function toggleMacroExpanded() {
   const panel = $("macro-expanded");
   const label = $("macro-toggle-label");
@@ -834,7 +832,7 @@ function toggleMacroExpanded() {
 
   const willShow = !panel.classList.contains("macro-expanded-open");
   panel.classList.toggle("macro-expanded-open");
-  if (label) label.textContent = willShow ? "▲ 지표 접기" : "▼ 전체 지표 보기 (13)";
+  if (label) label.textContent = willShow ? "▲ 지표 접기" : "▼ 전체 지표 보기";
 }
 
 // ===== 지표 헬퍼: EMA / RSI(Wilder) / MACD =====
