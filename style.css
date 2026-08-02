@@ -143,11 +143,35 @@ body.raven-result-bg {
      컴팩트하게 줄임. 헤더도 결과 카드(.card)와 똑같은 max-width/그리드 비율을 써서, 헤더 오른쪽
      칼럼(지수 대시보드) 폭이 결과 카드의 오른쪽 박스(탭) 폭과 정확히 일치하게 만듦 — 사용자가
      스크린샷에 표시한 "3/4/5번 화살표 폭을 맞춰달라"는 요청이 이 방식으로 충족됨. */
+  /* 2026-08-02 4차 피드백: 스크롤해도 상단(로고~검색창~지수패널)은 고정되고 그 아래 결과
+     박스들만 흐르도록 — .top-header 자체는 max-width로 좁게 중앙정렬돼 있어서 여기 바로
+     background를 걸면 초광폭 화면에서 좌우 여백 사이로 스크롤되는 내용이 비쳐 보임 —
+     ::after로 뷰포트 전체 폭을 덮는 불투명 배경 레이어를 따로 깔고(100vw + 가운데 정렬 트릭),
+     .top-header 자체는 sticky 포지셔닝 기준점 역할만 함. */
   .top-header {
     text-align: left;
     max-width: min(92vw, 1600px);
     margin: 0 auto;
     padding-top: 2.5rem;
+    padding-bottom: 1.25rem;
+    position: sticky;
+    top: 0;
+    z-index: 500;
+  }
+
+  .top-header::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 100vw;
+    transform: translateX(-50%);
+    background: rgba(5, 7, 9, 0.88);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+    z-index: -1;
   }
 
   .header-columns {
@@ -170,16 +194,27 @@ body.raven-result-bg {
     grid-template-columns: repeat(5, 1fr);
   }
 
+  /* width:100% 필요 — button은 display:block이어도 내용물 크기로만 줄어들어서(폼 컨트롤 특성)
+     text-align:right가 있어도 박스 자체가 왼쪽에 붙어있었음(실측으로 확인된 버그) */
   .header-col-right .macro-toggle-btn {
+    width: 100%;
     margin: 0.35rem 0 0;
     text-align: right;
     display: block;
   }
 
+  /* 2026-08-02 4차 피드백: 펼침 패널이 flex(justify-content:flex-end)라 헤드라인 5열 그리드와
+     오와 열이 안 맞았음 — 같은 grid-template-columns(5칸)로 바꿔서 4개 항목이 왼쪽 첫 4칸에
+     그대로 정렬되게 함(정확히 헤드라인 그리드의 1~4번째 칸과 같은 폭/위치). */
   .header-col-right #macro-expanded {
-    justify-content: flex-end;
-    flex-wrap: nowrap;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.4rem;
     margin-top: 0.5rem;
+  }
+
+  .header-col-right #macro-expanded .index-chip {
+    min-width: 0;
   }
 
   /* 2026-08-01 3차 피드백: 펼쳤을 때 3줄(헤드라인2+펼침1) 전체 높이가 로고~검색창 높이와
@@ -195,13 +230,15 @@ body.raven-result-bg {
   .header-brand {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 1.1rem;
   }
 
+  /* 2026-08-02 4차 피드백: 로고+글씨가 우측 지수 패널(첫 줄 칩 높이)에 비해 너무 작아 보임 —
+     아이콘을 살짝, 제목/부제목 글자는 눈에 띄게 키움 */
   .header-logo {
     display: block;
-    width: 64px;
-    height: 64px;
+    width: 84px;
+    height: 84px;
     border-radius: 50%;
     object-fit: cover;
     flex-shrink: 0;
@@ -216,30 +253,34 @@ body.raven-result-bg {
     grid-template-columns: auto auto;
     grid-template-rows: auto auto;
     align-items: center;
-    column-gap: 0.9rem;
-    row-gap: 0.1rem;
+    column-gap: 1rem;
+    row-gap: 0.15rem;
   }
 
   .header-brand .app-title {
     grid-column: 1;
     grid-row: 1 / 3;
-    font-size: 1.9rem;
+    font-size: 2.6rem;
     margin: 0;
   }
 
   .header-brand .app-sub {
     grid-column: 2;
     margin-top: 0;
-    font-size: 0.8rem;
+    font-size: 0.92rem;
   }
 
-  .search-row {
+  /* 2026-08-02: 여기(파일 앞쪽) .search-row { text-align:left }가 파일 뒤쪽의 기본 규칙
+     .search-row { text-align:center }과 동일 우선순위라 소스 순서상 기본 규칙이 이겨서 실제로는
+     계속 가운데 정렬돼 있었음(측정으로 확인된 실제 버그, ticker-form은 inline-flex라 margin이
+     아니라 부모의 text-align이 위치를 결정함) — 선택자를 더 구체적으로 만들어 확실히 이기도록 함. */
+  .header-col-left .search-row {
     text-align: left;
     margin-top: 1.5rem;
   }
 
-  .ticker-form {
-    margin-left: 0;
+  .header-col-left .ticker-form {
+    margin: 0;
   }
 }
 
@@ -727,6 +768,14 @@ body.raven-result-bg {
     border: 1px solid rgba(255, 255, 255, 0.05);
   }
 
+  /* 2026-08-02 4차 피드백: 1번(차트) 박스와 2번(추세 탭) 박스는 "조금 더 키워도 될 것 같다"는
+     요청 — AI 분석 박스(3번, result-col-right의 2번째 .result-box)는 그대로 두고 이 둘만 패딩을
+     살짝 키움 */
+  .result-col-left .result-box,
+  .result-col-right .result-box:first-of-type {
+    padding: 2.4rem;
+  }
+
   /* 오른쪽 컬럼(상세 탭)이 왼쪽보다 좁아서, 지표 5칸을 그대로 두면 칸이 너무 좁아짐 —
      이 폭에서는 3칸(2줄)으로 줄여서 여유있게 보이게 함. */
   /* 우측 컬럼이 1:1로 넓어져서(예전 0.9fr) 5칸 그대로도 여유 있음 — 좁았을 때 3칸으로 줄였던 것 원복 */
@@ -1074,9 +1123,13 @@ body.raven-result-bg {
 
 /* 지표 박스 — 위쪽 서술형 카드(.section-box)와 시각적으로 구분되는 "통계 카드" 느낌 */
 
+/* 2026-08-02: RS 박스만 유독 넓고 RSI는 좁아 보이던 버그 — 높이는 grid stretch로 이미 똑같았지만
+   "1fr" 트랙의 기본 최소폭이 auto(=내용물의 줄바꿈 없는 최대폭)라서, RS의 긴 문구
+   ("20일/60일 = -18.4/+6.6(%p)")가 다른 칸의 폭을 잠식해서 실제로는 폭이 90px~184px로 제각각이었음
+   (실측 확인). minmax(0, 1fr)로 최소폭을 0으로 강제해야 5칸이 진짜 균등폭이 됨. */
 .indicator-row {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1rem;
   margin-bottom: 1.25rem;
   grid-column: span 2;
@@ -1087,6 +1140,7 @@ body.raven-result-bg {
   border: 1px solid rgba(59, 130, 246, 0.2);
   padding: 1.1rem 1.25rem;
   border-radius: 14px;
+  min-width: 0;
 }
 
 .indicator-box h4 {
@@ -1120,6 +1174,7 @@ body.raven-result-bg {
   font-weight: 800;
   line-height: 1.3;
   color: #f1f5f9;
+  overflow-wrap: anywhere;
 }
 
 .indicator-interp {
@@ -1127,6 +1182,7 @@ body.raven-result-bg {
   font-weight: 500;
   line-height: 1.35;
   color: var(--text-sub);
+  overflow-wrap: anywhere;
 }
 
 /* 긍정/중립/부정 색상 코딩 — 지표박스(.indicator-interp) 전체 색칠과 문단 안 핵심 문구
@@ -2072,14 +2128,16 @@ body.raven-result-bg {
   margin: 0 auto 1.25rem;
 }
 
+/* 2026-08-02: 테두리 없는(투명 배경) 까마귀 실루엣 이미지로 교체 — 기존엔 원형 스피어 이미지를
+   전제로 border-radius:50%/object-fit:cover로 원형 클리핑했는데, 이제는 이미지 자체가 이미
+   까마귀 모양만 있어서 클리핑하면 오히려 실루엣 일부가 잘림. 사각 클리핑/그림자 없이
+   contain으로 온전히 다 보이게만 함 — 링이 실루엣 바로 바깥을 감싸는 형태. */
 .raven-loading-logo {
   position: absolute;
   inset: 14px;
   width: calc(100% - 28px);
   height: calc(100% - 28px);
-  border-radius: 50%;
-  object-fit: cover;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+  object-fit: contain;
 }
 
 /* 얇은 트랙(항상 보임) + 그 위를 도는 검은 원호(::before) — 트랙이 배경보다 살짝 밝아야
