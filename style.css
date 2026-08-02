@@ -40,9 +40,10 @@ body {
 }
 
 /* 검색 결과가 나온 뒤 적용할 보라색 배경 */
+/* 2026-08-02 7차 피드백: 보라색 그라디언트를 없애고 PIN 화면(#lock-screen)과 동일한 무채색
+   회색(#3f3f3f, "회장님이 원하던 그 회색")으로 전체 화면 톤을 통일 */
 body.raven-result-bg {
-  background:
-    radial-gradient(circle at 20% 0%, #f9a8ff 0%, #a855f7 40%, #4c1d95 70%, #020617 100%);
+  background: #3f3f3f;
 }
 
 
@@ -55,10 +56,11 @@ body.raven-result-bg {
   position: relative;   /* ⬅ 링 위치 기준 */
 }
 
-/* ⚠️ .raven-smoke-orb(로그인 전 3개 화면용 링)와 시각적으로 같은 링이어야 하는데 별도 규칙임 —
-   전에 .raven-smoke-orb만 리디자인하고 이쪽을 빠뜨려서 색상·속도가 따로 놀던 버그가 있었음.
-   그라디언트/box-shadow/animation은 항상 .raven-smoke-orb와 동일하게 맞출 것(크기·위치만 다름). */
+/* 2026-08-02 7차 피드백: 무지개빛 링을 전체적으로 제거하고 회색 톤으로 통일하는 요청 —
+   .raven-smoke-orb와 짝을 이루던 이 헤더 배경 링(모바일 전용 장식)도 같이 꺼서 검색결과
+   화면(모바일 포함)에 더 이상 무지개색이 남아있지 않게 함. */
 .top-header::before {
+  display: none;
   content: '';
   position: absolute;
   left: 50%;
@@ -113,11 +115,6 @@ body.raven-result-bg {
   font-size: 1rem;
 }
 
-.app-sub-engine {
-  opacity: 0.9;
-  font-size: 0.9rem;
-}
-
 /* ───────── 상단 헤더 데스크톱 2컬럼 (2026-08-01, 사용자 배치 참고) ─────────
    모바일(기본값)에서는 .header-columns/.header-col-*/.header-brand/.header-brand-text가 전부
    display:contents라 완전히 투명 — 로고 이미지도 숨겨서 기존 텍스트 전용 헤더 그대로 유지됨. */
@@ -150,7 +147,7 @@ body.raven-result-bg {
      .top-header 자체는 sticky 포지셔닝 기준점 역할만 함. */
   .top-header {
     text-align: left;
-    max-width: min(95vw, 1760px);
+    max-width: min(97vw, 1900px);
     margin: 0 auto;
     padding-top: 2.5rem;
     padding-bottom: 1.25rem;
@@ -159,10 +156,9 @@ body.raven-result-bg {
     z-index: 500;
   }
 
-  /* 2026-08-02 5차 피드백에서 rgba(5,7,9,0.88)+blur로 바꿨다가, 6차 피드백에서 "그냥 검은색
-     말고, 페이지 자체의 연보라색 그라디언트를 그대로 써달라"는 요청을 받아 재수정 — body.raven-
-     result-bg와 완전히 동일한 radial-gradient 값을 그대로 복붙(불투명해서 스크롤되는 카드가
-     비쳐 보이는 문제는 없으면서, 페이지 배경과 이어지는 톤은 유지됨). */
+  /* 2026-08-02 7차 피드백: 보라색 그라디언트 자체를 없애고 페이지 전체를 PIN 화면과 같은
+     무채색 회색(#3f3f3f)으로 통일하면서, 헤더 배경도 같이 맞춤(불투명 유지 — 스크롤되는
+     카드가 비쳐 보이지 않게 하는 역할은 그대로 필요). */
   .top-header::after {
     content: '';
     position: absolute;
@@ -171,7 +167,7 @@ body.raven-result-bg {
     left: 50%;
     width: 100vw;
     transform: translateX(-50%);
-    background: radial-gradient(circle at 20% 0%, #f9a8ff 0%, #a855f7 40%, #4c1d95 70%, #020617 100%);
+    background: #3f3f3f;
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
     z-index: -1;
   }
@@ -255,10 +251,10 @@ body.raven-result-bg {
     background: radial-gradient(
       circle closest-side at center,
       transparent 62%,
-      rgba(226, 232, 240, 0) 63%,
-      rgba(226, 232, 240, 0.6) 68%,
-      rgba(148, 163, 184, 0.75) 78%,
-      rgba(30, 41, 59, 0.8) 88%,
+      rgba(100, 116, 139, 0) 63%,
+      rgba(100, 116, 139, 0.5) 68%,
+      rgba(71, 85, 105, 0.7) 78%,
+      rgba(15, 23, 42, 0.85) 88%,
       transparent 96%
     );
     animation: ravenBreathe 2.4s ease-in-out infinite;
@@ -766,7 +762,7 @@ body.raven-result-bg {
      비율을 1.15:0.9에서 1:1로 바꿔서 헤더의 지수 대시보드(header-col-right)와 정확히 같은 폭이
      되게 함(위 .header-columns가 동일한 max-width/gap/1fr 1fr을 씀). */
   .card {
-    max-width: min(95vw, 1760px);
+    max-width: min(97vw, 1900px);
     background: none;
     box-shadow: none;
     border: none;
@@ -1218,7 +1214,7 @@ body.raven-result-bg {
 }
 
 .indicator-value {
-  font-size: 1.15rem;
+  font-size: 1.02rem;
   font-weight: 800;
   line-height: 1.3;
   color: #f1f5f9;
@@ -1467,24 +1463,26 @@ body.raven-result-bg {
   gap: 0.35rem;
 }
 
+/* 2026-08-02 7차 피드백: 라벨 좌측 + 값 우측정렬(한 줄에 다 몰아넣던 방식) 대신, 분기/매출/
+   영업이익을 동일 크기 캡슐 3개로 나누고 각 캡슐 안에서 텍스트를 가운데 정렬 */
 .earnings-quarter-row {
   display: flex;
-  justify-content: space-between;
   gap: 0.5rem;
   font-size: 0.8rem;
-  padding: 0.35rem 0.6rem;
+}
+
+.earnings-capsule {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  padding: 0.4rem 0.5rem;
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.6);
+  overflow-wrap: anywhere;
 }
 
-.earnings-quarter-label {
+.earnings-capsule:first-child {
   color: var(--text-sub);
-  white-space: nowrap;
-}
-
-.earnings-quarter-values {
-  text-align: right;
-  white-space: nowrap;
 }
 
 /* ───────── 뉴스 탭 ───────── */
@@ -1820,8 +1818,7 @@ body.raven-result-bg {
     font-size: 2.6rem;
   }
 
-  .app-sub,
-  .app-sub-engine {
+  .app-sub {
     font-size: 0.9rem;
   }
 
@@ -2113,17 +2110,17 @@ body.raven-result-bg {
 }
 
 /* 2) INTRO / ENTRY 화면 전용: 보라 그라디언트 + 원형 이퀄라이저 느낌 */
+/* 2026-08-02 7차 피드백: PIN 화면과 동일한 무채색 회색으로 통일(보라색 그라디언트 제거) */
 #intro-screen,
 #entry-screen {
-  background:
-    radial-gradient(circle at 20% 0%, #f9a8ff 0%, #a855f7 40%, #4c1d95 70%, #020617 100%);
+  background: #3f3f3f;
 }
 
+/* 2026-08-02 7차 피드백: 전체 톤을 무채색 회색으로 통일하면서, 이 무지개빛 큰 링 자체를
+   완전히 제거해달라는 요청(엔트리 화면에서 체크 표시) — PIN 화면은 이미 이 링을 꺼둔 상태였고,
+   이번에 인트로/엔트리 화면도 동일하게 꺼서 까마귀 로고 주위의 작은 브리딩 링만 남김. */
 .raven-smoke-bg {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
+  display: none;
 }
 
 /* 링 이펙트 — 까마귀 날개깃 특유의 무지개빛 광택(iridescence)을 모티브로 한 팔레트.
@@ -2199,13 +2196,15 @@ body.raven-result-bg {
   position: absolute;
   inset: -22px;
   border-radius: 50%;
+  /* 2026-08-02 7차 피드백: 흰색 계열(slate-200)이 섞여서 안 어울린다는 피드백 — 흰기 없이
+     회색~검정 톤으로만 구성 */
   background: radial-gradient(
     circle closest-side at center,
     transparent 76%,
-    rgba(226, 232, 240, 0) 77%,
-    rgba(226, 232, 240, 0.6) 81%,
-    rgba(148, 163, 184, 0.75) 86%,
-    rgba(30, 41, 59, 0.8) 92%,
+    rgba(100, 116, 139, 0) 77%,
+    rgba(100, 116, 139, 0.5) 81%,
+    rgba(71, 85, 105, 0.7) 86%,
+    rgba(15, 23, 42, 0.85) 92%,
     transparent 100%
   );
   animation: ravenBreathe 2.4s ease-in-out infinite;

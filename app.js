@@ -3496,10 +3496,11 @@ function renderEarningsChart(quarters, currency) {
         const li = document.createElement("li");
         li.className = "earnings-quarter-row";
         const marginPct = q.revenue ? (q.operatingProfit / q.revenue) * 100 : null;
-        const marginTxt = Number.isFinite(marginPct) ? ` (영업이익률 ${marginPct.toFixed(1)}%)` : "";
+        const marginTxt = Number.isFinite(marginPct) ? ` (${marginPct.toFixed(1)}%)` : "";
         li.innerHTML =
-          `<span class="earnings-quarter-label">${q.label || shortQuarterLabel(q.yyyymm)}</span>` +
-          `<span class="earnings-quarter-values">매출 ${fmt(q.revenue)} · 영업이익 ${fmt(q.operatingProfit)}${marginTxt}</span>`;
+          `<span class="earnings-capsule">${q.label || shortQuarterLabel(q.yyyymm)}</span>` +
+          `<span class="earnings-capsule">매출: ${fmt(q.revenue)}</span>` +
+          `<span class="earnings-capsule">영업이익: ${fmt(q.operatingProfit)}${marginTxt}</span>`;
         listEl.appendChild(li);
       });
     listEl.classList.remove("hidden");
