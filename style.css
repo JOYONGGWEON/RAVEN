@@ -129,7 +129,7 @@ body.raven-result-bg {
   display: contents;
 }
 
-.header-logo {
+.header-logo-wrap {
   display: none;
 }
 
@@ -150,7 +150,7 @@ body.raven-result-bg {
      .top-header 자체는 sticky 포지셔닝 기준점 역할만 함. */
   .top-header {
     text-align: left;
-    max-width: min(92vw, 1600px);
+    max-width: min(95vw, 1760px);
     margin: 0 auto;
     padding-top: 2.5rem;
     padding-bottom: 1.25rem;
@@ -159,6 +159,10 @@ body.raven-result-bg {
     z-index: 500;
   }
 
+  /* 2026-08-02 5차 피드백: rgba(5,7,9,0.88)로 12% 투명했던 게, 로고/칩처럼 자기 배경이 있는
+     요소가 없는 빈 공간(관심종목 레일 토글 버튼 주변 등)에서 뒤의 보라색 body 그라디언트가
+     비쳐서 "진한 보라색"으로 보이던 원인이었음 — 완전 불투명한 단색으로 바꿔서 원래 앱의
+     어두운 배경색만 보이게 함(더 이상 blur도 필요 없어서 제거). */
   .top-header::after {
     content: '';
     position: absolute;
@@ -167,9 +171,7 @@ body.raven-result-bg {
     left: 50%;
     width: 100vw;
     transform: translateX(-50%);
-    background: rgba(5, 7, 9, 0.88);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    background: var(--bg-dark);
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
     z-index: -1;
   }
@@ -191,7 +193,8 @@ body.raven-result-bg {
     margin: 0 0 0 auto;
     max-width: none;
     width: 100%;
-    grid-template-columns: repeat(5, 1fr);
+    padding: 0;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   /* width:100% 필요 — button은 display:block이어도 내용물 크기로만 줄어들어서(폼 컨트롤 특성)
@@ -233,16 +236,31 @@ body.raven-result-bg {
     gap: 1.1rem;
   }
 
-  /* 2026-08-02 4차 피드백: 로고+글씨가 우측 지수 패널(첫 줄 칩 높이)에 비해 너무 작아 보임 —
-     아이콘을 살짝, 제목/부제목 글자는 눈에 띄게 키움 */
-  .header-logo {
+  /* 2026-08-02 5차 피드백: 결과 화면 헤더 로고도 PIN/엔트리 화면과 같은 "테두리 없는 까마귀 +
+     숨쉬는 검은 링" 으로 통일 — 84px 크기에 맞춘 축소판. */
+  .header-logo-wrap {
     display: block;
+    position: relative;
     width: 84px;
     height: 84px;
-    border-radius: 50%;
-    object-fit: cover;
     flex-shrink: 0;
-    /* 2026-08-01: 로고 PNG에 그림자가 겹쳐 보인다는 피드백으로 box-shadow 제거 */
+  }
+
+  .header-logo-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid rgba(0, 0, 0, 0.85);
+    animation: ravenBreathe 2.4s ease-in-out infinite;
+  }
+
+  .header-logo {
+    display: block;
+    position: absolute;
+    inset: 4px;
+    width: calc(100% - 8px);
+    height: calc(100% - 8px);
+    object-fit: contain;
   }
 
   /* 로고 옆 텍스트 블록 — "RAVEN" 제목을 왼쪽에 두고, 그 오른쪽에 부제목 2줄을 세로로 쌓아
@@ -254,20 +272,25 @@ body.raven-result-bg {
     grid-template-rows: auto auto;
     align-items: center;
     column-gap: 1rem;
-    row-gap: 0.15rem;
+    row-gap: 0.05rem;
   }
 
+  /* 2026-08-02 5차 피드백: RAVEN 글씨 높이를 로고(84px)에 맞게 더 키우고, 우측 부제목 2줄은
+     반대로 살짝 줄이면서 줄간격도 좁힘(겹치지 않는 선에서) — 로고 확대 후 좌우 높이가
+     안 맞아 보이던 것 보정 */
   .header-brand .app-title {
     grid-column: 1;
     grid-row: 1 / 3;
-    font-size: 2.6rem;
+    font-size: 3.1rem;
+    line-height: 1;
     margin: 0;
   }
 
   .header-brand .app-sub {
     grid-column: 2;
     margin-top: 0;
-    font-size: 0.92rem;
+    font-size: 0.82rem;
+    line-height: 1.25;
   }
 
   /* 2026-08-02: 여기(파일 앞쪽) .search-row { text-align:left }가 파일 뒤쪽의 기본 규칙
@@ -733,7 +756,7 @@ body.raven-result-bg {
      비율을 1.15:0.9에서 1:1로 바꿔서 헤더의 지수 대시보드(header-col-right)와 정확히 같은 폭이
      되게 함(위 .header-columns가 동일한 max-width/gap/1fr 1fr을 씀). */
   .card {
-    max-width: min(92vw, 1600px);
+    max-width: min(95vw, 1760px);
     background: none;
     box-shadow: none;
     border: none;
@@ -2118,9 +2141,11 @@ body.raven-result-bg {
   }
 }
 
-/* ───────── PIN 화면 전용 로딩 링 (2026-08-01) ─────────
-   까마귀 로고 이미지를 가운데 두고, 검은 원호(arc)가 얇은 트랙 위를 로딩 스피너처럼 도는 연출.
-   다른 화면(인트로/엔트리)의 무지개빛 raven-smoke-orb와는 의도적으로 다른, 모노톤 전용 애니메이션임. */
+/* ───────── 까마귀 로고 + 숨쉬는 링 (2026-08-02 재작업) ─────────
+   까마귀 로고 이미지를 가운데 두고, 검은 원이 천천히 숨쉬듯(스케일+투명도) 펄스하는 연출.
+   기존엔 회전하는 검은 원호(spinner arc)였는데 "회전 대신 브리딩 느낌"으로 요청받아 교체함.
+   다른 화면(인트로/엔트리)의 무지개빛 raven-smoke-orb와는 의도적으로 다른, 모노톤 전용 애니메이션임.
+   PIN/엔트리 화면(150px)과 결과 화면 헤더 로고(84px, .header-logo-wrap)가 이 규칙을 공유함. */
 .raven-loading-wrap {
   position: relative;
   width: 150px;
@@ -2131,44 +2156,32 @@ body.raven-result-bg {
 /* 2026-08-02: 테두리 없는(투명 배경) 까마귀 실루엣 이미지로 교체 — 기존엔 원형 스피어 이미지를
    전제로 border-radius:50%/object-fit:cover로 원형 클리핑했는데, 이제는 이미지 자체가 이미
    까마귀 모양만 있어서 클리핑하면 오히려 실루엣 일부가 잘림. 사각 클리핑/그림자 없이
-   contain으로 온전히 다 보이게만 함 — 링이 실루엣 바로 바깥을 감싸는 형태. */
+   contain으로 온전히 다 보이게만 함. 2차 피드백으로 inset을 14px→6px로 줄여 까마귀가 링 선에
+   더 가깝게(거의 닿게) 보이도록 함. */
 .raven-loading-logo {
   position: absolute;
-  inset: 14px;
-  width: calc(100% - 28px);
-  height: calc(100% - 28px);
+  inset: 6px;
+  width: calc(100% - 12px);
+  height: calc(100% - 12px);
   object-fit: contain;
 }
 
-/* 얇은 트랙(항상 보임) + 그 위를 도는 검은 원호(::before) — 트랙이 배경보다 살짝 밝아야
-   어두운 원호가 도는 게 눈에 띔(트랙 없이 검은 원호만 두면 어두운 배경에 묻혀 안 보임). */
 .raven-loading-ring {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  border: 3px solid rgba(255, 255, 255, 0.14);
+  border: 3px solid rgba(0, 0, 0, 0.85);
+  animation: ravenBreathe 2.4s ease-in-out infinite;
 }
 
-.raven-loading-ring::before {
-  content: '';
-  position: absolute;
-  inset: -3px;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 0deg,
-    rgba(0, 0, 0, 0.95) 0deg,
-    rgba(0, 0, 0, 0.95) 70deg,
-    transparent 110deg,
-    transparent 360deg
-  );
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 7px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 7px));
-  animation: ravenSpin 1.6s linear infinite;
-}
-
-@keyframes ravenSpin {
-  to {
-    transform: rotate(360deg);
+@keyframes ravenBreathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
   }
 }
 
@@ -2181,12 +2194,17 @@ body.raven-result-bg {
 }
 
 /* 큰 타이틀 (PIN / ENTRY 공용) */
+/* 2026-08-02: PIN 화면은 <h1>, 엔트리 화면은 <div>를 쓰는데 브라우저 기본 UA 스타일시트가
+   h1에는 큰 top margin(0.67em, 폰트가 커서 실제로 40px+)을 자동으로 주는 반면 div는 0이라 —
+   같은 .raven-title 클래스인데도 PIN 화면 쪽만 로고~텍스트 간격이 눈에 띄게 더 벌어져 있었음
+   (실측: PIN 69px vs 엔트리 20px). margin-top:0으로 명시해서 통일. */
 .raven-title {
   font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: clamp(3.6rem, 4.5vw, 4.6rem);
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  margin-top: 0;
   margin-bottom: 8px;
 }
 
