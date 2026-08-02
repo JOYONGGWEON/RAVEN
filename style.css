@@ -276,34 +276,27 @@ body.raven-result-bg {
     object-fit: contain;
   }
 
-  /* 로고 옆 텍스트 블록 — "RAVEN" 제목을 왼쪽에 두고, 그 오른쪽에 부제목 2줄을 세로로 쌓아
-     제목과 나란히(세로 중앙 정렬) 배치함(사용자 참고 이미지의 가로 배치 방식). HTML 구조를 새로
-     안 만들고 grid로만 구현 — h1이 2행을 모두 차지하고, 두 p가 각각 1행씩 오른쪽 칸에 들어감. */
+  /* 로고 옆 텍스트 블록 — "RAVEN" 제목을 왼쪽에 두고, 그 오른쪽에 부제목을 나란히(세로 중앙
+     정렬) 배치. 원래는 부제목이 2줄이라 grid(2행)로 짰었는데, 8차 피드백에서 한 줄만 남기고
+     나니 grid의 1행에만 붙어서 위쪽으로 쏠려 보이던 문제(2행은 비어서 안 쓰임) — 부제목이
+     1줄이 된 지금은 flex가 더 간단하고, align-items:center로 제목 높이 가운데에 자연스럽게
+     옴. */
   .header-brand-text {
-    display: grid;
-    grid-template-columns: auto auto;
-    grid-template-rows: auto auto;
+    display: flex;
     align-items: center;
     column-gap: 1rem;
-    row-gap: 0.05rem;
   }
 
-  /* 2026-08-02 5차 피드백: RAVEN 글씨 높이를 로고(84px)에 맞게 더 키우고, 우측 부제목 2줄은
-     반대로 살짝 줄이면서 줄간격도 좁힘(겹치지 않는 선에서) — 로고 확대 후 좌우 높이가
-     안 맞아 보이던 것 보정 */
+  /* 2026-08-02 5차 피드백: RAVEN 글씨 높이를 로고(84px)에 맞게 더 키움 */
   .header-brand .app-title {
-    grid-column: 1;
-    grid-row: 1 / 3;
     font-size: 3.1rem;
     line-height: 1;
     margin: 0;
   }
 
   .header-brand .app-sub {
-    grid-column: 2;
     margin-top: 0;
     font-size: 0.82rem;
-    line-height: 1.25;
   }
 
   /* 2026-08-02: 여기(파일 앞쪽) .search-row { text-align:left }가 파일 뒤쪽의 기본 규칙
@@ -2218,13 +2211,16 @@ body.raven-result-bg {
   animation: ravenBreathe 2.4s ease-in-out infinite;
 }
 
+/* 9차 피드백: 축소될 때 잔상(opacity:0.5)이 남아있던 걸, 물방울이 퍼졌다 사라지는 것처럼
+   완전히 안 보이는 상태(scale 작게 + opacity:0)에서 시작 → 퍼지면서 가장 진하게(peak) →
+   다시 서서히 사라지는 형태로 변경 */
 @keyframes ravenBreathe {
   0%, 100% {
-    transform: scale(1);
-    opacity: 0.5;
+    transform: scale(0.85);
+    opacity: 0;
   }
   50% {
-    transform: scale(1.06);
+    transform: scale(1.08);
     opacity: 1;
   }
 }
