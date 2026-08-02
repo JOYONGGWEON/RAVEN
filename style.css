@@ -144,10 +144,14 @@ body.raven-result-bg {
      박스들만 흐르도록 — .top-header 자체는 max-width로 좁게 중앙정렬돼 있어서 여기 바로
      background를 걸면 초광폭 화면에서 좌우 여백 사이로 스크롤되는 내용이 비쳐 보임 —
      ::after로 뷰포트 전체 폭을 덮는 불투명 배경 레이어를 따로 깔고(100vw + 가운데 정렬 트릭),
-     .top-header 자체는 sticky 포지셔닝 기준점 역할만 함. */
+     .top-header 자체는 sticky 포지셔닝 기준점 역할만 함.
+     2026-08-02 7차 피드백에서 1760→1900px로 키웠다가, 8차 피드백에서 되돌림 — 컨테이너가
+     가운데 정렬이라 넓힐수록 좌측(관심종목 사이드바와의 간격)도 같이 줄어드는 부작용이
+     있었음(우측 여백만 줄이고 싶었던 의도와 어긋남). 사이드바 열림/닫힘에 따라 왼쪽만 동적으로
+     맞추려면 JS 개입이 필요해서, 일단 이전 간격을 지키는 1760px로 복귀. */
   .top-header {
     text-align: left;
-    max-width: min(97vw, 1900px);
+    max-width: min(95vw, 1760px);
     margin: 0 auto;
     padding-top: 2.5rem;
     padding-bottom: 1.25rem;
@@ -158,7 +162,9 @@ body.raven-result-bg {
 
   /* 2026-08-02 7차 피드백: 보라색 그라디언트 자체를 없애고 페이지 전체를 PIN 화면과 같은
      무채색 회색(#3f3f3f)으로 통일하면서, 헤더 배경도 같이 맞춤(불투명 유지 — 스크롤되는
-     카드가 비쳐 보이지 않게 하는 역할은 그대로 필요). */
+     카드가 비쳐 보이지 않게 하는 역할은 그대로 필요).
+     8차 피드백: box-shadow가 헤더와 본문 사이에 눈에 띄는 경계선(음영)을 만들어서 제거함 —
+     회색 배경이 자연스럽게 이어지는 느낌을 원함. */
   .top-header::after {
     content: '';
     position: absolute;
@@ -168,7 +174,6 @@ body.raven-result-bg {
     width: 100vw;
     transform: translateX(-50%);
     background: #3f3f3f;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
     z-index: -1;
   }
 
@@ -248,13 +253,15 @@ body.raven-result-bg {
     position: absolute;
     inset: -4px;
     border-radius: 50%;
+    /* 8차 피드백: 안쪽(까마귀에 가까운 쪽)은 짙은 회색, 바깥쪽으로 갈수록 가장 어두운
+       검정에 가깝게 — 방향성 있는 그라디언트로 재조정 */
     background: radial-gradient(
       circle closest-side at center,
       transparent 62%,
-      rgba(100, 116, 139, 0) 63%,
-      rgba(100, 116, 139, 0.5) 68%,
-      rgba(71, 85, 105, 0.7) 78%,
-      rgba(15, 23, 42, 0.85) 88%,
+      rgba(55, 65, 81, 0) 63%,
+      rgba(55, 65, 81, 0.55) 68%,
+      rgba(30, 30, 34, 0.75) 78%,
+      rgba(5, 5, 7, 0.92) 88%,
       transparent 96%
     );
     animation: ravenBreathe 2.4s ease-in-out infinite;
@@ -762,7 +769,7 @@ body.raven-result-bg {
      비율을 1.15:0.9에서 1:1로 바꿔서 헤더의 지수 대시보드(header-col-right)와 정확히 같은 폭이
      되게 함(위 .header-columns가 동일한 max-width/gap/1fr 1fr을 씀). */
   .card {
-    max-width: min(97vw, 1900px);
+    max-width: min(95vw, 1760px);
     background: none;
     box-shadow: none;
     border: none;
@@ -2197,14 +2204,15 @@ body.raven-result-bg {
   inset: -22px;
   border-radius: 50%;
   /* 2026-08-02 7차 피드백: 흰색 계열(slate-200)이 섞여서 안 어울린다는 피드백 — 흰기 없이
-     회색~검정 톤으로만 구성 */
+     회색~검정 톤으로만 구성. 8차 피드백: 안쪽(까마귀에 가까운 쪽)은 짙은 회색, 바깥쪽으로
+     갈수록 가장 어두운 검정에 가깝게 방향성을 뒤집음 */
   background: radial-gradient(
     circle closest-side at center,
     transparent 76%,
-    rgba(100, 116, 139, 0) 77%,
-    rgba(100, 116, 139, 0.5) 81%,
-    rgba(71, 85, 105, 0.7) 86%,
-    rgba(15, 23, 42, 0.85) 92%,
+    rgba(55, 65, 81, 0) 77%,
+    rgba(55, 65, 81, 0.55) 81%,
+    rgba(30, 30, 34, 0.75) 87%,
+    rgba(5, 5, 7, 0.92) 93%,
     transparent 100%
   );
   animation: ravenBreathe 2.4s ease-in-out infinite;
