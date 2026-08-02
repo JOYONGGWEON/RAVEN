@@ -470,8 +470,9 @@
         </div>
 
         <!-- 🤖 AI 서술 분석 (버튼 클릭 시에만 호출 — 호출당 비용 발생하므로 자동 실행 안 함) —
-             데스크톱 2컬럼 레이아웃에서는 상세 탭 박스와 별개의 독립된 카드로 그 아래에 위치. -->
-        <div class="result-box">
+             데스크톱 2컬럼 레이아웃에서는 좌우 두 박스 아래에 전체 폭으로 걸쳐지는 3번째 줄
+             (result-box-ai — .result-columns의 grid-column:1/-1로 스팬). -->
+        <div class="result-box result-box-ai">
         <div class="ai-analysis-box">
           <button type="button" id="ai-analyze-btn" class="ai-analyze-btn">🤖 AI 분석 요청</button>
           <div id="ai-analysis-result" class="ai-analysis-result hidden">

@@ -159,10 +159,10 @@ body.raven-result-bg {
     z-index: 500;
   }
 
-  /* 2026-08-02 5차 피드백: rgba(5,7,9,0.88)로 12% 투명했던 게, 로고/칩처럼 자기 배경이 있는
-     요소가 없는 빈 공간(관심종목 레일 토글 버튼 주변 등)에서 뒤의 보라색 body 그라디언트가
-     비쳐서 "진한 보라색"으로 보이던 원인이었음 — 완전 불투명한 단색으로 바꿔서 원래 앱의
-     어두운 배경색만 보이게 함(더 이상 blur도 필요 없어서 제거). */
+  /* 2026-08-02 5차 피드백에서 rgba(5,7,9,0.88)+blur로 바꿨다가, 6차 피드백에서 "그냥 검은색
+     말고, 페이지 자체의 연보라색 그라디언트를 그대로 써달라"는 요청을 받아 재수정 — body.raven-
+     result-bg와 완전히 동일한 radial-gradient 값을 그대로 복붙(불투명해서 스크롤되는 카드가
+     비쳐 보이는 문제는 없으면서, 페이지 배경과 이어지는 톤은 유지됨). */
   .top-header::after {
     content: '';
     position: absolute;
@@ -171,7 +171,7 @@ body.raven-result-bg {
     left: 50%;
     width: 100vw;
     transform: translateX(-50%);
-    background: var(--bg-dark);
+    background: radial-gradient(circle at 20% 0%, #f9a8ff 0%, #a855f7 40%, #4c1d95 70%, #020617 100%);
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
     z-index: -1;
   }
@@ -246,20 +246,30 @@ body.raven-result-bg {
     flex-shrink: 0;
   }
 
+  /* 2026-08-02 6차 피드백: PIN/엔트리 화면의 재작업된 링(부드러운 그라디언트 도넛)과 동일한
+     스타일을 84px 축소판으로 — 상세 값은 아래 .raven-loading-ring 근처 주석 참고 */
   .header-logo-ring {
     position: absolute;
-    inset: 0;
+    inset: -4px;
     border-radius: 50%;
-    border: 2px solid rgba(0, 0, 0, 0.85);
+    background: radial-gradient(
+      circle closest-side at center,
+      transparent 62%,
+      rgba(226, 232, 240, 0) 63%,
+      rgba(226, 232, 240, 0.6) 68%,
+      rgba(148, 163, 184, 0.75) 78%,
+      rgba(30, 41, 59, 0.8) 88%,
+      transparent 96%
+    );
     animation: ravenBreathe 2.4s ease-in-out infinite;
   }
 
   .header-logo {
     display: block;
     position: absolute;
-    inset: 4px;
-    width: calc(100% - 8px);
-    height: calc(100% - 8px);
+    inset: 16px;
+    width: calc(100% - 32px);
+    height: calc(100% - 32px);
     object-fit: contain;
   }
 
@@ -763,27 +773,25 @@ body.raven-result-bg {
     padding: 0;
   }
 
+  /* 2026-08-02 6차 피드백: 좌(차트)/우(탭) 두 박스 길이가 서로 달라서(각자 컨텐츠 양에 따라
+     제각각 높이) 아래쪽에 지저분한 여백이 생기던 문제 — result-col-left/right를 display:contents로
+     "투명화"해서 그 안의 .result-box들이 .result-columns의 그리드 아이템으로 직접 승격되게 함.
+     1행(박스1+박스2)은 grid 기본값인 align-items:stretch로 자동으로 같은 높이(짧은 쪽이 긴 쪽에
+     맞춰 늘어남)가 되고, AI 분석 박스(.result-box-ai)만 grid-column:1/-1로 2행 전체 폭에 걸침. */
   .result-columns {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1.75rem;
-    align-items: start;
   }
 
-  .result-col-left {
-    display: block;
-    min-width: 0; /* 그리드 자식이 내용물 때문에 억지로 넓어지는 것 방지 */
-  }
-
+  .result-col-left,
   .result-col-right {
-    display: flex;
-    flex-direction: column;
-    gap: 1.75rem;
-    min-width: 0;
+    display: contents;
   }
 
   .result-box {
     display: block;
+    min-width: 0; /* 그리드 자식이 내용물 때문에 억지로 넓어지는 것 방지 */
     background: var(--bg-card);
     border-radius: 24px;
     padding: 2rem;
@@ -792,11 +800,28 @@ body.raven-result-bg {
   }
 
   /* 2026-08-02 4차 피드백: 1번(차트) 박스와 2번(추세 탭) 박스는 "조금 더 키워도 될 것 같다"는
-     요청 — AI 분석 박스(3번, result-col-right의 2번째 .result-box)는 그대로 두고 이 둘만 패딩을
-     살짝 키움 */
+     요청 — AI 분석 박스(3번)는 그대로 두고 이 둘만 패딩을 살짝 키움 */
   .result-col-left .result-box,
   .result-col-right .result-box:first-of-type {
     padding: 2.4rem;
+  }
+
+  .result-box-ai {
+    grid-column: 1 / -1;
+  }
+
+  /* 그리드 자체 gap(1.75rem)이 이제 박스2→박스3 간격을 담당해서, 원래 flex 레이아웃 시절 그
+     간격용으로 쓰던 내부 margin-top은 중복이라 0으로 리셋 */
+  .result-box-ai .ai-analysis-box {
+    margin-top: 0;
+  }
+
+  /* 참고 이미지처럼 버튼 자체는 박스 전체 폭이 아니라 작고 컴팩트하게 — 단일 클래스 선택자라
+     파일 뒤쪽의 기본 규칙(.ai-analyze-btn { width:100% })과 소스 순서상 충돌해서 안 먹던 버그를
+     겪었던 전례(검색창/토글버튼과 동일 패턴) 그대로라, 처음부터 두 클래스로 구체화해서 작성 */
+  .result-box-ai .ai-analyze-btn {
+    width: auto;
+    padding: 0.7rem 1.6rem;
   }
 
   /* 오른쪽 컬럼(상세 탭)이 왼쪽보다 좁아서, 지표 5칸을 그대로 두면 칸이 너무 좁아짐 —
@@ -2156,21 +2181,33 @@ body.raven-result-bg {
 /* 2026-08-02: 테두리 없는(투명 배경) 까마귀 실루엣 이미지로 교체 — 기존엔 원형 스피어 이미지를
    전제로 border-radius:50%/object-fit:cover로 원형 클리핑했는데, 이제는 이미지 자체가 이미
    까마귀 모양만 있어서 클리핑하면 오히려 실루엣 일부가 잘림. 사각 클리핑/그림자 없이
-   contain으로 온전히 다 보이게만 함. 2차 피드백으로 inset을 14px→6px로 줄여 까마귀가 링 선에
-   더 가깝게(거의 닿게) 보이도록 함. */
+   contain으로 온전히 다 보이게만 함. 3차 피드백: 링이 부리 쪽에 겹치는 문제를 해결하려고
+   inset을 6px→10px로 살짝 다시 늘려 여유를 둠(아래 .raven-loading-ring의 그라디언트 반경과
+   같이 조정된 값 — 까마귀가 작아진 게 아니라 그라디언트 도넛이 더 바깥에서 시작하도록 바뀜). */
 .raven-loading-logo {
   position: absolute;
-  inset: 6px;
-  width: calc(100% - 12px);
-  height: calc(100% - 12px);
+  inset: 10px;
+  width: calc(100% - 20px);
+  height: calc(100% - 20px);
   object-fit: contain;
 }
 
+/* 3차 피드백: 회전하는 하드보더 대신, 예전 raven-smoke-orb 느낌(그라디언트로 살짝 두꺼워
+   보이는 부드러운 링)을 모노톤(회색~검정)으로 재현. 반경을 wrap 박스보다 바깥으로 키워서(inset
+   음수) 브리딩 애니메이션의 어느 시점에도 까마귀 부리/실루엣에 링이 닿지 않도록 함. */
 .raven-loading-ring {
   position: absolute;
-  inset: 0;
+  inset: -22px;
   border-radius: 50%;
-  border: 3px solid rgba(0, 0, 0, 0.85);
+  background: radial-gradient(
+    circle closest-side at center,
+    transparent 76%,
+    rgba(226, 232, 240, 0) 77%,
+    rgba(226, 232, 240, 0.6) 81%,
+    rgba(148, 163, 184, 0.75) 86%,
+    rgba(30, 41, 59, 0.8) 92%,
+    transparent 100%
+  );
   animation: ravenBreathe 2.4s ease-in-out infinite;
 }
 
