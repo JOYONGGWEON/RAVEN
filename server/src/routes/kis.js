@@ -3,7 +3,13 @@ const router = express.Router();
 const { getKisAccessToken } = require("../lib/kisAuth");
 const { collectSupplyDemandForSymbol } = require("../lib/supplyDemandCollector");
 const { interpretSupplyDemand } = require("../lib/supplyDemandInterpreter");
-const { fetchCandles, fetchOverseasStockName, fetchIntradayCandles } = require("../lib/kisMarket");
+const {
+  fetchCandles,
+  fetchOverseasStockName,
+  fetchIntradayCandles,
+  fetchDomesticWeeklyCandles,
+  isDomesticSymbol,
+} = require("../lib/kisMarket");
 const { fetchIncomeStatement } = require("../lib/kisFundamentals");
 const { fetchNews } = require("../lib/kisNews");
 
@@ -147,6 +153,25 @@ router.get("/candles", async (req, res) => {
   } catch (e) {
     console.error("[RAVEN] /api/kis/candles error:", e);
     res.status(502).json({ error: "KIS candles proxy error" });
+  }
+});
+
+// 국내 종목 주봉(FID_PERIOD_DIV_CODE=W) — 2026-08-03 알고리즘 리뷰: 국내는 인트라데이 간격
+// 확장이 안 돼서(위 /candles 주석 참고) 스윙 도구엔 중기 프레임 공백이 있었는데, 일봉과 같은
+// 엔드포인트가 그대로 주봉을 줌(실측 확인) — 국내 전용, 해외는 이미 60분봉으로 커버됨.
+router.get("/weekly-candles", async (req, res) => {
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: "symbol query param required" });
+  if (!isDomesticSymbol(symbol)) {
+    return res.status(400).json({ error: "weekly-candles only supports domestic symbols" });
+  }
+
+  try {
+    const candles = await fetchDomesticWeeklyCandles(symbol);
+    res.json({ result: { candles } });
+  } catch (e) {
+    console.error("[RAVEN] /api/kis/weekly-candles error:", e);
+    res.status(502).json({ error: "KIS weekly-candles proxy error" });
   }
 });
 

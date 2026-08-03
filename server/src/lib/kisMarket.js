@@ -71,6 +71,35 @@ async function fetchDomesticCandleBatch(symbol, dateTo) {
   return json.output2 || [];
 }
 
+// 2026-08-03 알고리즘 리뷰: 국내는 KIS가 60분봉 같은 인트라데이 간격을 안 줘서(1분봉·당일·
+// 최대 30건뿐, 근본적 제약) 스윙 도구엔 애매한 프레임 공백이 있었음 — 그런데 같은 엔드포인트
+// (inquire-daily-itemchartprice)가 FID_PERIOD_DIV_CODE만 "D"→"W"/"M"으로 바꾸면 주봉/월봉을
+// 그대로 줌(실측 확인, 별도 인증·새 엔드포인트 불필요). 스윙(며칠~몇 주) 도구인 RAVEN에는
+// 1분봉보다 주봉이 훨씬 적합한 중기 프레임이라 이걸로 공백을 메움.
+async function fetchDomesticWeeklyCandles(symbol) {
+  const json = await kisGet(
+    "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+    "FHKST03010100",
+    {
+      FID_COND_MRKT_DIV_CODE: "J",
+      FID_INPUT_ISCD: symbol,
+      FID_INPUT_DATE_1: "19900101",
+      FID_INPUT_DATE_2: ymd(new Date()),
+      FID_PERIOD_DIV_CODE: "W",
+      FID_ORG_ADJ_PRC: "0",
+    }
+  );
+  const rows = json.output2 || [];
+  return rows.map((r) => ({
+    date: r.stck_bsop_date,
+    openPrice: Number(r.stck_oprc),
+    closePrice: Number(r.stck_clpr),
+    highPrice: Number(r.stck_hgpr),
+    lowPrice: Number(r.stck_lwpr),
+    volume: Number(r.acml_vol),
+  }));
+}
+
 async function fetchDomesticCandles(symbol, count) {
   const batch1 = await fetchDomesticCandleBatch(symbol, ymd(new Date()));
   let rows = batch1;
@@ -283,5 +312,6 @@ module.exports = {
   isDomesticSymbol,
   fetchOverseasStockName,
   fetchIntradayCandles,
+  fetchDomesticWeeklyCandles,
   resolveOverseasExchange,
 };

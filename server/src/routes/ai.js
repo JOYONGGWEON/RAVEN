@@ -100,6 +100,14 @@ function buildPrompt(payload) {
       indicators?.macdHistogram
     )} (${indicators?.macdCrossover || "NONE"})`
   );
+  if (indicators?.maCrossover && indicators.maCrossover !== "NONE") {
+    lines.push(`MA20/60 크로스오버: ${indicators.maCrossover} (오늘 막 발생한 이벤트)`);
+  }
+  if (indicators?.weeklyTrend) {
+    lines.push(
+      `주봉 기준 중기 추세(국내 전용): ${indicators.weeklyTrend.direction === "UP" ? "상승" : indicators.weeklyTrend.direction === "DOWN" ? "하락" : "횡보"} 우위 (주봉 EMA5 vs EMA20 격차 ${fmt(indicators.weeklyTrend.gapPct, 1)}%)`
+    );
+  }
   if (indicators?.macdDivergence && indicators.macdDivergence.divergence !== "NONE") {
     const d = indicators.macdDivergence;
     lines.push(

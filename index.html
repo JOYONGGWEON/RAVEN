@@ -328,6 +328,11 @@
             <div id="strategy-detail" class="strategy-detail">
               지지·저항, R:R, 모멘텀을 종합해 진입/관망 여부를 요약합니다.
             </div>
+            <!-- 관심종목이면 관심종목 알림 시스템(signalDetector.js, 골든/데드크로스+거래량급증+
+                 연속매매 기준)의 판정도 같이 보여줌 — 온디맨드 분석(R:R+SCORE 기준)과 서로 다른
+                 로직이라 두 시스템이 침묵 속에 어긋날 수 있었던 걸 교차 확인 가능하게 함
+                 (2026-08-03 알고리즘 리뷰). 관심종목이 아니거나 신호가 없으면 숨김. -->
+            <div id="watchlist-cross-check" class="watchlist-cross-check hidden"></div>
           </div>
 
           <!-- 가격 타겟 (Wave 수치 통합) -->

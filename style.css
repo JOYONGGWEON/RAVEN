@@ -1743,6 +1743,31 @@ body.raven-result-bg {
   color: #f1f5f9;
 }
 
+/* 2026-08-03 알고리즘 리뷰: 관심종목 텔레그램 신호(signalDetector.js)와 온디맨드 판정
+   (computeVerdict)이 서로 다른 로직이라 말없이 어긋날 수 있어서, 관심종목이면 교차 확인용으로
+   보여주는 박스 — RAVEN SIGNAL 본문과는 시각적으로 구분되게 위쪽 구분선 + 약간 다른 색조 */
+.watchlist-cross-check {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed rgba(148, 163, 184, 0.25);
+  font-size: 0.86rem;
+  color: var(--text-sub);
+}
+
+.watchlist-cross-check-title {
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.watchlist-cross-check-reasons {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.watchlist-cross-check-reasons li {
+  margin-top: 0.2rem;
+}
+
 /* ───────── Mobile (<= 768px) ───────── */
 
 @media (max-width: 768px) {

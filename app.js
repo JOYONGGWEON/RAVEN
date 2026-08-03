@@ -698,6 +698,54 @@ function calcIntradayMomentum(closes) {
   return { rsi, changePct, direction, minutes: n };
 }
 
+// 2026-08-03 알고리즘 리뷰: 국내 종목은 KIS가 인트라데이 간격 확장을 안 줘서(60분봉 불가) 스윙
+// 도구엔 일봉만으로는 아쉬운 중기 프레임 공백이 있었음 — 국내 전용 KIS 엔드포인트가
+// FID_PERIOD_DIV_CODE=W로 주봉을 그대로 주는 걸 확인해서(서버 kisMarket.js 참고) 도입.
+// 국내 전용(해외는 이미 60분봉으로 커버됨).
+async function fetchWeeklyCandles(symbol) {
+  const finalUrl = `${API_BASE}/api/kis/weekly-candles?symbol=${encodeURIComponent(symbol)}`;
+  try {
+    const response = await fetch(finalUrl);
+    if (!response.ok) throw new Error("Network Error");
+    const json = await response.json();
+
+    const candles = json?.result?.candles;
+    if (!candles || candles.length < 21) throw new Error("Not enough weekly candles");
+
+    const chronological = [...candles].reverse();
+    const closes = [];
+    for (const c of chronological) {
+      const cl = Number(c.closePrice);
+      if (!Number.isNaN(cl)) closes.push(cl);
+    }
+    if (closes.length < 21) throw new Error("Not enough clean weekly closes");
+
+    return closes;
+  } catch (e) {
+    console.warn("[RAVEN] 주봉 데이터 조회 실패:", e);
+    return null;
+  }
+}
+
+// 주봉 종가로 중기 추세 판단 — 일봉의 MA20/60(단기~중기)과 같은 방식이지만 주봉 EMA5(≈1개월)
+// vs EMA20(≈5개월)로, "몇 달짜리 중기 추세"를 별도 확인. 며칠짜리 일봉 신호와 몇 달짜리 주봉
+// 추세가 같은 방향이면 신뢰도가 높고, 반대면(예: 일봉은 반등 중인데 주봉은 여전히 하락 추세)
+// "그 반등이 중기 하락 추세 속의 일시적 되돌림일 수 있다"는 경고 근거가 됨.
+function calcWeeklyTrend(weeklyCloses) {
+  if (!Array.isArray(weeklyCloses) || weeklyCloses.length < 21) return null;
+
+  const ma5 = calcEMA(weeklyCloses, 5);
+  const ma20 = calcEMA(weeklyCloses, 20);
+  if (ma5 == null || ma20 == null) return null;
+
+  let direction = "FLAT";
+  if (ma5 > ma20) direction = "UP";
+  else if (ma5 < ma20) direction = "DOWN";
+
+  const gapPct = ma20 !== 0 ? ((ma5 - ma20) / ma20) * 100 : 0;
+  return { ma5, ma20, direction, gapPct };
+}
+
 // 개별 종목 vs 벤치마크의 20일/60일 수익률 격차 — "시장 대비 잘 가는지"를 직접 비교
 // (예전엔 개별 종목 지표만 봐서, 업종/지수 전체가 빠지는 중에도 종목만 보고 좋다고 오판할 수 있었음)
 function calcRelativeStrength(stockData, benchmarkData) {
@@ -929,6 +977,31 @@ function calcEMASeries(values, period) {
     series[i] = ema;
   }
   return series;
+}
+
+// MA20/60 골든·데드크로스 "이벤트" 감지 — 어제→오늘 사이에 대소관계가 막 뒤집혔는지만 봄
+// (상태가 아니라 사건 기준이라 며칠째 정배열이어도 매일 반복해서 신호가 뜨지 않음).
+// 2026-08-03 알고리즘 리뷰: 이 감지 로직은 원래 server/src/lib/signalDetector.js(관심종목
+// 텔레그램 알림 전용)에만 있었고, 온디맨드 분석(이 파일)은 MA20/60의 "지금 상태"(정배열/역배열)만
+// 보고 "오늘 막 크로스했다"는 이벤트는 전혀 몰랐음 — 같은 종목인데 텔레그램은 골든크로스를
+// 근거로 매수 알림을 보내는 사이 화면 분석은 그 사실 자체를 언급 못 하는 불일치가 있었음.
+// signalDetector.js의 detectMACross()와 동일한 로직을 그대로 복제(중복이지만, 이 파일은 브라우저
+// 전용이라 서버 모듈을 require할 수 없어서 별도 구현 — 두 파일의 기존 컨벤션과 동일).
+function detectMaCross(closes) {
+  const ma20Series = calcEMASeries(closes, 20);
+  const ma60Series = calcEMASeries(closes, 60);
+  if (!ma20Series || !ma60Series) return "NONE";
+
+  const n = closes.length;
+  const today20 = ma20Series[n - 1];
+  const today60 = ma60Series[n - 1];
+  const prev20 = ma20Series[n - 2];
+  const prev60 = ma60Series[n - 2];
+  if ([today20, today60, prev20, prev60].some((v) => v == null)) return "NONE";
+
+  if (prev20 <= prev60 && today20 > today60) return "GOLDEN";
+  if (prev20 >= prev60 && today20 < today60) return "DEAD";
+  return "NONE";
 }
 
 // MACD 라인 + 시그널선(9-EMA) + 히스토그램 + 골든/데드 크로스 감지
@@ -1185,7 +1258,7 @@ function pickSupportResistance(clusters, lastPrice, isSupport, maxDistPct = 0.3)
 }
 
 // 5. 지표 계산 엔진
-function analyzeData(data, benchmarkData, intradayCloses) {
+function analyzeData(data, benchmarkData, intradayCloses, weeklyCloses) {
   const closes = data.closes;
   const highs = data.highs;
   const lows = data.lows;
@@ -1196,6 +1269,7 @@ function analyzeData(data, benchmarkData, intradayCloses) {
 
   const rsInfo = benchmarkData ? calcRelativeStrength(data, benchmarkData) : null;
   const intradayInfo = calcIntradayMomentum(intradayCloses);
+  const weeklyTrend = calcWeeklyTrend(weeklyCloses);
 
   const ma5 = calcEMA(closes, 5);
   const ma20 = calcEMA(closes, 20);
@@ -1216,6 +1290,7 @@ function analyzeData(data, benchmarkData, intradayCloses) {
   const macdDivergence = macdFull
     ? detectMacdDivergence(closes, macdFull.macdSeries, 20)
     : null;
+  const maCrossover = detectMaCross(closes);
 
   const atr = calcATR(highs, lows, closes, 14);
   const atrPct = typeof atr === "number" && lastPrice > 0 ? (atr / lastPrice) * 100 : null;
@@ -1444,6 +1519,33 @@ function analyzeData(data, benchmarkData, intradayCloses) {
   if (macdCrossover === "GOLDEN") score += 5;
   else if (macdCrossover === "DEAD") score -= 5;
 
+  // 2026-08-03 알고리즘 리뷰: MA20/60 골든·데드크로스 "이벤트"는 관심종목 텔레그램 알림
+  // (signalDetector.js)에만 반영되고 SCORE엔 전혀 없었음 — MACD보다 느린 이동평균(20/60일) 교차라
+  // 더 굵직한 추세 전환 신호로 보고 MACD(±5)보다 약간 크게 반영.
+  if (maCrossover === "GOLDEN") score += 8;
+  else if (maCrossover === "DEAD") score -= 8;
+
+  // 2026-08-03: 주봉 기준 중기 추세(국내 전용, 위 calcWeeklyTrend 참고) — 일봉/ADX가 이미
+  // 단기~중기 추세를 반영하고 있어서 비중은 작게(±6) 두되, "몇 달짜리 중기 추세와 방향이
+  // 같은지"를 별도로 확인하는 용도. 아직 백테스트로 검증된 가중치는 아니라 보수적으로 작게 잡음.
+  if (weeklyTrend) {
+    if (weeklyTrend.direction === "UP") score += 6;
+    else if (weeklyTrend.direction === "DOWN") score -= 6;
+  }
+
+  // 거래량 확인 — 예전엔 volumeRatio(20일 평균 대비 당일 거래량)를 계산만 해두고 SCORE엔 전혀
+  // 안 썼음. 실제 트레이더는 거래량 확인 없는 가격 움직임을 잘 신뢰하지 않음: 평소보다 훨씬
+  // 많은 거래량을 동반한 상승/하락은 확인(가점/감점)으로, 반대로 평소보다 훨씬 적은 거래량은
+  // 방향에 상관없이 "확신이 부족한 움직임"으로 보고 소폭 감점.
+  if (Number.isFinite(volumeRatio) && Number.isFinite(dailyChangePct)) {
+    if (volumeRatio >= 1.8) {
+      if (dailyChangePct > 0) score += 4;
+      else if (dailyChangePct < 0) score -= 4;
+    } else if (volumeRatio < 0.5) {
+      score -= 2;
+    }
+  }
+
   // 지수 대비 상대강도(RS) — 예전엔 개별 종목 지표만 봐서, 업종/시장 전체가 빠지는 중에도
   // 종목만 보고 좋다고 오판할 수 있었음. 벤치마크(국내: KODEX200, 해외: SPY) 대비 20일 성과 격차를 반영.
   if (rsInfo && Number.isFinite(rsInfo.rs20)) {
@@ -1466,6 +1568,8 @@ function analyzeData(data, benchmarkData, intradayCloses) {
     macdHistogram,
     macdCrossover,
     macdDivergence,
+    maCrossover,
+    weeklyTrend,
     atr,
     atrPct,
     adx,
@@ -2947,6 +3051,17 @@ function updateUI(data, analysis, fxRate, stockName) {
       return lines;
     };
 
+    // 2026-08-03 알고리즘 리뷰 ④: 손절가가 진입 시점 기준으로 고정된 채 끝나서, 가격이 유리하게
+    // 움직인 뒤에도 그대로 방치하면 이미 확보한 수익까지 반납할 위험이 있음 — 목표가의 절반 지점을
+    // 넘어서면 손절가를 본전(진입가 가정=현재가) 수준으로 올리라는 트레일링 스탑 가이드를 추가.
+    // BUY 판정에서만 의미 있음(SELL/NEUTRAL 판정에서는 신규 진입을 권하지 않으므로 트레일링 대상이 없음).
+    const buildTrailingStopLine = () => {
+      if (!Number.isFinite(target1) || !Number.isFinite(px) || target1 === px) return "";
+      const halfway = px + (target1 - px) * 0.5;
+      if (!Number.isFinite(halfway)) return "";
+      return `🔁 트레일링: 이후 가격이 ${formatPrice(halfway)}(1차 목표가의 절반 지점) 부근까지 오르면, 손절가를 진입가(본전) 수준으로 올려 이미 확보한 수익을 방어하는 것을 권장합니다.`;
+    };
+
     // ⚠️ 실제로 발견된 누락: MACD 크로스오버/다이버전스·ADX·RS 체크가 "지지선 근처 매수"/"저항선
     // 근처 매도" 두 분기에만 있고, "과매도 역추세"·"R:R 불리"·"중립/관망" 세 분기엔 아예 없어서
     // MACD 지표박스엔 골든크로스가 뜨는데 RAVEN SIGNAL엔 언급이 통째로 빠지는 문의를 받음(FLNC로
@@ -2962,6 +3077,37 @@ function updateUI(data, analysis, fxRate, stockName) {
       }
       if (adxTrend === "RISING") bits.push("추세 강도 강화 중");
       else if (adxTrend === "FALLING") bits.push("추세 강도는 약화 중");
+
+      // 2026-08-03 알고리즘 리뷰: MA20/60 크로스 이벤트는 관심종목 텔레그램 알림에만 있고 이
+      // 화면엔 아예 없었음 — MACD와 같은 패턴으로 추가(더 굵직한 신호라 별도로 강조).
+      if (analysis.maCrossover === "GOLDEN") {
+        const txt = "MA20/60 골든크로스 동반";
+        if (direction === "BUY") bits.push(toneSpan(txt, "highlight"));
+        else if (direction === "SELL") bits.push(`다만 ${txt}`);
+        else bits.push(txt);
+      } else if (analysis.maCrossover === "DEAD") {
+        const txt = "MA20/60 데드크로스 동반";
+        if (direction === "SELL") bits.push(toneSpan(txt, "highlight"));
+        else if (direction === "BUY") bits.push(`다만 ${txt}`);
+        else bits.push(txt);
+      }
+
+      // 2026-08-03: 주봉 기준 중기 추세(국내 전용) — 일봉 판정과 같은 방향이면 뒷받침 근거로,
+      // 반대 방향이면(예: 일봉은 매수 신호인데 주봉은 여전히 하락 추세) "다만"으로 주의를 줌 —
+      // 며칠짜리 반등이 몇 달짜리 하락 추세 속의 일시적 되돌림일 수 있다는 걸 놓치지 않게 함.
+      if (analysis.weeklyTrend) {
+        if (analysis.weeklyTrend.direction === "UP") {
+          const txt = "주봉 기준 중기 추세도 상승 우위";
+          if (direction === "BUY") bits.push(toneSpan(txt, "highlight"));
+          else if (direction === "SELL") bits.push(`다만 ${txt}`);
+          else bits.push(txt);
+        } else if (analysis.weeklyTrend.direction === "DOWN") {
+          const txt = "주봉 기준 중기 추세는 하락 우위";
+          if (direction === "SELL") bits.push(toneSpan(txt, "highlight"));
+          else if (direction === "BUY") bits.push(`다만 ${txt}`);
+          else bits.push(txt);
+        }
+      }
 
       if (analysis.macdCrossover === "GOLDEN") {
         const txt = "MACD 골든크로스 동반";
@@ -2984,6 +3130,18 @@ function updateUI(data, analysis, fxRate, stockName) {
       if (rsInfo && Number.isFinite(rsInfo.rs20)) {
         if (rsInfo.rs20 >= 5) bits.push(direction === "SELL" ? "다만 지수 대비 아웃퍼폼 중" : "지수 대비 아웃퍼폼 중");
         else if (rsInfo.rs20 <= -5) bits.push(direction === "BUY" ? "다만 지수 대비 언더퍼폼 중" : "지수 대비 언더퍼폼 중");
+      }
+
+      // 2026-08-03: 거래량 확인 — SCORE 반영과 같은 근거로, 서술에도 노출해서 왜 점수가
+      // 조정됐는지 사용자가 알 수 있게 함.
+      if (Number.isFinite(analysis.volumeRatio) && Number.isFinite(analysis.dailyChangePct)) {
+        if (analysis.volumeRatio >= 1.8 && analysis.dailyChangePct > 0) {
+          bits.push(direction === "SELL" ? "다만 거래량 급증 동반 상승" : "거래량 급증 동반 상승(수급 확인)");
+        } else if (analysis.volumeRatio >= 1.8 && analysis.dailyChangePct < 0) {
+          bits.push(direction === "BUY" ? "다만 거래량 급증 동반 하락" : "거래량 급증 동반 하락(매도세 확인)");
+        } else if (analysis.volumeRatio < 0.5) {
+          bits.push("거래량이 평소보다 크게 부족(확신 낮은 움직임)");
+        }
       }
 
       return bits;
@@ -3058,6 +3216,8 @@ function updateUI(data, analysis, fxRate, stockName) {
             "역추세 전략은 손절이 생명 — 이탈 시 미련 없이 즉시 손절"
           )
         );
+        const trailingLine1 = buildTrailingStopLine();
+        if (trailingLine1) detailLines.push(trailingLine1);
       } else {
         mainTxt = "지지선 근처 눌림 매수 우위";
         const bits = [];
@@ -3075,6 +3235,8 @@ function updateUI(data, analysis, fxRate, stockName) {
             "지지선 이탈 확정 시(종가 기준) 미련 없이 손절"
           )
         );
+        const trailingLine2 = buildTrailingStopLine();
+        if (trailingLine2) detailLines.push(trailingLine2);
       }
     } else if (verdict.tier === "SELL") {
       if (nearResistance) {
@@ -3972,6 +4134,52 @@ function updateWatchlistStarState() {
   starBtn.textContent = inWatchlist ? "★" : "☆";
 }
 
+// 2026-08-03 알고리즘 리뷰: 온디맨드 분석(R:R+SCORE 기준, computeVerdict)과 관심종목 텔레그램
+// 알림(골든/데드크로스+거래량급증+연속매매 기준, signalDetector.js)이 서로 완전히 다른 로직이라
+// 같은 종목에 대해 두 시스템이 말없이 어긋날 수 있었음 — 관심종목이면 텔레그램 판정도 같이
+// 보여줘서 사용자가 직접 대조할 수 있게 함(하나로 강제 통합하는 대신 교차 확인 방식 채택 —
+// 두 시스템의 판단 근거 자체가 달라서 억지로 합치면 각자의 신호 의미가 흐려짐).
+async function renderWatchlistCrossCheck(symbol) {
+  const el = $("watchlist-cross-check");
+  if (!el) return;
+
+  const inWatchlist = watchlistCache.some((w) => w.symbol === symbol);
+  if (!inWatchlist) {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/watchlist/check-now/${encodeURIComponent(symbol)}`);
+    if (!res.ok) throw new Error("check-now failed");
+    const result = await res.json();
+
+    // 그 사이 다른 종목을 검색했을 수 있음 — 지금 화면과 다른 종목이면 무시
+    if (!lastAnalysis || lastAnalysis.data.symbol !== symbol) return;
+
+    if (!result || result.signal === "NONE") {
+      el.classList.add("hidden");
+      el.innerHTML = "";
+      return;
+    }
+
+    const label = result.signal === "BUY" ? "매수" : "매도";
+    const tone = result.signal === "BUY" ? "pos" : "neg";
+    const reasonsHtml = (result.reasons || [])
+      .map((r) => `<li>${r}</li>`)
+      .join("");
+    el.innerHTML =
+      `<div class="watchlist-cross-check-title">📡 관심종목 알림 시스템 판정: <span class="sentiment-${tone}">${label}</span> (신뢰도: ${result.confidence})</div>` +
+      (reasonsHtml ? `<ul class="watchlist-cross-check-reasons">${reasonsHtml}</ul>` : "");
+    el.classList.remove("hidden");
+  } catch (e) {
+    console.warn("[RAVEN] 관심종목 교차 확인 조회 실패:", e);
+    el.classList.add("hidden");
+    el.innerHTML = "";
+  }
+}
+
 async function toggleWatchlistForCurrentTicker() {
   const symbol = lastAnalysis?.data?.symbol;
   if (!symbol) return;
@@ -3987,6 +4195,7 @@ async function toggleWatchlistForCurrentTicker() {
       showToast(`${displayLabel} 관심종목에서 삭제됨`);
       await refreshWatchlistPanel();
       updateWatchlistStarState();
+      renderWatchlistCrossCheck(symbol);
     } else {
       showToast("관심종목 삭제에 실패했습니다.");
     }
@@ -3996,6 +4205,7 @@ async function toggleWatchlistForCurrentTicker() {
       showToast(`${displayLabel} 관심종목에 추가됨`);
       await refreshWatchlistPanel();
       updateWatchlistStarState();
+      renderWatchlistCrossCheck(symbol);
     } else {
       showToast("관심종목 추가에 실패했습니다.");
     }
@@ -4035,17 +4245,21 @@ async function runAnalysisForTicker(rawSymbol) {
     // 60분봉으로 리샘플링해도 1개 봉이 안 나올 만큼 데이터가 얕음 — 30분치 노이즈로 "장중 흐름이
     // 엇갈립니다" 같은 판단을 내리는 게 오히려 신뢰도를 떨어뜨린다고 판단해서 국내는 이 보조지표
     // 자체를 아예 호출하지 않음(해외는 서버가 60분봉으로 전환됨 — kisMarket.js 참고).
-    const [data, fxRate, stockName, benchmarkData, intradayCloses] = await Promise.all([
+    const [data, fxRate, stockName, benchmarkData, intradayCloses, weeklyCloses] = await Promise.all([
       fetchStockData(symbol),
       fetchFxRate(),
       domestic ? fetchDomesticStockName(symbol) : fetchOverseasStockName(symbol),
       fetchBenchmarkData(domestic),
-      domestic ? Promise.resolve(null) : fetchIntradayCandles(symbol)
+      domestic ? Promise.resolve(null) : fetchIntradayCandles(symbol),
+      // 주봉(중기 추세) — 국내 전용, 위 fetchWeeklyCandles 주석 참고
+      domestic ? fetchWeeklyCandles(symbol) : Promise.resolve(null)
     ]);
 
-    const analysis = analyzeData(data, benchmarkData, intradayCloses);
+    const analysis = analyzeData(data, benchmarkData, intradayCloses, weeklyCloses);
     updateUI(data, analysis, fxRate, stockName);
     updateWatchlistStarState();
+    // 관심종목 텔레그램 신호 교차 확인 — 메인 분석을 늦추지 않도록 비동기(수급/실적 탭과 같은 패턴)
+    renderWatchlistCrossCheck(symbol);
 
     // 차트 위젯 렌더
     renderTradingViewChart(symbol);
@@ -4161,6 +4375,8 @@ async function requestAiAnalysis() {
         macdSignal: analysis.macdSignal,
         macdHistogram: analysis.macdHistogram,
         macdCrossover: analysis.macdCrossover,
+        maCrossover: analysis.maCrossover,
+        weeklyTrend: analysis.weeklyTrend,
         // ⚠️ 실제로 계산되고 화면(모멘텀/추세 탭)엔 이미 반영되던 값들인데 AI 프롬프트엔
         // 안 보내고 있었던 것들 — 추세 강도 변화(adxTrend)와 MACD 다이버전스는 사람이 볼 때도
         // 중요한 판단 근거라 AI 서술에도 반영되도록 추가함.
