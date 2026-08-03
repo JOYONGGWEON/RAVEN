@@ -3612,7 +3612,16 @@ function formatUsdCompact(value) {
   return `${sign}$${Math.round(abs).toLocaleString("en-US")}`;
 }
 
-const QUARTER_MONTH_LABEL = { "03": "1", "06": "2", "09": "3", "12": "4" };
+// ⚠️ 실제 버그: 이 맵이 원래 국내(KIS, 결산월이 항상 정확히 03/06/09/12월)만 염두에 두고 만들어져서
+// 4개월만 있었음 — 해외(Yahoo) 분기 데이터의 asOfDate가 이 4개월이 아닌 달로 찍히면(회사마다 회계연도가
+// 달라 분기 마감월이 다를 수 있음) 전부 "Q?"로 표시되던 문제였음. 서버(yahooFundamentals.js)가 label을
+// 계산할 때 쓰는 것과 동일한 "01~12월 전체를 분기로 버킷팅"하는 맵으로 맞춰서 항상 숫자가 나오게 함.
+const QUARTER_MONTH_LABEL = {
+  "01": "1", "02": "1", "03": "1",
+  "04": "2", "05": "2", "06": "2",
+  "07": "3", "08": "3", "09": "3",
+  "10": "4", "11": "4", "12": "4",
+};
 function shortQuarterLabel(yyyymm) {
   const year = yyyymm.slice(2, 4);
   const q = QUARTER_MONTH_LABEL[yyyymm.slice(4, 6)] || "?";
@@ -3834,7 +3843,7 @@ function applyInvestorStreakToScore(sdData, symbol) {
     const sign = delta > 0 ? "+" : "";
     // 연속매매 반영 문구는 기존 캡션과 한 줄로 붙어서 읽기 불편했음 — 별도 줄로 분리
     captionEl.innerHTML =
-      `ℹ️ RAVEN 분석에 의한 자체 점수입니다<br>(외국인·기관 연속매매 반영 ${sign}${delta}점)`;
+      `ℹ️ RAVEN 알고리즘에 의한 점수입니다<br>(외국인·기관 연속매매 반영 ${sign}${delta}점)`;
   }
 }
 
