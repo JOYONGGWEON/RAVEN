@@ -224,13 +224,18 @@ async function fetchDomesticIntradayCandles(symbol) {
   }));
 }
 
+// 2026-08-03 피드백 검토: 1분봉으로 RSI(14)를 계산하면 14분치 노이즈(마이크로스트럭처/HFT
+// 지터)를 "모멘텀"으로 잘못 해석하기 쉬움 — RAVEN은 스윙(며칠~몇 주) 포지셔닝 도구라 그 타임프레임과
+// 안 맞는 스캘핑용 지표였음. 해외는 KIS가 NMIN으로 60분봉을 직접 지원해서(실측 검증됨, 프로젝트
+// 기록 참고) 노이즈를 줄인 60분봉으로 전환 — PINC=0으로 최근 NREC개(20개 = 대략 최근 2~3거래일치
+// 세션)만 받아서 여전히 "최근 흐름" 정도의 스코프를 유지함(다일치 페이지네이션까지는 불필요).
 async function fetchOverseasIntradayCandles(symbol) {
   const excd = await resolveOverseasExchange(symbol);
   await sleep(600);
   const json = await kisGet(
     "/uapi/overseas-price/v1/quotations/inquire-time-itemchartprice",
     "HHDFS76950200",
-    { AUTH: "", EXCD: excd, SYMB: symbol, NMIN: "1", PINC: "0", NEXT: "", NREC: "120", FILL: "", KEYB: "" }
+    { AUTH: "", EXCD: excd, SYMB: symbol, NMIN: "60", PINC: "0", NEXT: "", NREC: "20", FILL: "", KEYB: "" }
   );
   const rows = json.output2 || [];
   return rows.map((r) => ({
@@ -243,8 +248,11 @@ async function fetchOverseasIntradayCandles(symbol) {
   }));
 }
 
-// symbol만 보고 국내/해외 자동 판별해 "당일 1분봉"을 가져옴 (최신순 — 호출측이 chronological로 뒤집어 씀,
-// 기존 fetchCandles와 같은 규약). 장 마감 후·개장 전엔 데이터가 다 같은 값으로 채워질 수 있음(정상 — 실측 확인).
+// symbol만 보고 국내/해외 자동 판별해 최근 단기 캔들을 가져옴 (최신순 — 호출측이 chronological로
+// 뒤집어 씀, 기존 fetchCandles와 같은 규약). 해외는 60분봉(위 주석 참고), 국내는 여전히 1분봉만
+// 가능함 — 다만 국내는 1회 호출 최대 30건(=30분치)뿐이라 60분봉으로 리샘플링해도 1개 봉도 안 되는
+// 양이라 의미 있는 신호가 안 나옴. 그 상태로 "장중 흐름이 엇갈립니다" 같은 문장을 넣는 건 30분
+// 노이즈로 판단을 내리는 것과 같아서, 국내는 이 보조 지표 자체를 호출측(app.js)에서 건너뛰도록 함.
 async function fetchIntradayCandles(symbol) {
   const trimmed = (symbol || "").trim();
   const rows = isDomesticSymbol(trimmed)

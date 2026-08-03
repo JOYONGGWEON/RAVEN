@@ -380,16 +380,23 @@ async function interpretSupplyDemand(symbol) {
   if (streakPart) parts.push(streakPart);
 
   const toneSum = parts.reduce((sum, p) => sum + p.tone, 0);
-  let outlook;
+  // outlook은 수급 탭 전용 박스(supply-kis-outlook)에 그대로 노출되는 긴 코멘트, outlookShort는
+  // 그 아래 "수급 종합" 요약 리스트용 — 예전엔 이 리스트가 outlook을 통째로 따옴표째 재인용해서
+  // 바로 위 박스와 문장이 완전히 겹쳐 보이던 버그가 있었음(2026-08-03 피드백) — 짧고 "종합했을
+  // 때" 어조로 구분되는 별도 문장을 내려줌.
+  let outlook, outlookShort;
   if (toneSum >= 2) {
     outlook =
       "전일 수급 지표는 전반적으로 우호적입니다. 다만 수급은 하루 단위로 바뀔 수 있으니 오늘 가격·거래량 흐름과 함께 확인하는 것을 권장합니다.";
+    outlookShort = "전일 수급을 종합해봤을 때 우호적인 신호가 우세합니다.";
   } else if (toneSum <= -2) {
     outlook =
       "전일 수급 지표는 부담스러운 신호가 많습니다. 신규 진입보다는 관망하며 지지선 반응을 지켜보는 편이 안전할 수 있습니다.";
+    outlookShort = "전일 수급을 종합해봤을 때 부담스러운 신호가 우세합니다.";
   } else {
     outlook =
       "전일 수급 지표가 뚜렷한 한쪽 방향을 가리키지 않는 혼조 구간입니다. 가격·거래량 흐름을 함께 참고해 주세요.";
+    outlookShort = "전일 수급을 종합해봤을 때 뚜렷한 방향성 없이 혼조된 모습입니다.";
   }
 
   const latestDate =
@@ -404,6 +411,7 @@ async function interpretSupplyDemand(symbol) {
     date: latestDate,
     lines: parts.map((p) => p.text),
     outlook,
+    outlookShort,
     // 외국인/기관 연속매매 tone(-2~+2, 방향당 ±1) — 클라이언트가 RAVEN SCORE에 소폭 반영할 때 씀.
     // streakPart가 없으면(3일 미만 연속) 0 — "특이 신호 없음"과 같은 뜻.
     investorStreakTone: streakPart ? streakPart.tone : 0,

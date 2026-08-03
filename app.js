@@ -641,10 +641,11 @@ async function fetchBenchmarkData(domestic) {
   }
 }
 
-// 장중 초단기 흐름(1분봉) — 2026-07-31에 KIS 실측 후 실제 연동함(국내는 당일 최대 30건,
-// 해외는 당일 최대 120건 — server/src/lib/kisMarket.js의 fetchIntradayCandles 참고). "지금 장중
-// 흐름이 일봉 추세와 같은 방향인지" 보는 보조 지표. 장 마감 후/개장 전엔 데이터가 부족하거나
-// 다 같은 값일 수 있어 그 경우엔 여전히 soft-fail로 null 반환(메인 분석엔 영향 없음).
+// 장중 단기 흐름(해외는 60분봉, 국내는 호출 자체를 안 함 — 위 fetchStockData 호출부 주석 참고).
+// 2026-08-03: 1분봉 RSI가 스윙 타임프레임과 안 맞는 노이즈였다는 피드백을 받아 해외를 60분봉으로
+// 전환(server/src/lib/kisMarket.js). "지금 장중 흐름이 일봉 추세와 같은 방향인지" 보는 보조
+// 지표라는 목적은 그대로. 장 마감 후/개장 전엔 데이터가 부족하거나 다 같은 값일 수 있어 그 경우엔
+// 여전히 soft-fail로 null 반환(메인 분석엔 영향 없음).
 async function fetchIntradayCandles(symbol) {
   const finalUrl = `${API_BASE}/api/kis/candles?symbol=${encodeURIComponent(
     symbol
@@ -655,8 +656,11 @@ async function fetchIntradayCandles(symbol) {
     if (!response.ok) throw new Error("Network Error");
     const json = await response.json();
 
+    // 실측 확인: KIS가 PINC=0일 땐 "오늘 장중 지금까지 경과한 시간만큼"만 60분봉을 주므로(예:
+    // 개장 3시간 지났으면 3개), 하루 최대치(미국 기준 6~7개)보다 훨씬 적은 게 정상 — 예전 1분봉
+    // 시절의 최소 30개 기준을 그대로 두면 장 초반엔 항상 데이터 부족으로 soft-fail되므로 3개로 낮춤
     const candles = json?.result?.candles;
-    if (!candles || candles.length < 30) throw new Error("Not enough intraday candles");
+    if (!candles || candles.length < 3) throw new Error("Not enough intraday candles");
 
     const chronological = [...candles].reverse();
     const closes = [];
@@ -664,21 +668,23 @@ async function fetchIntradayCandles(symbol) {
       const cl = Number(c.closePrice);
       if (!Number.isNaN(cl)) closes.push(cl);
     }
-    if (closes.length < 30) throw new Error("Not enough clean intraday closes");
+    if (closes.length < 3) throw new Error("Not enough clean intraday closes");
 
     return closes;
   } catch (e) {
-    console.warn("[RAVEN] 장중 초단기 데이터 조회 실패:", e);
+    console.warn("[RAVEN] 장중 단기 데이터 조회 실패:", e);
     return null;
   }
 }
 
-// 1분봉 종가 배열로 초단기 모멘텀 해석 — RSI(14, 1분봉 기준) + 구간 전반부 대비 후반부 가격 가속도
+// 60분봉 종가 배열로 단기 모멘텀 해석 — RSI(14, 60분봉 기준) + 구간 전반부 대비 후반부 가격 가속도.
+// 60분봉으로 바뀌면서 "minutes"라는 이름은 더 이상 정확하지 않지만(실제로는 "봉 개수"), narrative
+// 쪽에서 시간 단위로 환산해서 쓰므로 필드명은 유지(barCount 의미로 재해석).
 function calcIntradayMomentum(closes) {
-  if (!Array.isArray(closes) || closes.length < 30) return null;
+  if (!Array.isArray(closes) || closes.length < 3) return null;
 
   const n = closes.length;
-  const rsi = calcRSI_Wilder(closes, 14);
+  const rsi = calcRSI_Wilder(closes, Math.min(14, n - 1));
 
   const half = Math.floor(n / 2);
   const firstAvg = closes.slice(0, half).reduce((a, b) => a + b, 0) / half;
@@ -1660,6 +1666,16 @@ function calcWhyTodaySignal(data, analysis, flowInfo) {
 // ────────────────────────────────
 // 매수/매도/중립 최종 판정 — 배지·전략요약 공통 사용 (단일 기준, 중복 계산 금지)
 // ────────────────────────────────
+// 2026-08-03 알고리즘 리뷰: 실제 트레이더라면 절대 하지 않을 방식이 하나 있었음 — 이 판정이
+// 오직 R:R(목표가/손절가까지의 거리 비율)만 보고 매수/매도를 정했고, 같은 엔진이 이미 계산해둔
+// RAVEN SCORE/등급(추세 강도·모멘텀·RS 등을 종합한 값)은 R:R 계산이 유효할 때는 전혀 참고하지
+// 않았음. 그 결과 실측으로 재현됨: 삼성전자(005930)가 SCORE는 D(추세·모멘텀이 나쁨)인데도 지지선이
+// 멀고 저항선이 가까운 기하학적 이유만으로 R:R이 2를 넘으면 "매수" 배지가 뜰 수 있는 구조였음 —
+// 같은 화면 안에서 SCORE는 "추세가 나쁘다"고 하는데 배지는 "사라"고 말하는 자기모순. 실제 트레이더는
+// 가격 구조(R:R)만 보고 진입하지 않고 반드시 추세/모멘텀이 그 방향을 지지하는지 확인하므로,
+// R:R 신호가 SCORE 등급과 정면으로 반대일 때(R:R은 매수인데 등급 D, 또는 R:R은 매도인데 등급 S/A)는
+// 신호를 유보하고 중립으로 완화함 — conflict 플래그로 그 사실 자체를 UI에 노출(그냥 "애매한
+// 구간"으로 뭉개지 않고 "두 지표가 서로 반대라 유보했다"는 걸 명시).
 function computeVerdict(analysis) {
   const { rewardPct1: upPctRaw, riskPct: downPctRaw, rrRatio: rrRaw, rank } =
     analysis;
@@ -1671,16 +1687,30 @@ function computeVerdict(analysis) {
     Number.isFinite(rrRaw);
 
   let tier = "NEUTRAL";
+  let conflict = false;
   if (isValid) {
-    if (rrRaw >= 2) tier = "BUY";
-    else if (rrRaw < 1) tier = "SELL";
+    if (rrRaw >= 2) {
+      if (rank === "D") {
+        tier = "NEUTRAL";
+        conflict = true;
+      } else {
+        tier = "BUY";
+      }
+    } else if (rrRaw < 1) {
+      if (rank === "S" || rank === "A") {
+        tier = "NEUTRAL";
+        conflict = true;
+      } else {
+        tier = "SELL";
+      }
+    }
   } else if (rank === "S" || rank === "A") {
     tier = "BUY";
   } else if (rank === "D") {
     tier = "SELL";
   }
 
-  return { tier, isValid, upPctRaw, downPctRaw, rrRaw };
+  return { tier, isValid, upPctRaw, downPctRaw, rrRaw, conflict, rank };
 }
 
 // ────────────────────────────────
@@ -1743,23 +1773,25 @@ function summarizeTrendMomentum(analysis) {
     bullets.push("MACD 강세 다이버전스도 감지되어, 하락 동력이 약해지고 있을 가능성이 있습니다.");
   }
 
-  // 장중 초단기(1분봉 기준) 흐름 — 일봉 추세와 같은 방향인지 엇갈리는지 확인
-  // (KIS 전환 후 분봉은 미구현이라 현재는 항상 null — app.js 상단 fetchIntradayCandles 참고)
+  // 장중 단기(해외 종목만, 60분봉 기준) 흐름 — 일봉 추세와 같은 방향인지 엇갈리는지 확인.
+  // 국내는 KIS가 1분봉·최대 30건뿐이라 노이즈가 너무 커서(2026-08-03 피드백 검토 후) 호출 자체를
+  // 안 함 — 국내 종목은 항상 intradayInfo가 null이라 이 블록이 그냥 스킵됨(정상 동작).
   if (intradayInfo) {
     const dailyUp = verdictWord === "상승 우위";
     const dailyDown = verdictWord === "하락 우위";
+    const hoursTxt = `약 ${intradayInfo.minutes}시간(60분봉 기준)`;
 
     if (intradayInfo.direction === "UP" && dailyDown) {
       bullets.push(
-        `다만 장중(최근 약 ${intradayInfo.minutes}분, 1분봉 기준) 흐름은 반등 시도 중이라 일봉 추세와 엇갈립니다 — 단기 눌림/저점 매수 시그널일 수 있으니 확인이 필요합니다.`
+        `다만 최근 ${hoursTxt} 흐름은 반등 시도 중이라 일봉 추세와 엇갈립니다 — 단기 눌림/저점 매수 시그널일 수 있으니 확인이 필요합니다.`
       );
     } else if (intradayInfo.direction === "DOWN" && dailyUp) {
       bullets.push(
-        `다만 장중(최근 약 ${intradayInfo.minutes}분, 1분봉 기준) 흐름은 눌리는 중이라 일봉 추세와 엇갈립니다 — 단기 조정 가능성을 함께 감안해야 합니다.`
+        `다만 최근 ${hoursTxt} 흐름은 눌리는 중이라 일봉 추세와 엇갈립니다 — 단기 조정 가능성을 함께 감안해야 합니다.`
       );
     } else if (intradayInfo.direction === "UP" || intradayInfo.direction === "DOWN") {
       bullets.push(
-        `장중(최근 약 ${intradayInfo.minutes}분, 1분봉 기준) 흐름도 일봉 추세와 같은 방향으로 진행 중입니다(1분봉 RSI ${intradayInfo.rsi.toFixed(
+        `최근 ${hoursTxt} 흐름도 일봉 추세와 같은 방향으로 진행 중입니다(60분봉 RSI ${intradayInfo.rsi.toFixed(
           1
         )}).`
       );
@@ -2525,14 +2557,15 @@ function updateUI(data, analysis, fxRate, stockName) {
     if (rsInfo && (Number.isFinite(rsInfo.rs20) || Number.isFinite(rsInfo.rs60))) {
       // "20일 +6.5%p / 60일 +4.6%p"처럼 단어+숫자가 섞인 형태는 좁은 화면에서 어중간하게
       // 줄바꿈되기 쉬워서, "20일/60일 = +6.5/+4.6(%p)" 형태로 숫자만 붙여 자연스럽게 줄바꿈되게 함.
+      // 2026-08-03 피드백: "(%p)" 단위 표기 제거
       const fmtRs = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`;
       let display;
       if (Number.isFinite(rsInfo.rs20) && Number.isFinite(rsInfo.rs60)) {
-        display = `20일/60일 = ${fmtRs(rsInfo.rs20)}/${fmtRs(rsInfo.rs60)}(%p)`;
+        display = `20일/60일 = ${fmtRs(rsInfo.rs20)}/${fmtRs(rsInfo.rs60)}`;
       } else if (Number.isFinite(rsInfo.rs20)) {
-        display = `20일 = ${fmtRs(rsInfo.rs20)}(%p)`;
+        display = `20일 = ${fmtRs(rsInfo.rs20)}`;
       } else {
-        display = `60일 = ${fmtRs(rsInfo.rs60)}(%p)`;
+        display = `60일 = ${fmtRs(rsInfo.rs60)}`;
       }
       const primary = Number.isFinite(rsInfo.rs20) ? rsInfo.rs20 : rsInfo.rs60;
 
@@ -2685,12 +2718,12 @@ function updateUI(data, analysis, fxRate, stockName) {
     if (s1 && r1) {
       if (nearSupport && !nearResistance) {
         waveLines = [
-          `현재가는 주요 지지선 근처(≈ ${s1.toFixed(2)})에 위치한 파동 하단 구간입니다.`,
+          `현재가는 주요 지지선 근처(≈ ${formatPrice(s1)})에 위치한 파동 하단 구간입니다.`,
           "이전 저점·매물대에서 형성된 자리로, 지지선이 유지되는지 이탈하는지에 따라 다음 파동의 방향이 갈립니다."
         ];
       } else if (!nearSupport && nearResistance) {
         waveLines = [
-          `현재가는 주요 저항선 근처(≈ ${r1.toFixed(2)})에 위치한 파동 상단 구간입니다.`,
+          `현재가는 주요 저항선 근처(≈ ${formatPrice(r1)})에 위치한 파동 상단 구간입니다.`,
           "이전 고점·매물대에서 형성된 자리로, 저항을 돌파하는지 되밀리는지에 따라 다음 파동의 방향이 갈립니다."
         ];
       } else if (nearSupport && nearResistance) {
@@ -2700,7 +2733,7 @@ function updateUI(data, analysis, fxRate, stockName) {
         ];
       } else {
         waveLines = [
-          `현재가는 지지선(≈ ${s1.toFixed(2)})과 저항선(≈ ${r1.toFixed(2)}) 사이 중간에 위치한 파동 중단 구간입니다.`,
+          `현재가는 지지선(≈ ${formatPrice(s1)})과 저항선(≈ ${formatPrice(r1)}) 사이 중간에 위치한 파동 중단 구간입니다.`,
           "박스 상·하단 중 어느 쪽에 먼저 재접근하느냐가 다음 파동을 가늠하는 기준점이 됩니다."
         ];
       }
@@ -2792,13 +2825,13 @@ function updateUI(data, analysis, fxRate, stockName) {
       // 도지 계열 패턴은 변곡 시나리오 위주 — 시나리오 하나(제목+화살표 설명)를 한 불릿으로 묶음
       if (nearSupport) {
         signalLines = [
-          `지지선(${s1.toFixed(2)}) 바로 위에서 ${topName} 패턴이 나타난 상태입니다.`,
+          `지지선(${formatPrice(s1)}) 바로 위에서 ${topName} 패턴이 나타난 상태입니다.`,
           "● 시나리오 1) 지지선 위 양봉 마감 → 지지선 방어 확인 + 반등 시그널 강화\n→ 다음 캔들이 지지선 위에서 중/장대 양봉으로 마감하면, 단기 반등 파동이 시작될 가능성이 큽니다.",
           "● 시나리오 2) 지지선 이탈 음봉 마감 → 반등 실패 + 하락 파동 재개\n→ 지지선 아래로 종가가 밀리면 손절/관망이 유리한 구간입니다."
         ];
       } else if (nearResistance) {
         signalLines = [
-          `저항선(${r1.toFixed(2)}) 바로 아래에서 ${topName} 패턴이 출현했습니다.`,
+          `저항선(${formatPrice(r1)}) 바로 아래에서 ${topName} 패턴이 출현했습니다.`,
           "● 시나리오 1) 저항 돌파 양봉 마감 → 추세 연장/상단 돌파 신호\n→ 다음 캔들이 저항선을 명확히 돌파한 양봉이면, 돌파 후 눌림 구간까지 단기 추세 추종 전략이 유리할 수 있습니다.",
           "● 시나리오 2) 저항 맞고 음봉 마감 → 피크 아웃·조정 가능성\n→ 저항선 터치 후 윗꼬리 긴 음봉으로 마감되면 단기 상방 피로 신호로, 분할 청산/헤지 관점이 필요합니다."
         ];
@@ -2818,7 +2851,7 @@ function updateUI(data, analysis, fxRate, stockName) {
 
       if (nearSupport) {
         signalLines.push(
-          `현재가는 주요 지지선(${s1 ? s1.toFixed(2) : "N/A"}) 근처에 위치한 눌림 구간입니다.`
+          `현재가는 주요 지지선(${s1 ? formatPrice(s1) : "N/A"}) 근처에 위치한 눌림 구간입니다.`
         );
         if (flowType === "BUY_DOMINANT" || flowType === "REBOUND_BUY") {
           signalLines.push(
@@ -2835,7 +2868,7 @@ function updateUI(data, analysis, fxRate, stockName) {
         }
       } else if (nearResistance) {
         signalLines.push(
-          `현재가는 주요 저항선(${r1 ? r1.toFixed(2) : "N/A"}) 근처 상단 파동 영역입니다.`
+          `현재가는 주요 저항선(${r1 ? formatPrice(r1) : "N/A"}) 근처 상단 파동 영역입니다.`
         );
         if (flowType === "BUY_DOMINANT") {
           signalLines.push(
@@ -2972,9 +3005,31 @@ function updateUI(data, analysis, fxRate, stockName) {
     };
 
     let mainTxt = "중립 / 관망 구간";
-    let detailLines = [
-      "지지선·저항선·RSI·R:R를 종합했을 때 뚜렷한 매수/매도 우위가 아닌 구간입니다."
-    ];
+    let detailLines = [];
+    // conflict: R:R 기하학은 매수/매도를 가리키는데 RAVEN SCORE 등급이 정반대(D인데 R:R매수,
+    // S/A인데 R:R매도)라 신호를 유보한 경우 — "애매해서 중립"이 아니라 "서로 반대라 유보"라는
+    // 진짜 이유를 그대로 알려줌(무슨 이유로 중립인지 안 보이면 사용자가 오해하기 쉬움)
+    if (verdict.conflict) {
+      if (rrRatio >= 2) {
+        mainTxt = "R:R은 매수 구조지만 추세 신호와 상충 (유보)";
+        detailLines.push(
+          `현재 구조상 R:R ≈ ${rrRatio.toFixed(2)}:1로 가격만 보면 매수 유리해 보이지만, RAVEN SCORE 등급이 ${verdict.rank}(추세·모멘텀이 좋지 않음)라 두 신호가 정반대입니다.`
+        );
+        detailLines.push(
+          "가격 구조(지지·저항)만 보고 진입하기보다, 추세가 실제로 돌아서는지(ADX 반등, MACD 골든크로스 등) 확인 후 진입해도 늦지 않습니다."
+        );
+      } else {
+        mainTxt = "R:R은 매도 구조지만 추세 신호와 상충 (유보)";
+        detailLines.push(
+          `현재 구조상 R:R ≈ ${rrRatio.toFixed(2)}:1로 가격만 보면 위험이 커 보이지만, RAVEN SCORE 등급이 ${verdict.rank}(추세·모멘텀이 강함)라 두 신호가 정반대입니다.`
+        );
+        detailLines.push(
+          "추세가 좋은 종목의 일시적 눌림일 수 있어, 기존 보유분을 서둘러 정리하기보다 추세 훼손 여부(주요 이평선 이탈 등)를 먼저 확인하는 편이 안전합니다."
+        );
+      }
+    } else {
+      detailLines.push("지지선·저항선·RSI·R:R를 종합했을 때 뚜렷한 매수/매도 우위가 아닌 구간입니다.");
+    }
     const neutralBits = buildIndicatorBits("NEUTRAL");
     if (neutralBits.length) {
       detailLines.push(`참고할 지표: ${neutralBits.join(", ")}.`);
@@ -3006,7 +3061,7 @@ function updateUI(data, analysis, fxRate, stockName) {
       } else {
         mainTxt = "지지선 근처 눌림 매수 우위";
         const bits = [];
-        if (nearSupport) bits.push(`1차 지지선(${s1 ? s1.toFixed(2) : "N/A"}) 근처`);
+        if (nearSupport) bits.push(`1차 지지선(${s1 ? formatPrice(s1) : "N/A"}) 근처`);
         bits.push(...buildIndicatorBits("BUY"));
 
         detailLines = [];
@@ -3024,7 +3079,7 @@ function updateUI(data, analysis, fxRate, stockName) {
     } else if (verdict.tier === "SELL") {
       if (nearResistance) {
         mainTxt = "저항선 근처 리스크 우위";
-        const bits = [`1차 저항선(${r1 ? r1.toFixed(2) : "N/A"}) 근처 상단 파동`];
+        const bits = [`1차 저항선(${r1 ? formatPrice(r1) : "N/A"}) 근처 상단 파동`];
         bits.push(...buildIndicatorBits("SELL"));
 
         detailLines = [
@@ -3330,11 +3385,14 @@ function renderSupplyDemandBox(data) {
 
   box.classList.remove("hidden");
 
-  // 전일 수급(KIS)은 메인 렌더링보다 늦게 도착하므로, 이미 채워진 수급 종합 리스트에 항목 추가
+  // 전일 수급(KIS)은 메인 렌더링보다 늦게 도착하므로, 이미 채워진 수급 종합 리스트에 항목 추가.
+  // 예전엔 outlook(위 supply-kis-outlook 박스에 이미 그대로 표시되는 문장)을 따옴표째 그대로
+  // 재인용해서 바로 위 박스와 문장이 완전히 겹쳐 보였음 — outlookShort(짧게 요약된 별도
+  // 문장)로 교체.
   const supplySummaryEl = $("supply-summary-txt");
-  if (supplySummaryEl && data.outlook) {
+  if (supplySummaryEl && data.outlookShort) {
     const li = document.createElement("li");
-    li.textContent = `전일 프로그램매매·공매도·신용·대차·투자자별 매매동향 기준 코멘트: "${data.outlook}"`;
+    li.textContent = data.outlookShort;
     supplySummaryEl.appendChild(li);
   }
 }
@@ -3410,6 +3468,7 @@ function renderEarningsChart(quarters, currency) {
   const legend = $("fund-legend");
   const labelsEl = $("fund-chart-labels");
   const listEl = $("fund-quarter-list");
+  const headerEl = $("fund-quarter-header");
   const txtEl = $("fund-txt");
   if (!svg || !empty) return;
 
@@ -3422,6 +3481,7 @@ function renderEarningsChart(quarters, currency) {
     if (legend) legend.classList.add("hidden");
     if (labelsEl) labelsEl.classList.add("hidden");
     if (listEl) listEl.classList.add("hidden");
+    if (headerEl) headerEl.classList.add("hidden");
     if (txtEl) txtEl.textContent = "";
   };
 
@@ -3499,11 +3559,12 @@ function renderEarningsChart(quarters, currency) {
         const marginTxt = Number.isFinite(marginPct) ? ` (${marginPct.toFixed(1)}%)` : "";
         li.innerHTML =
           `<span class="earnings-capsule">${q.label || shortQuarterLabel(q.yyyymm)}</span>` +
-          `<span class="earnings-capsule">매출: ${fmt(q.revenue)}</span>` +
-          `<span class="earnings-capsule">영업이익: ${fmt(q.operatingProfit)}${marginTxt}</span>`;
+          `<span class="earnings-capsule">${fmt(q.revenue)}</span>` +
+          `<span class="earnings-capsule">${fmt(q.operatingProfit)}${marginTxt}</span>`;
         listEl.appendChild(li);
       });
     listEl.classList.remove("hidden");
+    if (headerEl) headerEl.classList.remove("hidden");
   }
 
   // --- 요약 문장: 최신 분기 실적 + 전년 동기 대비(YoY) ---
@@ -3572,8 +3633,15 @@ function renderNewsList(news) {
     li.className = "news-row";
     const meta = [n.date, n.time].filter(Boolean).join(" ");
     const metaLine = [meta, n.source].filter(Boolean).join(" · ");
+    const title = n.title || "(제목 없음)";
+    // KIS news-title 응답엔 기사 원문 링크 필드 자체가 없음(국내/해외 둘 다 실측 확인 —
+    // 내부 일련번호만 있고 공개 URL 없음) — 제목 그대로 구글 검색으로 연결해 최소한 클릭해서
+    // 찾아볼 수 있게 함
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(
+      [title, n.source].filter(Boolean).join(" ")
+    )}`;
     li.innerHTML =
-      `<div class="news-title">${n.title || "(제목 없음)"}</div>` +
+      `<a class="news-title" href="${searchUrl}" target="_blank" rel="noopener noreferrer">${title}</a>` +
       (metaLine ? `<div class="news-meta">${metaLine}</div>` : "");
     listEl.appendChild(li);
   });
@@ -3602,7 +3670,9 @@ function applyInvestorStreakToScore(sdData, symbol) {
   const captionEl = $("z-metrics-caption");
   if (captionEl) {
     const sign = delta > 0 ? "+" : "";
-    captionEl.textContent = `ℹ️ RAVEN 분석에 의한 자체 점수입니다 (외국인·기관 연속매매 반영 ${sign}${delta}점)`;
+    // 연속매매 반영 문구는 기존 캡션과 한 줄로 붙어서 읽기 불편했음 — 별도 줄로 분리
+    captionEl.innerHTML =
+      `ℹ️ RAVEN 분석에 의한 자체 점수입니다<br>(외국인·기관 연속매매 반영 ${sign}${delta}점)`;
   }
 }
 
@@ -3845,6 +3915,9 @@ function openWatchlistSidebar() {
   sidebar.classList.add("open");
   if (toggleBtn) toggleBtn.classList.add("rail-open");
   if (icon) icon.textContent = "«";
+  // 헤더/결과카드가 .top-header/.card 자체는 body class로만 반응하므로(DOM 순서상
+  // #watchlist-sidebar가 .top-header보다 뒤에 있어 인접형제 선택자로는 header를 못 건드림)
+  document.body.classList.add("watchlist-rail-open");
 }
 
 function closeWatchlistSidebar() {
@@ -3855,6 +3928,7 @@ function closeWatchlistSidebar() {
   sidebar.classList.remove("open");
   if (toggleBtn) toggleBtn.classList.remove("rail-open");
   if (icon) icon.textContent = "»";
+  document.body.classList.remove("watchlist-rail-open");
 }
 
 function toggleWatchlistSidebar() {
@@ -3957,12 +4031,16 @@ async function runAnalysisForTicker(rawSymbol) {
     const domestic = isDomesticTicker(symbol);
     // 벤치마크(RS 비교용)도 여기서 같이 병렬 조회 — RS가 이제 RAVEN SCORE 계산에 직접 들어가서
     // analyzeData()가 실행되기 전에 준비돼 있어야 함 (예전엔 렌더링 끝난 뒤 텍스트만 나중에 덧붙였음)
+    // 2026-08-03 피드백 검토: 국내는 KIS가 1분봉만 지원하고 그마저도 1회 최대 30건(=30분치)이라
+    // 60분봉으로 리샘플링해도 1개 봉이 안 나올 만큼 데이터가 얕음 — 30분치 노이즈로 "장중 흐름이
+    // 엇갈립니다" 같은 판단을 내리는 게 오히려 신뢰도를 떨어뜨린다고 판단해서 국내는 이 보조지표
+    // 자체를 아예 호출하지 않음(해외는 서버가 60분봉으로 전환됨 — kisMarket.js 참고).
     const [data, fxRate, stockName, benchmarkData, intradayCloses] = await Promise.all([
       fetchStockData(symbol),
       fetchFxRate(),
       domestic ? fetchDomesticStockName(symbol) : fetchOverseasStockName(symbol),
       fetchBenchmarkData(domestic),
-      fetchIntradayCandles(symbol)
+      domestic ? Promise.resolve(null) : fetchIntradayCandles(symbol)
     ]);
 
     const analysis = analyzeData(data, benchmarkData, intradayCloses);
@@ -4017,6 +4095,17 @@ async function runAnalysisForTicker(rawSymbol) {
 // ===============================
 // 🤖 AI 서술 분석 (Phase 4) — 버튼 클릭 시에만 호출 (API 호출당 비용 발생하므로 자동 실행 안 함)
 // ===============================
+// 2026-08-03 피드백: 서술 멘트가 가끔 화살표/불릿 기호로 시작하는 경우가 있다고 해서 확인함 —
+// 코드 안에서 "▶"를 붙이는 곳은 setIndicatorBox() 한 곳뿐이고 지표박스 전용이라 서술 문단과는
+// 무관함(늘 붙는 거라 "가끔"과도 안 맞음). 가장 유력한 원인은 AI 서술 분석(Claude 응답)이
+// 시스템 프롬프트의 "불릿 금지" 지시에도 가끔 스스로 목록처럼 포맷팅해서 답할 가능성 —
+// 프롬프트를 더 명시적으로 바꾸는 것과 별개로, 화면에 실제로 보이면 안 되니 방어적으로 문단
+// 맨 앞의 불릿 기호를 클라이언트에서도 한 번 더 제거함.
+function sanitizeAiNarrative(text) {
+  if (!text) return text;
+  return text.replace(/^[ \t]*[▶▸►•‣∙\-*][ \t]+/gm, "");
+}
+
 async function requestAiAnalysis() {
   if (!lastAnalysis) {
     showToast("먼저 티커를 검색해서 분석을 실행해 주세요.");
@@ -4130,7 +4219,7 @@ async function requestAiAnalysis() {
     if (!res.ok) throw new Error(`AI 분석 요청 실패 (status ${res.status})`);
     const json = await res.json();
 
-    if (txtEl) txtEl.textContent = json.narrative || "분석 결과를 받아오지 못했습니다.";
+    if (txtEl) txtEl.textContent = sanitizeAiNarrative(json.narrative) || "분석 결과를 받아오지 못했습니다.";
     if (resultBox) resultBox.classList.remove("hidden");
   } catch (err) {
     console.error("[RAVEN] AI 분석 오류:", err);

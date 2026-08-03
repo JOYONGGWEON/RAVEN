@@ -126,9 +126,11 @@ router.get("/loan-trans", async (req, res) => {
 });
 
 // 종목 캔들(OHLCV) 조회 — 국내(6자리 코드)/해외(티커) 자동 판별, 토스 응답과 같은 형태로 반환
-// interval=1d(일봉, 기본) 또는 1m(당일 1분봉 — 실시간 장중 흐름 보조지표용, 2026-07-31 KIS 실측 후 활성화).
-// ⚠️ 1m은 국내/해외 모두 "당일" 데이터만 됨(국내는 그마저도 KIS 원본 제약으로 최대 30건) —
-// 여러 날짜에 걸친 분봉 이력이 필요하면 별도 확장 필요.
+// interval=1d(일봉, 기본) 또는 1m(장중 초단기 흐름 보조지표용, 2026-07-31 KIS 실측 후 활성화).
+// ⚠️ 파라미터 이름은 "1m"이지만 2026-08-03부터 해외는 실제로 60분봉을 받아옴(kisMarket.js의
+// fetchIntradayCandles 참고 — 1분봉이 스윙 타임프레임엔 너무 노이즈가 많다는 피드백으로 전환,
+// 하위 호환을 위해 쿼리 파라미터명은 그대로 둠). 국내는 여전히 1분봉·당일·최대 30건뿐이라
+// 60분봉으로 바꿀 수 없어서 app.js에서 이 보조지표 자체를 호출하지 않도록 함.
 router.get("/candles", async (req, res) => {
   const { symbol, count = 180, interval = "1d" } = req.query;
   if (!symbol) return res.status(400).json({ error: "symbol query param required" });
