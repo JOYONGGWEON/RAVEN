@@ -2106,6 +2106,7 @@ function detectCandlePatterns(data, analysis) {
   ) {
     patterns.push({
       name: "Bullish Engulfing",
+      direction: "pos",
       strength: 3,
       comment:
         "전일 음봉을 통째로 감싸는 강한 양봉이 출현해, 단기 추세 전환/반등 가능성이 높은 패턴입니다."
@@ -2123,6 +2124,7 @@ function detectCandlePatterns(data, analysis) {
   ) {
     patterns.push({
       name: "Bearish Engulfing",
+      direction: "neg",
       strength: 3,
       comment:
         "전일 양봉을 통째로 뒤집는 강한 음봉이 출현해, 단기 상방 피로/조정 가능성이 높은 패턴입니다."
@@ -2138,6 +2140,7 @@ function detectCandlePatterns(data, analysis) {
   ) {
     patterns.push({
       name: "Hammer",
+      direction: "pos",
       strength: 2,
       comment:
         "아랫꼬리가 긴 망치형 캔들로, 아래꼬리 구간에서 매수 방어가 강하게 나온 신호입니다. 지지선 부근이라면 기술적 반등 가능성이 있습니다."
@@ -2153,6 +2156,7 @@ function detectCandlePatterns(data, analysis) {
     if (isBear) {
       patterns.push({
         name: "Shooting Star",
+        direction: "neg",
         strength: 2,
         comment:
           "윗꼬리가 긴 역망치형 캔들로, 위쪽에서 매도 압력이 강하게 나온 신호입니다. 저항선 부근이라면 단기 피크/조정 가능성을 시사합니다."
@@ -2160,6 +2164,7 @@ function detectCandlePatterns(data, analysis) {
     } else {
       patterns.push({
         name: "Inverted Hammer",
+        direction: "pos",
         strength: 2,
         comment:
           "하락 추세 말단에서 나타나는 역망치형 패턴으로, 위꼬리와 작은 몸통이 결합된 형태입니다. 반등 시도 신호일 수 있으나 확인 봉이 중요합니다."
@@ -2173,6 +2178,7 @@ function detectCandlePatterns(data, analysis) {
     if (lowerWick > body * 4 && upperWick < body * 0.5) {
       patterns.push({
         name: "Dragonfly Doji",
+        direction: "pos",
         strength: 2,
         comment:
           "아랫꼬리가 긴 Dragonfly Doji로, 하락 중 매수 방어가 강하게 들어온 모양입니다. 지지선 부근이라면 반등 신호가 될 수 있습니다."
@@ -2180,6 +2186,7 @@ function detectCandlePatterns(data, analysis) {
     } else if (upperWick > body * 4 && lowerWick < body * 0.5) {
       patterns.push({
         name: "Gravestone Doji",
+        direction: "neg",
         strength: 2,
         comment:
           "윗꼬리가 긴 Gravestone Doji로, 상승 중 위에서 매도 압력이 강한 형태입니다. 저항 부근이라면 피크/조정 신호일 수 있습니다."
@@ -2187,6 +2194,7 @@ function detectCandlePatterns(data, analysis) {
     } else {
       patterns.push({
         name: "Doji",
+        direction: "neu",
         strength: 1,
         comment:
           "시가와 종가가 거의 같은 십자형 캔들로, 매수·매도 힘이 팽팽하게 맞선 변곡 신호입니다. 이후 봉의 방향성이 중요합니다."
@@ -2202,6 +2210,7 @@ function detectCandlePatterns(data, analysis) {
     if (isBull) {
       patterns.push({
         name: "Doji 반전 확인(상승)",
+        direction: "pos",
         strength: 4,
         comment:
           "전일 방향성 없는 Doji 이후, 오늘 그 범위를 상당폭 뛰어넘는 강한 양봉이 나와 매수 우위로 방향이 확인된 패턴입니다."
@@ -2209,6 +2218,7 @@ function detectCandlePatterns(data, analysis) {
     } else if (isBear) {
       patterns.push({
         name: "Doji 반전 확인(하락)",
+        direction: "neg",
         strength: 4,
         comment:
           "전일 방향성 없는 Doji 이후, 오늘 그 범위를 상당폭 뛰어넘는 강한 음봉이 나와 매도 우위로 방향이 확인된 패턴입니다."
@@ -2230,6 +2240,7 @@ function detectCandlePatterns(data, analysis) {
   ) {
     patterns.push({
       name: "Three White Soldiers",
+      direction: "pos",
       strength: 4,
       comment:
         "3일 연속 강한 양봉이 계단식으로 이어지는 강력한 상승 패턴입니다. 추세 전환 또는 추세 강화 신호로, 눌림 매수/추세 추종 전략과 궁합이 좋습니다."
@@ -2250,6 +2261,7 @@ function detectCandlePatterns(data, analysis) {
   ) {
     patterns.push({
       name: "Three Black Crows",
+      direction: "neg",
       strength: 4,
       comment:
         "3일 연속 강한 음봉이 계단식으로 이어지는 강력한 하락 패턴입니다. 기존 보유자는 리스크 관리, 신규 진입자는 관망/공매도 전략 검토 구간입니다."
@@ -2265,6 +2277,7 @@ function detectCandlePatterns(data, analysis) {
   ) {
     patterns.push({
       name: "Bullish Marubozu",
+      direction: "pos",
       strength: 3,
       comment:
         "시가 대비 거의 조정 없이 종가까지 쭉 뻗은 장대양봉으로, 하루 동안 매수세가 압도한 패턴입니다. 다음 날 갭락 리스크를 감안한 분할 접근이 유리합니다."
@@ -2279,6 +2292,7 @@ function detectCandlePatterns(data, analysis) {
   ) {
     patterns.push({
       name: "Bearish Marubozu",
+      direction: "neg",
       strength: 3,
       comment:
         "시가 대비 거의 반등 없이 종가까지 밀린 장대음봉으로, 하루 동안 매도세가 압도한 패턴입니다. 단기 반등이 나와도 재차 매물이 출회될 수 있는 구간입니다."
@@ -2300,6 +2314,7 @@ function detectCandlePatterns(data, analysis) {
   ) {
     patterns.push({
       name: "Morning Star",
+      direction: "pos",
       strength: 3,
       comment:
         "하락 후 작은 몸통과 강한 양봉이 이어지는 상승 반전 패턴입니다. 지지선 근처에서 나타나면 추세 전환 신호로 볼 수 있습니다."
@@ -2317,6 +2332,7 @@ function detectCandlePatterns(data, analysis) {
   ) {
     patterns.push({
       name: "Evening Star",
+      direction: "neg",
       strength: 3,
       comment:
         "상승 추세 후 작은 몸통과 강한 음봉이 이어지는 하락 반전 패턴입니다. 저항 부근에서는 피크 아웃 신호일 가능성이 높습니다."
@@ -2332,6 +2348,7 @@ function detectCandlePatterns(data, analysis) {
   if (isInsideBody && bodyRatio < 0.4) {
     patterns.push({
       name: "Harami",
+      direction: "neu",
       strength: 2,
       comment:
         "전일 큰 몸통 안에 오늘 몸통이 들어온 내부형 패턴입니다. 추세가 둔화되며 방향 전환을 준비하는 구간일 수 있습니다."
@@ -2349,6 +2366,7 @@ function detectCandlePatterns(data, analysis) {
   ) {
     patterns.push({
       name: "Piercing Line",
+      direction: "pos",
       strength: 3,
       comment:
         "전일 음봉 몸통의 절반 이상을 되돌리는 양봉이 출현한 관통형 패턴입니다. 완전한 장악(Engulfing)만큼 강하진 않지만, 하락 흐름에 제동이 걸렸다는 신호로 볼 수 있습니다."
@@ -2366,6 +2384,7 @@ function detectCandlePatterns(data, analysis) {
   ) {
     patterns.push({
       name: "Dark Cloud Cover",
+      direction: "neg",
       strength: 3,
       comment:
         "전일 양봉 몸통의 절반 이상을 되돌리는 음봉이 덮은 먹구름형 패턴입니다. 상승 추세 상단에서 나오면 매수세 소진·단기 조정 신호로 해석합니다."
@@ -2386,6 +2405,7 @@ function detectCandlePatterns(data, analysis) {
   ) {
     patterns.push({
       name: "Spinning Top",
+      direction: "neu",
       strength: 1,
       comment:
         "몸통은 작고 위아래 꼬리가 비슷하게 균형 잡힌 스피닝탑입니다. 매수·매도 힘이 팽팽해 방향성이 뚜렷하지 않은 구간으로, Doji만큼 극단적이진 않지만 관망 신호로 보는 편이 좋습니다."
@@ -2399,6 +2419,7 @@ function detectCandlePatterns(data, analysis) {
   if (highDiff < 0.08 && isBull1 && isBear) {
     patterns.push({
       name: "Tweezer Top",
+      direction: "neg",
       strength: 2,
       comment:
         "전일과 오늘의 고점이 거의 같은 높이에서 막힌 집게형 상단 패턴입니다. 같은 가격대에서 매도 물량이 반복적으로 나왔다는 뜻으로, 저항선 부근이라면 신뢰도가 더 높아집니다."
@@ -2408,6 +2429,7 @@ function detectCandlePatterns(data, analysis) {
   if (lowDiff < 0.08 && isBear1 && isBull) {
     patterns.push({
       name: "Tweezer Bottom",
+      direction: "pos",
       strength: 2,
       comment:
         "전일과 오늘의 저점이 거의 같은 높이에서 지지된 집게형 하단 패턴입니다. 같은 가격대에서 매수세가 반복적으로 들어왔다는 뜻으로, 지지선 부근이라면 신뢰도가 더 높아집니다."
@@ -3225,14 +3247,27 @@ function updateUI(data, analysis, fxRate, stockName) {
     // 위쪽 "수급"/"패턴" 탭에서 이미 계산해둔 신호를 전략요약에도 반영 —
     // 예전엔 지지·저항·R:R만 보고 판단해서 같은 화면 안의 수급/패턴 정보와 따로 놀았음
     // [수급 상태]/[캔들 패턴]은 눈에 잘 띄어야 하는 핵심 키워드라 노란색으로 강조(toneSpan highlight)
+    // 2026-08-04 피드백: 수급/캔들패턴 태그가 실제 방향성과 무관하게 항상 노란색(highlight)
+    // 하나였음 — 다른 신호들처럼 긍정(초록)/부정(빨강)/중립(노랑)으로 분리.
+    const FLOW_DIRECTION = {
+      BUY_DOMINANT: "pos",
+      REBOUND_BUY: "pos",
+      SELL_DOMINANT: "neg",
+      REJECTION_SELL: "neg",
+      NEUTRAL: "neu",
+      BATTLE: "neu",
+      EMPTY: "neu",
+      INDECISION: "neu",
+    };
     const buildContextLine = () => {
       const bits = [];
       if (flowInfo && flowInfo.flowLabel) {
-        bits.push(`수급은 ${toneSpan(`[${flowInfo.flowLabel}]`, "highlight")}`);
+        const sentiment = FLOW_DIRECTION[flowInfo.flowType] || "neu";
+        bits.push(`수급은 ${toneSpan(`[${flowInfo.flowLabel}]`, sentiment)}`);
       }
       const topPattern = patterns && patterns[0];
       if (topPattern) {
-        bits.push(`대표 캔들 패턴은 ${toneSpan(`[${topPattern.name}]`, "highlight")}`);
+        bits.push(`대표 캔들 패턴은 ${toneSpan(`[${topPattern.name}]`, topPattern.direction || "neu")}`);
       }
       return bits.length ? `참고로 현재 ${bits.join(", ")} 상태입니다.` : "";
     };
@@ -3583,17 +3618,23 @@ function renderTradingViewChart(symbol) {
 function initResultTabs() {
   const tabBtns = document.querySelectorAll(".tab-btn");
   const track = $("tabs-track");
+  const viewport = document.querySelector(".tabs-viewport");
   if (!tabBtns.length || !track) return;
 
-  // 탭 개수만큼 슬라이드 폭(%)을 계산 — 탭 추가/삭제 시 CSS(.tabs-track width, .tab-panel flex-basis)만
-  // 맞춰주면 이 계산식은 그대로 재사용됨(기존엔 4탭 고정으로 25% 하드코딩돼 있었음, 뉴스 탭 추가하며 일반화).
-  const step = 100 / tabBtns.length;
-
+  // 2026-08-04 피드백(재확인): 탭 전환 시 옆 탭의 테두리가 살짝 걸쳐 보이는 얇은 세로선 —
+  // %(퍼센트) 기반 translateX는 뷰포트 실제 폭이 소수점 px(예: 787.21875px)일 때 그 소수점까지
+  // 그대로 반영된 이동값을 만들어내고, 이런 서브픽셀 위치에서 크롬 컴포지터가 인접 요소 경계에
+  // 안티에일리어싱 잔상(1px 미만의 얇은 선)을 남기는 걸로 추정됨(실측: translateX(-787.219px)처럼
+  // 항상 소수점이 붙어 있었음). 클릭 시점의 실제 뷰포트 폭을 정수 px로 반올림해서 옮기면 이 문제가
+  // 사라짐 — %(문자열) 대신 매번 px로 계산.
   tabBtns.forEach((btn, idx) => {
     btn.addEventListener("click", () => {
       tabBtns.forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
-      track.style.transform = `translateX(-${idx * step}%)`;
+      const panelWidth = viewport ? Math.round(viewport.getBoundingClientRect().width) : 0;
+      track.style.transform = panelWidth
+        ? `translateX(-${idx * panelWidth}px)`
+        : `translateX(-${idx * (100 / tabBtns.length)}%)`;
     });
   });
 }
