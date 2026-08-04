@@ -1559,23 +1559,29 @@ body.raven-result-bg {
   border-bottom-color: var(--accent);
 }
 
+/* 2026-08-04: 슬라이드(translateX + overflow:hidden) 방식을 세 차례 다르게 고쳐봐도 탭 전환
+   때마다 옆 패널 테두리가 살짝 비쳐 보이는 문제가 계속 재발함(QHD 100% 배율 — 스케일링/줌과
+   무관하게도 재현됨) — 정확한 원인 규명이 어려운 크롬 컴포지터 seam 문제로 보고, 아예 슬라이드
+   트랙 구조 자체를 버림. 비활성 탭은 display:none으로 완전히 렌더링에서 빠지므로(레이아웃도
+   페인트도 안 됨) 옆 패널이 새어 보일 방법 자체가 없어짐 — 슬라이드 애니메이션은 잃지만 완전히
+   확실한 해결. */
 .tabs-viewport {
-  overflow: hidden;
+  overflow: visible;
 }
 
 .tabs-track {
-  display: flex;
-  width: 500%; /* 탭 5개(추세·모멘텀/수급/패턴·신호/실적/뉴스) x 각 100% */
-  transition: transform 0.35s ease;
+  display: block;
 }
 
 .tab-panel {
-  flex: 0 0 20%; /* 500% 트랙 ÷ 5탭 = 각 패널이 뷰포트 폭의 100%를 차지 */
-  min-width: 0;
-  display: grid;
+  display: none;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
   align-content: start;
+}
+
+.tab-panel.active {
+  display: grid;
 }
 
 /* ───────── 실적 탭: 분기별 매출액/영업이익 차트 ───────── */

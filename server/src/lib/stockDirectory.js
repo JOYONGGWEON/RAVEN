@@ -38,7 +38,10 @@ async function loadDirectory() {
     const marketRaw = stripTags(cells[1]);
     const code = stripTags(cells[2]);
 
-    if (!/^\d{6}$/.test(code)) continue; // 헤더 행 등 데이터가 아닌 행 제외
+    // ⚠️ 실제 버그: 순수 숫자만 걸렀는데, 스팩/최근 상장 종목 등 57개는 KRX가 알파벳 섞인 코드
+    // (예: "0010F0", 보원케미칼)를 씀 — 헤더 행과 구분하기 위한 "숫자 하나 이상 포함" 조건을 유지한
+    // 채로 알파벳도 허용(kisMarket.js의 isDomesticSymbol()과 동일한 정규식으로 통일).
+    if (!/^(?=.*\d)[0-9A-Za-z]{6}$/.test(code)) continue; // 헤더 행 등 데이터가 아닌 행 제외
 
     list.push({
       name,

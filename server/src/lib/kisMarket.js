@@ -34,8 +34,13 @@ async function kisGet(path, trId, query) {
   return json;
 }
 
+// ⚠️ 실제 버그(2026-08-04, 보원케미칼 검색 안 되는 문제 조사 중 발견): 순수 숫자 6자리만
+// "국내"로 인식했는데, 스팩/최근 상장 종목 등 57개 종목은 KRX가 알파벳이 섞인 코드(예: "0010F0")를
+// 씀 — 이 정규식에 안 걸려서 "해외"로 잘못 분류되고, 존재하지 않는 해외 거래소를 찾다가 에러가 났음
+// (해외 티커는 전부 순수 알파벳이라 숫자가 하나도 없다는 점에 착안해 "숫자 하나 이상 포함"을
+// 추가 조건으로 걸어서 진짜 해외 티커와 구분되도록 함).
 function isDomesticSymbol(symbol) {
-  return /^\d{6}$/.test((symbol || "").trim());
+  return /^(?=.*\d)[0-9A-Za-z]{6}$/.test((symbol || "").trim());
 }
 
 function ymd(date) {

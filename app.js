@@ -394,8 +394,10 @@ async function fetchYahooChart(symbol, range = "1d", interval = "1d") {
 }
 
 // 국내(KOSPI/KOSDAQ) 종목코드는 숫자 6자리, 해외는 알파벳 티커
+// 서버 kisMarket.js의 isDomesticSymbol()과 동일한 정규식으로 통일(2026-08-04, 보원케미칼처럼
+// 알파벳 섞인 코드를 쓰는 스팩/최근상장 종목이 "해외"로 잘못 분류되던 버그 수정).
 function isDomesticTicker(ticker) {
-  return /^\d{6}$/.test((ticker || "").trim());
+  return /^(?=.*\d)[0-9A-Za-z]{6}$/.test((ticker || "").trim());
 }
 
 // 자동완성에서 "삼성전자 (005930)" 형태로 선택된 입력값에서 종목코드만 추출
@@ -3617,24 +3619,22 @@ function renderTradingViewChart(symbol) {
 // ===============================
 function initResultTabs() {
   const tabBtns = document.querySelectorAll(".tab-btn");
-  const track = $("tabs-track");
-  const viewport = document.querySelector(".tabs-viewport");
-  if (!tabBtns.length || !track) return;
+  const panels = document.querySelectorAll(".tab-panel");
+  if (!tabBtns.length || !panels.length) return;
 
-  // 2026-08-04 피드백(재확인): 탭 전환 시 옆 탭의 테두리가 살짝 걸쳐 보이는 얇은 세로선 —
-  // %(퍼센트) 기반 translateX는 뷰포트 실제 폭이 소수점 px(예: 787.21875px)일 때 그 소수점까지
-  // 그대로 반영된 이동값을 만들어내고, 이런 서브픽셀 위치에서 크롬 컴포지터가 인접 요소 경계에
-  // 안티에일리어싱 잔상(1px 미만의 얇은 선)을 남기는 걸로 추정됨(실측: translateX(-787.219px)처럼
-  // 항상 소수점이 붙어 있었음). 클릭 시점의 실제 뷰포트 폭을 정수 px로 반올림해서 옮기면 이 문제가
-  // 사라짐 — %(문자열) 대신 매번 px로 계산.
-  tabBtns.forEach((btn, idx) => {
+  // 2026-08-04 3차 재확인: QHD 100% 배율(스케일링/줌 전혀 없는 네이티브 렌더링)에서도 재현된다는
+  // 보고로, 서브픽셀 translateX 반올림 가설이 틀렸다는 게 확인됨 — 슬라이드(translateX +
+  // overflow:hidden) 방식 자체가 크롬 컴포지터에서 원인을 특정하기 어려운 seam을 만드는 것으로
+  // 보고, 슬라이드를 아예 포기함. 비활성 탭 패널은 display:none이라 레이아웃/페인트 자체가 안
+  // 일어나서 옆 패널이 비쳐 보일 방법이 구조적으로 없어짐(애니메이션은 사라지지만 100% 확실한 해결).
+  tabBtns.forEach((btn) => {
     btn.addEventListener("click", () => {
+      const target = btn.dataset.tab;
       tabBtns.forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
-      const panelWidth = viewport ? Math.round(viewport.getBoundingClientRect().width) : 0;
-      track.style.transform = panelWidth
-        ? `translateX(-${idx * panelWidth}px)`
-        : `translateX(-${idx * (100 / tabBtns.length)}%)`;
+      panels.forEach((p) => {
+        p.classList.toggle("active", p.dataset.tabPanel === target);
+      });
     });
   });
 }
