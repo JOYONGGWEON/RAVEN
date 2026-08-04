@@ -1578,10 +1578,21 @@ body.raven-result-bg {
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
   align-content: start;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
 }
 
 .tab-panel.active {
   display: grid;
+}
+
+/* JS가 display:grid를 먼저 건 다음, 강제 reflow 후 이 클래스를 붙여서 opacity/transform 전환이
+   실제로 재생되게 함(transform/슬라이드가 아니라 제자리 페이드+살짝 떠오르는 효과라 컴포지터
+   seam 문제와 무관함 — 요청대로 "전환 애니메이션"은 복원하되 seam 재발 위험은 없는 방식). */
+.tab-panel.active.tab-fade-in {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* ───────── 실적 탭: 분기별 매출액/영업이익 차트 ───────── */

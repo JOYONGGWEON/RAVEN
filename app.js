@@ -805,9 +805,9 @@ async function fetchFxRate() {
 // KIS 미지원, 매크로 지표와 동일하게 Yahoo Finance로 조회. 코스피/코스닥도 KIS 종목시세 API가
 // 있긴 하지만 지수 종류가 전부 Yahoo 하나로 통일돼 있어야 코드 경로가 단순해서 그대로 Yahoo를 씀.
 // 환율(KRW=X)/유가(CL=F)는 2026-08-01부터 여기로 옮겨와 다른 지수와 동일한 ▲/▼% 칩 형태로
-// 표시됨(기존 정성적 해석문구 스타일은 폐기). 코스피 야간선물(idx-kospi-night)은 HTML에 자리만
-// 마련해두고 이 목록엔 없음 — Yahoo에 해당 티커가 없고, 조사해둔 비공식 API(kred.dev)는 실제
-// 연동 여부를 사용자가 아직 확정하지 않아 "연동 예정" 표시만 해둔 상태.
+// 표시됨(기존 정성적 해석문구 스타일은 폐기). 코스피 야간선물(idx-kospi-night)은 Yahoo에 티커가
+// 없어 이 목록엔 없음 — 대신 2026-08-04부터 KIS 자체 API(국내선물옵션 시세, inquire-price)로
+// 별도 연동함(아래 fetchKospiNightFutures 참고). 비공식 kred.dev API는 검토만 하고 채택 안 함.
 const HEADLINE_INDEXES = [
   { id: "kospi", symbol: "^KS11" },
   { id: "kosdaq", symbol: "^KQ11" },
@@ -878,6 +878,33 @@ async function fetchIndexData() {
       fxRateKRW = results[i].lastClose;
     }
   });
+}
+
+// 코스피200 선물(정규장/야간장 공통) — KIS는 지수가 아니라 개별 종목처럼 실시간 체결가만 주는
+// 방식이라 Yahoo 지수들과 응답 모양이 달라 별도 함수로 분리. renderIndexChip이 기대하는
+// {lastClose, previousClose} 모양은 백엔드가 이미 맞춰서 반환하므로 그대로 재사용 가능.
+async function fetchKospiNightFuturesData() {
+  const box = $("idx-kospi-night");
+  try {
+    const res = await fetch(`${API_BASE}/api/kis/kospi-night-futures`);
+    if (!res.ok) throw new Error("Network Error");
+    const json = await res.json();
+    const data = json && json.result;
+    if (!data || typeof data.lastClose !== "number") throw new Error("No result");
+    if (box) box.classList.remove("index-chip-pending");
+    renderIndexChip("kospi-night", data, {});
+  } catch (e) {
+    console.warn("[RAVEN] 코스피 야간선물 조회 실패:", e);
+    if (box) {
+      const valueEl = box.querySelector(".index-chip-value");
+      const changeEl = box.querySelector(".index-chip-change");
+      if (valueEl) valueEl.textContent = "--";
+      if (changeEl) {
+        changeEl.textContent = "데이터 없음";
+        changeEl.className = "index-chip-change";
+      }
+    }
+  }
 }
 
 // 헤드라인 아래 "▼ 전체 지표 보기" 토글 — 다우존스/러셀2000선물/10년물/VIX(칩 4개, 한 줄)를 펼침/접음
@@ -3626,14 +3653,24 @@ function initResultTabs() {
   // 보고로, 서브픽셀 translateX 반올림 가설이 틀렸다는 게 확인됨 — 슬라이드(translateX +
   // overflow:hidden) 방식 자체가 크롬 컴포지터에서 원인을 특정하기 어려운 seam을 만드는 것으로
   // 보고, 슬라이드를 아예 포기함. 비활성 탭 패널은 display:none이라 레이아웃/페인트 자체가 안
-  // 일어나서 옆 패널이 비쳐 보일 방법이 구조적으로 없어짐(애니메이션은 사라지지만 100% 확실한 해결).
+  // 일어나서 옆 패널이 비쳐 보일 방법이 구조적으로 없어짐.
+  // 이후 재요청: 전환 애니메이션 자체는 있는 게 낫겠다 — seam 원인이었던 "이동"(translateX) 대신
+  // 제자리에서 살짝 떠오르며 페이드인하는 방식으로 복원(위치를 안 바꾸니 컴포지터 seam과 무관함).
+  // display:none→grid 전환은 그 자체로 애니메이션이 안 되므로, 먼저 .active로 grid를 걸고
+  // 강제 reflow(offsetWidth 읽기)를 시킨 다음 .tab-fade-in을 붙여야 CSS 트랜지션이 재생됨.
   tabBtns.forEach((btn) => {
     btn.addEventListener("click", () => {
       const target = btn.dataset.tab;
       tabBtns.forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       panels.forEach((p) => {
-        p.classList.toggle("active", p.dataset.tabPanel === target);
+        const isTarget = p.dataset.tabPanel === target;
+        p.classList.toggle("active", isTarget);
+        p.classList.remove("tab-fade-in");
+        if (isTarget) {
+          void p.offsetWidth; // 강제 reflow — display:none→grid가 먼저 적용되게 함
+          p.classList.add("tab-fade-in");
+        }
       });
     });
   });
@@ -4786,5 +4823,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   fetchIndexData().catch((e) =>
     console.warn("[RAVEN] index fetch on load failed:", e)
+  );
+  fetchKospiNightFuturesData().catch((e) =>
+    console.warn("[RAVEN] kospi night futures fetch on load failed:", e)
   );
 });

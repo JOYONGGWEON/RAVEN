@@ -312,11 +312,53 @@ async function fetchCandles(symbol, count = 180) {
   return rows;
 }
 
+// ───────── 코스피200 야간선물 (2026-08-04) ─────────
+// KOSPI200 지수선물 종목코드는 "A01" + 만기연도 한 자리(끝자리) + 만기월(2자리, 03/06/09/12
+// 분기물만 존재)로 구성됨 — KIS가 배포하는 종목마스터(fo_idx_code_mts.mst, 파이프 구분 텍스트)를
+// 직접 받아 실측 확인함(예: "A01609"=2026년 9월물, "A01703"=2027년 3월물). 최근월물(가장 유동성
+// 높은 물건)은 그 시점 기준 다음으로 돌아오는 분기월 — 아직 지나지 않은 가장 가까운 3/6/9/12월.
+// ⚠️ 근사치: 실제 트레이더들은 만기 며칠~1주 전에 다음 물건으로 미리 갈아타지만(유동성 이유),
+// 여기서는 달력상 분기 경계로만 근사함 — 만기 임박 마지막 주에는 실제 최근월물과 하루이틀
+// 어긋날 수 있음(추후 필요시 종목마스터 파일을 주기적으로 받아 실제 순위를 확인하는 방식으로
+// 개선 가능, 지금은 간단한 근사식으로 충분하다고 판단).
+function currentKospiFuturesCode() {
+  const kstNow = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })
+  );
+  const year = kstNow.getFullYear();
+  const month = kstNow.getMonth() + 1; // 1~12
+  const quarterMonths = [3, 6, 9, 12];
+  const frontMonth = quarterMonths.find((m) => m >= month);
+  const yearDigit = year % 10;
+  return `A01${yearDigit}${String(frontMonth).padStart(2, "0")}`;
+}
+
+// 국내지수선물시세(F) — TR FHMIF10000000. output1=선물 시세, output3=기초지수(KOSPI200) 현재가.
+// 정규장/야간장 구분 없이 "지금 이 순간의 체결가"를 그대로 주는 엔드포인트라, 18:00~06:00 KST
+// 야간거래 시간대에 호출하면 자연히 야간선물 시세가 됨(실측 확인 — 야간장 중 호출 시 실시간
+// 체결가가 정상적으로 반영됨).
+async function fetchKospiNightFutures() {
+  const code = currentKospiFuturesCode();
+  const json = await kisGet(
+    "/uapi/domestic-futureoption/v1/quotations/inquire-price",
+    "FHMIF10000000",
+    { fid_cond_mrkt_div_code: "F", fid_input_iscd: code }
+  );
+  const o = json.output1 || {};
+  const last = Number(o.futs_prpr);
+  const prevClose = Number(o.futs_prdy_clpr);
+  if (!Number.isFinite(last) || !Number.isFinite(prevClose)) {
+    throw new Error("KOSPI200 야간선물 응답에 유효한 가격 필드가 없음");
+  }
+  return { code, lastClose: last, previousClose: prevClose };
+}
+
 module.exports = {
   fetchCandles,
   isDomesticSymbol,
   fetchOverseasStockName,
   fetchIntradayCandles,
+  fetchKospiNightFutures,
   fetchDomesticWeeklyCandles,
   resolveOverseasExchange,
 };

@@ -8,6 +8,7 @@ const {
   fetchOverseasStockName,
   fetchIntradayCandles,
   fetchDomesticWeeklyCandles,
+  fetchKospiNightFutures,
   isDomesticSymbol,
 } = require("../lib/kisMarket");
 const { fetchIncomeStatement } = require("../lib/kisFundamentals");
@@ -228,6 +229,17 @@ router.get("/supply-demand", async (req, res) => {
   } catch (e) {
     console.error("[RAVEN] /api/kis/supply-demand error:", e);
     res.status(502).json({ error: "supply-demand interpret error" });
+  }
+});
+
+// 코스피200 선물(정규장/야간장 공통 — 호출 시점의 실시간 체결가를 그대로 반환)
+router.get("/kospi-night-futures", async (req, res) => {
+  try {
+    const result = await fetchKospiNightFutures();
+    res.json({ result });
+  } catch (e) {
+    console.error("[RAVEN] /api/kis/kospi-night-futures error:", e);
+    res.status(502).json({ error: "KIS kospi-night-futures proxy error" });
   }
 });
 
