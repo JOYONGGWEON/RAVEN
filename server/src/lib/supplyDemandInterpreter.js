@@ -44,12 +44,12 @@ async function getLatestUsableRow(symbol, dataType, isUsable) {
   return { display: usable || rows[0] || null, rawLatest: rows[0] || null };
 }
 
-async function getLatestRows(symbol) {
+async function getLatestRows(symbol, today) {
   const [credit_balance, loan_trans, programResult, shortResult, investorResult] = await Promise.all([
     getLatestRow(symbol, "credit_balance"),
     getLatestRow(symbol, "loan_trans"),
     getLatestUsableRow(symbol, "program_trade", isProgramTradeRowUsable),
-    getLatestUsableRow(symbol, "short_sale", isShortSaleRowUsable),
+    getLatestUsableRow(symbol, "short_sale", (row) => isShortSaleRowUsable(row, today)),
     getLatestUsableRow(symbol, "investor_trend", isInvestorRowUsable),
   ]);
   return {
@@ -108,11 +108,18 @@ function interpretProgramTrade(row) {
   return { text, tone };
 }
 
-// short_sale도 program_trade/investor_trend와 마찬가지로 "당일 거래량 대비 비중"을 실시간
-// 누적으로 주는 방식이라 장중엔 오늘 행이 비어있을 수 있음(실측으로 확인 — 장마감 직후엔 채워져 있었음).
-function isShortSaleRowUsable(row) {
+// ⚠️ 실제 버그(사용자 보고): "정규장 중에는 0%로 나오다가 15:30(정규장 마감) 이후에야 실제 값이
+// 나온다" — program_trade/investor_trend처럼 필드가 빈 문자열로 오는 게 아니라, 장중엔 ssts_vol_rlim
+// 자체가 "0.00"이라는 (빈 문자열이 아닌) 유효한 숫자로 와서 기존 NaN 가드를 그냥 통과해버렸던 것으로
+// 보임 — 공매도 비중 집계가 KRX 정규장 마감 후 확정되는 방식이라 장중엔 미확정 플레이스홀더로
+// "0.00"이 채워지는 것으로 추정됨. 오늘 날짜 행인데 정확히 0%면(과거 확정된 날짜의 진짜 0%는 그대로
+// 신뢰) "아직 미확정"으로 보고 어제자(진짜 값)로 폴백시킴.
+function isShortSaleRowUsable(row, today) {
   if (!row) return false;
-  return Number.isFinite(parseKisNum(row.raw_data.ssts_vol_rlim));
+  const ratio = parseKisNum(row.raw_data.ssts_vol_rlim);
+  if (!Number.isFinite(ratio)) return false;
+  if (today && row.trade_date === today && ratio === 0) return false;
+  return true;
 }
 
 function interpretShortSale(row) {
@@ -322,7 +329,8 @@ function isFreshForToday(row, isUsable, today) {
 // 종목의 전일 수급 5종(프로그램매매/공매도/신용/대차/투자자별)을 오늘 해석 + 내일 예상 코멘트로 변환
 // 캐시된 데이터가 없으면 그 자리에서 KIS로 즉시 수집(+캐싱)한 뒤 해석함
 async function interpretSupplyDemand(symbol) {
-  let rows = await getLatestRows(symbol);
+  const today = todayKST();
+  let rows = await getLatestRows(symbol, today);
 
   // ⚠️ "하나라도 있으면 스킵"(hasAnyData)이었을 때 실제로 겪은 버그: investor_trend를 5번째
   // 타입으로 추가한 뒤, 이미 다른 4종 캐시가 있던 종목은 hasAnyData가 true라 재수집이 통째로
@@ -338,10 +346,9 @@ async function interpretSupplyDemand(symbol) {
   // program_trade/short_sale/investor_trend(당일 실시간 누적 3종)는 getLatestRows가 이미 "값 채워진
   // 최신 행"으로 폴백해서 보여주지만, 그 폴백 행이 오늘 날짜가 아니라면(=오늘 데이터를 아직 못 가져왔거나
   // 오늘 행이 비어있는 상태) 매 요청마다 계속 재시도해야 함 — rawLatest 기준으로 별도 체크.
-  const today = todayKST();
   const needsRetryToday =
     !isFreshForToday(rows.programRawLatest, isProgramTradeRowUsable, today) ||
-    !isFreshForToday(rows.shortRawLatest, isShortSaleRowUsable, today) ||
+    !isFreshForToday(rows.shortRawLatest, (row) => isShortSaleRowUsable(row, today), today) ||
     !isFreshForToday(rows.investorRawLatest, isInvestorRowUsable, today);
 
   // ⚠️ 또 다른 실제 버그: hasAllData가 한 번 true가 되면(예: 예전 세션에 한 번 수집됨) 그 뒤로는
@@ -362,7 +369,7 @@ async function interpretSupplyDemand(symbol) {
 
   if (!hasAllData || isStale || needsRetryToday) {
     await collectSupplyDemandForSymbol(symbol);
-    rows = await getLatestRows(symbol);
+    rows = await getLatestRows(symbol, today);
   }
 
   const parts = [

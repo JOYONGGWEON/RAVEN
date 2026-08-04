@@ -69,6 +69,28 @@ router.patch("/:symbol/group", async (req, res) => {
   }
 });
 
+// 표시 이름만 변경 — 그룹명 PATCH 라우트와 동일한 이유로 update 전용(이미 목록에 있는 종목에만 적용됨).
+router.patch("/:symbol/name", async (req, res) => {
+  const { symbol } = req.params;
+  const { name } = req.body || {};
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  if (!trimmed) {
+    return res.status(400).json({ error: "name(non-empty string) required" });
+  }
+
+  try {
+    const { error } = await supabase
+      .from("watchlist")
+      .update({ name: trimmed })
+      .eq("symbol", symbol);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[RAVEN] /api/watchlist/:symbol/name PATCH error:", e);
+    res.status(502).json({ error: "watchlist name update error" });
+  }
+});
+
 router.delete("/:symbol", async (req, res) => {
   const { symbol } = req.params;
 

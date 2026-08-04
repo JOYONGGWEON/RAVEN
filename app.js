@@ -2584,31 +2584,23 @@ function updateUI(data, analysis, fxRate, stockName) {
     return `${sign}${pct.toFixed(1)}%`;
   };
 
+  // 가격과 (+/-%)를 한 줄로 이어붙이면 좁은 폭에서 괄호 중간이 어중간하게 줄바꿈되던 문제(실측
+  // 피드백) — 가격/퍼센트를 별도 줄로 명시적으로 분리(innerHTML+<br>)해서 항상 그 경계에서만
+  // 줄바꿈되도록 함.
+  const setTargetBox = (box, level) => {
+    if (!box) return;
+    if (Number.isFinite(level) && Number.isFinite(price)) {
+      const pct = fmtPct(level, price);
+      box.innerHTML = `${formatPrice(level)}<br><span class="target-box-pct">${pct}</span>`;
+    } else {
+      box.textContent = "-";
+    }
+  };
+
   if (target1Box || target2Box || stopBox) {
-    if (target1Box) {
-      if (Number.isFinite(target1) && Number.isFinite(price)) {
-        const pct = fmtPct(target1, price);
-        target1Box.textContent = `${formatPrice(target1)} (${pct})`;
-      } else {
-        target1Box.textContent = "-";
-      }
-    }
-    if (target2Box) {
-      if (Number.isFinite(target2) && Number.isFinite(price)) {
-        const pct = fmtPct(target2, price);
-        target2Box.textContent = `${formatPrice(target2)} (${pct})`;
-      } else {
-        target2Box.textContent = "-";
-      }
-    }
-    if (stopBox) {
-      if (Number.isFinite(stop) && Number.isFinite(price)) {
-        const pct = fmtPct(stop, price);
-        stopBox.textContent = `${formatPrice(stop)} (${pct})`;
-      } else {
-        stopBox.textContent = "-";
-      }
-    }
+    setTargetBox(target1Box, target1);
+    setTargetBox(target2Box, target2);
+    setTargetBox(stopBox, stop);
   }
 
   // ==== Trend 카드 텍스트 ====
@@ -3066,8 +3058,15 @@ function updateUI(data, analysis, fxRate, stockName) {
     // 근처 매도" 두 분기에만 있고, "과매도 역추세"·"R:R 불리"·"중립/관망" 세 분기엔 아예 없어서
     // MACD 지표박스엔 골든크로스가 뜨는데 RAVEN SIGNAL엔 언급이 통째로 빠지는 문의를 받음(FLNC로
     // 재현됨 — 아마 R:R이 애매해 NEUTRAL로 떨어진 케이스). 5개 분기 전부 같은 로직을 쓰도록 통일.
-    // direction: 이 분기가 암시하는 방향("BUY"|"SELL"|"NEUTRAL") — 같은 방향 신호는 뒷받침 근거로
-    // 강조(highlight), 반대 방향 신호는 "다만 ~"로 주의 요인으로 표시, NEUTRAL은 방향성 없이 사실만 나열.
+    // direction: 이 분기가 암시하는 방향("BUY"|"SELL"|"NEUTRAL") — 같은 방향 신호는 그대로,
+    // 반대 방향 신호는 "다만 ~"로 주의 요인으로 표시, NEUTRAL은 방향성 없이 사실만 나열.
+    // ⚠️ 실제 버그(사용자 재보고): 골든크로스/강세다이버전스 같은 핵심 포인트에 색상 강조가 전혀
+    // 안 먹었음 — 예전엔 전부 "highlight"(노란색) 하나로 뭉뚱그렸거나(MA크로스/MACD크로스/주봉추세),
+    // 아예 toneSpan 자체를 빼먹은 항목도 있었음(MACD다이버전스/RS/거래량). "긍정=초록·부정=빨강·
+    // 중립=노랑" 요청대로, 각 신호 문구 자체가 내포한 강세/약세 성격에 맞춰 pos/neg로 칠하고
+    // (다만 ~로 반대방향임을 알려도 문구 자체의 색은 그대로 유지 — 예: SELL 판정 중에 나온 골든크로스는
+    // "다만 골든크로스"라고 경고하되 골든크로스 자체는 여전히 강세 사실이라 초록으로 표시),
+    // 방향성 없는 순수 강도/거래부족 정보만 중립(노랑)으로 둠.
     const buildIndicatorBits = (direction) => {
       const bits = [];
 
@@ -3081,15 +3080,11 @@ function updateUI(data, analysis, fxRate, stockName) {
       // 2026-08-03 알고리즘 리뷰: MA20/60 크로스 이벤트는 관심종목 텔레그램 알림에만 있고 이
       // 화면엔 아예 없었음 — MACD와 같은 패턴으로 추가(더 굵직한 신호라 별도로 강조).
       if (analysis.maCrossover === "GOLDEN") {
-        const txt = "MA20/60 골든크로스 동반";
-        if (direction === "BUY") bits.push(toneSpan(txt, "highlight"));
-        else if (direction === "SELL") bits.push(`다만 ${txt}`);
-        else bits.push(txt);
+        const txt = toneSpan("MA20/60 골든크로스 동반", "pos");
+        bits.push(direction === "SELL" ? `다만 ${txt}` : txt);
       } else if (analysis.maCrossover === "DEAD") {
-        const txt = "MA20/60 데드크로스 동반";
-        if (direction === "SELL") bits.push(toneSpan(txt, "highlight"));
-        else if (direction === "BUY") bits.push(`다만 ${txt}`);
-        else bits.push(txt);
+        const txt = toneSpan("MA20/60 데드크로스 동반", "neg");
+        bits.push(direction === "BUY" ? `다만 ${txt}` : txt);
       }
 
       // 2026-08-03: 주봉 기준 중기 추세(국내 전용) — 일봉 판정과 같은 방향이면 뒷받침 근거로,
@@ -3097,50 +3092,51 @@ function updateUI(data, analysis, fxRate, stockName) {
       // 며칠짜리 반등이 몇 달짜리 하락 추세 속의 일시적 되돌림일 수 있다는 걸 놓치지 않게 함.
       if (analysis.weeklyTrend) {
         if (analysis.weeklyTrend.direction === "UP") {
-          const txt = "주봉 기준 중기 추세도 상승 우위";
-          if (direction === "BUY") bits.push(toneSpan(txt, "highlight"));
-          else if (direction === "SELL") bits.push(`다만 ${txt}`);
-          else bits.push(txt);
+          const txt = toneSpan("주봉 기준 중기 추세도 상승 우위", "pos");
+          bits.push(direction === "SELL" ? `다만 ${txt}` : txt);
         } else if (analysis.weeklyTrend.direction === "DOWN") {
-          const txt = "주봉 기준 중기 추세는 하락 우위";
-          if (direction === "SELL") bits.push(toneSpan(txt, "highlight"));
-          else if (direction === "BUY") bits.push(`다만 ${txt}`);
-          else bits.push(txt);
+          const txt = toneSpan("주봉 기준 중기 추세는 하락 우위", "neg");
+          bits.push(direction === "BUY" ? `다만 ${txt}` : txt);
         }
       }
 
       if (analysis.macdCrossover === "GOLDEN") {
-        const txt = "MACD 골든크로스 동반";
-        if (direction === "BUY") bits.push(toneSpan(txt, "highlight"));
-        else if (direction === "SELL") bits.push(`다만 ${txt}`);
-        else bits.push(txt);
+        const txt = toneSpan("MACD 골든크로스 동반", "pos");
+        bits.push(direction === "SELL" ? `다만 ${txt}` : txt);
       } else if (analysis.macdCrossover === "DEAD") {
-        const txt = "MACD 데드크로스 동반";
-        if (direction === "SELL") bits.push(toneSpan(txt, "highlight"));
-        else if (direction === "BUY") bits.push(`다만 ${txt}`);
-        else bits.push(txt);
+        const txt = toneSpan("MACD 데드크로스 동반", "neg");
+        bits.push(direction === "BUY" ? `다만 ${txt}` : txt);
       }
 
       if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BULLISH") {
-        bits.push(direction === "SELL" ? "다만 MACD 강세 다이버전스 감지" : "MACD 강세 다이버전스 동반");
+        const txt = toneSpan("MACD 강세 다이버전스 감지", "pos");
+        bits.push(direction === "SELL" ? `다만 ${txt}` : txt);
       } else if (analysis.macdDivergence && analysis.macdDivergence.divergence === "BEARISH") {
-        bits.push(direction === "BUY" ? "다만 MACD 약세 다이버전스 감지" : "MACD 약세 다이버전스 동반");
+        const txt = toneSpan("MACD 약세 다이버전스 감지", "neg");
+        bits.push(direction === "BUY" ? `다만 ${txt}` : txt);
       }
 
       if (rsInfo && Number.isFinite(rsInfo.rs20)) {
-        if (rsInfo.rs20 >= 5) bits.push(direction === "SELL" ? "다만 지수 대비 아웃퍼폼 중" : "지수 대비 아웃퍼폼 중");
-        else if (rsInfo.rs20 <= -5) bits.push(direction === "BUY" ? "다만 지수 대비 언더퍼폼 중" : "지수 대비 언더퍼폼 중");
+        if (rsInfo.rs20 >= 5) {
+          const txt = toneSpan("지수 대비 아웃퍼폼 중", "pos");
+          bits.push(direction === "SELL" ? `다만 ${txt}` : txt);
+        } else if (rsInfo.rs20 <= -5) {
+          const txt = toneSpan("지수 대비 언더퍼폼 중", "neg");
+          bits.push(direction === "BUY" ? `다만 ${txt}` : txt);
+        }
       }
 
       // 2026-08-03: 거래량 확인 — SCORE 반영과 같은 근거로, 서술에도 노출해서 왜 점수가
       // 조정됐는지 사용자가 알 수 있게 함.
       if (Number.isFinite(analysis.volumeRatio) && Number.isFinite(analysis.dailyChangePct)) {
         if (analysis.volumeRatio >= 1.8 && analysis.dailyChangePct > 0) {
-          bits.push(direction === "SELL" ? "다만 거래량 급증 동반 상승" : "거래량 급증 동반 상승(수급 확인)");
+          const txt = toneSpan("거래량 급증 동반 상승(수급 확인)", "pos");
+          bits.push(direction === "SELL" ? `다만 ${txt}` : txt);
         } else if (analysis.volumeRatio >= 1.8 && analysis.dailyChangePct < 0) {
-          bits.push(direction === "BUY" ? "다만 거래량 급증 동반 하락" : "거래량 급증 동반 하락(매도세 확인)");
+          const txt = toneSpan("거래량 급증 동반 하락(매도세 확인)", "neg");
+          bits.push(direction === "BUY" ? `다만 ${txt}` : txt);
         } else if (analysis.volumeRatio < 0.5) {
-          bits.push("거래량이 평소보다 크게 부족(확신 낮은 움직임)");
+          bits.push(toneSpan("거래량이 평소보다 크게 부족(확신 낮은 움직임)", "neu"));
         }
       }
 
@@ -3519,6 +3515,25 @@ function initResultTabs() {
   });
 }
 
+// RAVEN SCORE 캡션의 ℹ️ 버튼 → 산정 방식 팝업 열기/닫기 (요청 반영, 2026-08-04)
+function initScoreFormulaModal() {
+  const btn = $("score-formula-btn");
+  const modal = $("score-formula-modal");
+  const backdrop = $("score-formula-backdrop");
+  const closeBtn = $("score-formula-close");
+  if (!btn || !modal) return;
+
+  const open = () => modal.classList.remove("hidden");
+  const close = () => modal.classList.add("hidden");
+
+  btn.addEventListener("click", open);
+  if (backdrop) backdrop.addEventListener("click", close);
+  if (closeBtn) closeBtn.addEventListener("click", close);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !modal.classList.contains("hidden")) close();
+  });
+}
+
 // ===============================
 // 전일 수급 해석 박스 렌더링 (국내 종목 전용, 결과 카드 표시 후 비동기로 채워짐)
 function renderSupplyDemandBox(data) {
@@ -3532,7 +3547,6 @@ function renderSupplyDemandBox(data) {
 
   const dateEl = $("supply-kis-date");
   const listEl = $("supply-kis-list");
-  const outlookEl = $("supply-kis-outlook");
 
   if (dateEl) dateEl.textContent = data.date ? `기준일: ${data.date}` : "";
   if (listEl) {
@@ -3543,14 +3557,12 @@ function renderSupplyDemandBox(data) {
       listEl.appendChild(li);
     });
   }
-  if (outlookEl) outlookEl.textContent = data.outlook || "";
 
   box.classList.remove("hidden");
 
-  // 전일 수급(KIS)은 메인 렌더링보다 늦게 도착하므로, 이미 채워진 수급 종합 리스트에 항목 추가.
-  // 예전엔 outlook(위 supply-kis-outlook 박스에 이미 그대로 표시되는 문장)을 따옴표째 그대로
-  // 재인용해서 바로 위 박스와 문장이 완전히 겹쳐 보였음 — outlookShort(짧게 요약된 별도
-  // 문장)로 교체.
+  // 2026-08-04 피드백: outlook(전일 수급 박스 자체의 결론 문장)과 outlookShort(수급 종합의 결론
+  // 문장)가 표현만 다를 뿐 사실상 같은 내용을 두 번 말하는 것처럼 보인다는 지적 — 전일 수급
+  // 박스는 원자료(항목별 해석 리스트)만 보여주는 역할로 좁히고, 결론은 수급 종합 하나로 일원화.
   const supplySummaryEl = $("supply-summary-txt");
   if (supplySummaryEl && data.outlookShort) {
     const li = document.createElement("li");
@@ -3570,7 +3582,8 @@ function resetEarningsPanel() {
   const legend = $("fund-legend");
   const labelsEl = $("fund-chart-labels");
   const listEl = $("fund-quarter-list");
-  const txtEl = $("fund-txt");
+  const headerEl = $("fund-quarter-header");
+  const summaryEl = $("fund-summary-txt");
 
   if (svg) {
     svg.innerHTML = "";
@@ -3585,11 +3598,12 @@ function resetEarningsPanel() {
     listEl.innerHTML = "";
     listEl.classList.add("hidden");
   }
+  if (headerEl) headerEl.classList.add("hidden");
   if (empty) {
     empty.textContent = "데이터를 불러오는 중...";
     empty.classList.remove("hidden");
   }
-  if (txtEl) txtEl.textContent = "";
+  if (summaryEl) renderBulletList(summaryEl, ["분석 중..."]);
 }
 
 // KIS 손익계산서(국내)는 억원 단위로 옴 — 1조원 넘어가면 "조원" 단위로 환산해서 표시(가독성)
@@ -3640,7 +3654,7 @@ function renderEarningsChart(quarters, currency) {
   const labelsEl = $("fund-chart-labels");
   const listEl = $("fund-quarter-list");
   const headerEl = $("fund-quarter-header");
-  const txtEl = $("fund-txt");
+  const summaryEl = $("fund-summary-txt");
   if (!svg || !empty) return;
 
   const fmt = currency === "USD" ? formatUsdCompact : formatEokwon;
@@ -3653,7 +3667,7 @@ function renderEarningsChart(quarters, currency) {
     if (labelsEl) labelsEl.classList.add("hidden");
     if (listEl) listEl.classList.add("hidden");
     if (headerEl) headerEl.classList.add("hidden");
-    if (txtEl) txtEl.textContent = "";
+    renderBulletList(summaryEl, [msg]);
   };
 
   if (!quarters || !quarters.length) {
@@ -3738,34 +3752,78 @@ function renderEarningsChart(quarters, currency) {
     if (headerEl) headerEl.classList.remove("hidden");
   }
 
-  // --- 요약 문장: 최신 분기 실적 + 전년 동기 대비(YoY) ---
-  if (txtEl) {
-    const latest = shown[shown.length - 1];
-    const latestYear = Number(latest.yyyymm.slice(0, 4));
-    const latestMonth = latest.yyyymm.slice(4, 6);
-    const yearAgo = quarters.find(
-      (q) => q.yyyymm.slice(4, 6) === latestMonth && Number(q.yyyymm.slice(0, 4)) === latestYear - 1
-    );
+  // --- 종합 요약: 다른 탭들(추세/수급/패턴)처럼 숫자 나열이 아니라 여러 분기를 종합한 "해석"을
+  // 불릿으로 제공(요청 반영) — ①최근 분기 실적+전년동기대비(YoY) ②최근 수 개 분기의 매출·이익률
+  // 추세 방향(표/차트로는 눈으로 훑어야 알 수 있는 걸 문장으로 정리).
+  if (summaryEl) {
+    renderBulletList(summaryEl, summarizeEarnings(shown, quarters, fmt));
+  }
+}
 
-    let summary = `최근 분기(${latest.label || shortQuarterLabel(latest.yyyymm)}) 매출액 ${fmt(latest.revenue)}, 영업이익 ${fmt(latest.operatingProfit)}`;
-    if (latest.operatingProfit < 0) summary += " — 영업적자";
+function summarizeEarnings(shown, allQuarters, fmt) {
+  const bullets = [];
+  const latest = shown[shown.length - 1];
+  const latestYear = Number(latest.yyyymm.slice(0, 4));
+  const latestMonth = latest.yyyymm.slice(4, 6);
+  const yearAgo = allQuarters.find(
+    (q) => q.yyyymm.slice(4, 6) === latestMonth && Number(q.yyyymm.slice(0, 4)) === latestYear - 1
+  );
+  const latestMargin = latest.revenue ? (latest.operatingProfit / latest.revenue) * 100 : null;
 
-    if (yearAgo) {
-      const revYoy = yearAgo.revenue ? ((latest.revenue - yearAgo.revenue) / yearAgo.revenue) * 100 : null;
-      if (Number.isFinite(revYoy)) {
-        summary += `. 전년 동기 대비 매출 ${revYoy >= 0 ? "+" : ""}${revYoy.toFixed(1)}%`;
-      }
-      if (yearAgo.operatingProfit < 0 && latest.operatingProfit >= 0) {
-        summary += ", 영업이익 흑자 전환";
-      } else if (yearAgo.operatingProfit >= 0 && latest.operatingProfit < 0) {
-        summary += ", 영업이익 적자 전환";
-      } else if (yearAgo.operatingProfit) {
-        const opYoy = ((latest.operatingProfit - yearAgo.operatingProfit) / Math.abs(yearAgo.operatingProfit)) * 100;
-        summary += `, 영업이익 ${opYoy >= 0 ? "+" : ""}${opYoy.toFixed(1)}%`;
+  let latestLine = `최근 분기(${latest.label || shortQuarterLabel(latest.yyyymm)}) 매출액 ${fmt(
+    latest.revenue
+  )}, 영업이익 ${fmt(latest.operatingProfit)}`;
+  if (Number.isFinite(latestMargin)) latestLine += `(영업이익률 ${latestMargin.toFixed(1)}%)`;
+  if (latest.operatingProfit < 0) latestLine += " — 영업적자";
+  bullets.push(latestLine + ".");
+
+  if (yearAgo) {
+    let yoyLine = "";
+    const revYoy = yearAgo.revenue ? ((latest.revenue - yearAgo.revenue) / yearAgo.revenue) * 100 : null;
+    if (Number.isFinite(revYoy)) {
+      yoyLine += `전년 동기 대비 매출 ${revYoy >= 0 ? "+" : ""}${revYoy.toFixed(1)}%`;
+    }
+    if (yearAgo.operatingProfit < 0 && latest.operatingProfit >= 0) {
+      yoyLine += (yoyLine ? ", " : "") + "영업이익 흑자 전환";
+    } else if (yearAgo.operatingProfit >= 0 && latest.operatingProfit < 0) {
+      yoyLine += (yoyLine ? ", " : "") + "영업이익 적자 전환";
+    } else if (yearAgo.operatingProfit) {
+      const opYoy = ((latest.operatingProfit - yearAgo.operatingProfit) / Math.abs(yearAgo.operatingProfit)) * 100;
+      yoyLine += (yoyLine ? ", " : "") + `영업이익 ${opYoy >= 0 ? "+" : ""}${opYoy.toFixed(1)}%`;
+    }
+    if (yoyLine) bullets.push(yoyLine + ".");
+  }
+
+  // 최근 3~4개 분기의 매출/이익률 방향성 — 표·차트를 하나하나 비교하지 않아도 흐름을 바로 알 수 있게.
+  const recent = shown.slice(-4);
+  if (recent.length >= 3) {
+    const revUpCount = recent
+      .slice(1)
+      .filter((q, i) => q.revenue > recent[i].revenue).length;
+    const revDownCount = recent.length - 1 - revUpCount;
+    let trendWord = "혼조";
+    if (revUpCount >= recent.length - 1) trendWord = "꾸준한 증가";
+    else if (revDownCount >= recent.length - 1) trendWord = "꾸준한 감소";
+    else if (revUpCount > revDownCount) trendWord = "대체로 증가";
+    else if (revDownCount > revUpCount) trendWord = "대체로 감소";
+    bullets.push(`최근 ${recent.length}개 분기 매출액은 ${trendWord} 추세입니다.`);
+
+    const margins = recent
+      .map((q) => (q.revenue ? (q.operatingProfit / q.revenue) * 100 : null))
+      .filter((m) => Number.isFinite(m));
+    if (margins.length >= 3) {
+      const marginDelta = margins[margins.length - 1] - margins[0];
+      if (marginDelta >= 2) {
+        bullets.push(`영업이익률이 ${margins[0].toFixed(1)}%→${margins[margins.length - 1].toFixed(1)}%로 개선되는 흐름입니다.`);
+      } else if (marginDelta <= -2) {
+        bullets.push(`영업이익률이 ${margins[0].toFixed(1)}%→${margins[margins.length - 1].toFixed(1)}%로 악화되는 흐름입니다.`);
+      } else {
+        bullets.push(`영업이익률은 최근 ${recent.length}개 분기 동안 ${margins[0].toFixed(1)}%대에서 큰 변화 없이 유지되고 있습니다.`);
       }
     }
-    txtEl.textContent = summary + ".";
   }
+
+  return bullets;
 }
 
 // ===============================
@@ -3837,14 +3895,10 @@ function applyInvestorStreakToScore(sdData, symbol) {
   lastAnalysis.analysis.rank = newRank;
 
   updateScoreAndRankDisplay(newScore, newRank);
-
-  const captionEl = $("z-metrics-caption");
-  if (captionEl) {
-    const sign = delta > 0 ? "+" : "";
-    // 연속매매 반영 문구는 기존 캡션과 한 줄로 붙어서 읽기 불편했음 — 별도 줄로 분리
-    captionEl.innerHTML =
-      `ℹ️ RAVEN 알고리즘에 의한 점수입니다<br>(외국인·기관 연속매매 반영 ${sign}${delta}점)`;
-  }
+  // 2026-08-04 피드백: 캡션에 "(외국인·기관 연속매매 반영 ±N점)"을 매번 덧붙이던 걸 생략 —
+  // 점수/등급 자체는 그대로 조정되어 반영되지만, 캡션 문구는 건드리지 않고 그대로 둠
+  // (캡션에 새로 추가된 산정방식 안내 버튼(ℹ️)이 여기서 캡션 전체를 덮어쓰면 같이 사라지는
+  // 문제도 있었음).
 }
 
 // ===============================
@@ -3923,6 +3977,20 @@ async function updateWatchlistItemGroup(symbol, groupName) {
   }
 }
 
+async function updateWatchlistItemName(symbol, name) {
+  try {
+    const res = await fetch(`${API_BASE}/api/watchlist/${encodeURIComponent(symbol)}/name`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn("[RAVEN] 관심종목 이름 변경 실패:", e);
+    return false;
+  }
+}
+
 // 관심종목 항목 한 줄 생성 — 이름(코드 괄호 없이)/현재가·등락률(비동기 채움)/그룹 이동 select/삭제 버튼
 function buildWatchlistItemRow(item, groupNames) {
   const row = document.createElement("div");
@@ -3936,10 +4004,38 @@ function buildWatchlistItemRow(item, groupNames) {
   const main = document.createElement("div");
   main.className = "watchlist-sidebar-item-main";
 
+  // 라벨 + 이름수정 아이콘을 한 줄(가로)로, 그 아래 가격을 별도 줄(세로)로 배치하기 위한 래퍼.
+  const labelRow = document.createElement("div");
+  labelRow.className = "watchlist-sidebar-item-label-row";
+
   const label = document.createElement("span");
   label.className = "watchlist-sidebar-item-label";
   label.textContent = item.name || item.symbol;
-  main.appendChild(label);
+  labelRow.appendChild(label);
+
+  // 이름 수정 — 이미 등록된 관심종목의 표시 이름을 나중에 바꿀 수 있게(요청 반영).
+  // 그룹 select와 같은 패턴(prompt 입력 + PATCH)이라 별도 모달 없이 가볍게 구현.
+  const editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.className = "watchlist-sidebar-item-edit";
+  editBtn.textContent = "✎";
+  editBtn.title = "이름 수정";
+  editBtn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const typed = window.prompt("관심종목 표시 이름을 입력하세요", item.name || item.symbol);
+    if (!typed || !typed.trim() || typed.trim() === item.name) return;
+    const newName = typed.trim();
+    const ok = await updateWatchlistItemName(item.symbol, newName);
+    if (ok) {
+      const cacheItem = watchlistCache.find((w) => w.symbol === item.symbol);
+      if (cacheItem) cacheItem.name = newName;
+      renderWatchlistSidebar(watchlistCache);
+    } else {
+      showToast("이름 변경에 실패했습니다.");
+    }
+  });
+  labelRow.appendChild(editBtn);
+  main.appendChild(labelRow);
 
   const priceEl = document.createElement("span");
   priceEl.className = "watchlist-sidebar-item-price";
@@ -3953,6 +4049,13 @@ function buildWatchlistItemRow(item, groupNames) {
   row.appendChild(main);
 
   // 그룹 이동 select — "미분류" + 기존 그룹명들 + "새 그룹 만들기"
+  // 2026-08-04 피드백: 현재 그룹명 텍스트 없이 화살표만 보이면 됨 — 처음엔 select 폭만 줄이고
+  // 텍스트를 투명 처리했는데, 20px처럼 작은 폭에서는 크롬이 네이티브 화살표 자체를 그려주지
+  // 않아서 아무것도 안 보이는 버그가 됨(실측 확인). select는 완전히 투명한 채로 wrapper 전체를
+  // 덮게 하고(클릭/키보드 동작은 그대로 유지), 화살표는 별도 span으로 항상 보이게 직접 그림.
+  const groupWrap = document.createElement("span");
+  groupWrap.className = "watchlist-sidebar-item-group-wrap";
+
   const groupSelect = document.createElement("select");
   groupSelect.className = "watchlist-sidebar-item-group";
   groupSelect.title = "그룹 이동";
@@ -3987,7 +4090,13 @@ function buildWatchlistItemRow(item, groupNames) {
       groupSelect.value = currentGroup;
     }
   });
-  row.appendChild(groupSelect);
+  groupWrap.appendChild(groupSelect);
+  const groupArrow = document.createElement("span");
+  groupArrow.className = "watchlist-sidebar-item-group-arrow";
+  groupArrow.textContent = "▾";
+  groupArrow.setAttribute("aria-hidden", "true");
+  groupWrap.appendChild(groupArrow);
+  row.appendChild(groupWrap);
 
   const removeBtn = document.createElement("button");
   removeBtn.type = "button";
@@ -4481,6 +4590,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 📑 상세 탭 (추세·모멘텀 / 수급 / 패턴·신호 / 실적)
   initResultTabs();
+
+  // RAVEN SCORE 산정 방식 안내 팝업
+  initScoreFormulaModal();
 
   // ----- 아래로 기존 검색/분석 로직 그대로 유지 -----
   const input = $("ticker-input");

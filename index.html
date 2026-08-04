@@ -312,7 +312,10 @@
                   </div>
                 </div>
               </div>
-              <p id="z-metrics-caption" class="z-metrics-caption">ℹ️ RAVEN 알고리즘에 의한 점수입니다</p>
+              <p id="z-metrics-caption" class="z-metrics-caption">
+                <button id="score-formula-btn" class="score-info-btn" type="button" title="점수 산정 방식 보기">ℹ️</button>
+                RAVEN 알고리즘 분석 결과입니다
+              </p>
             </div>
           </div>
 
@@ -421,7 +424,6 @@
             <h3>📊 전일 수급 (프로그램매매·공매도·신용·대차·투자자별)</h3>
             <p id="supply-kis-date" class="supply-kis-date"></p>
             <ul id="supply-kis-list" class="supply-kis-list"></ul>
-            <p id="supply-kis-outlook" class="supply-kis-outlook"></p>
           </div>
           <div class="section-box wide tab-summary-box">
             <h3>🧭 수급 종합</h3>
@@ -447,15 +449,15 @@
         <div class="tab-panel" data-tab-panel="fund">
           <div class="section-box wide">
             <h3>🏦 실적 (분기별 매출액 · 영업이익)</h3>
-            <div id="fund-chart-wrap" class="earnings-chart-wrap">
-              <div id="fund-chart-empty" class="earnings-empty hidden">데이터를 불러오는 중...</div>
-              <svg id="fund-chart" class="earnings-svg hidden" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
-              <div id="fund-chart-labels" class="earnings-chart-labels hidden"></div>
-            </div>
             <div id="fund-legend" class="earnings-legend hidden">
               <span class="earnings-legend-item"><i class="earnings-swatch revenue"></i>매출액</span>
               <span class="earnings-legend-item"><i class="earnings-swatch profit-pos"></i>영업이익(흑자)</span>
               <span class="earnings-legend-item"><i class="earnings-swatch profit-neg"></i>영업이익(적자)</span>
+            </div>
+            <div id="fund-chart-wrap" class="earnings-chart-wrap">
+              <div id="fund-chart-empty" class="earnings-empty hidden">데이터를 불러오는 중...</div>
+              <svg id="fund-chart" class="earnings-svg hidden" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+              <div id="fund-chart-labels" class="earnings-chart-labels hidden"></div>
             </div>
             <div id="fund-quarter-header" class="earnings-quarter-header hidden">
               <span class="earnings-capsule">분기</span>
@@ -463,7 +465,10 @@
               <span class="earnings-capsule">영업이익</span>
             </div>
             <ul id="fund-quarter-list" class="earnings-quarter-list hidden"></ul>
-            <p id="fund-txt">분석 중...</p>
+          </div>
+          <div class="section-box wide tab-summary-box">
+            <h3>🧭 실적 종합</h3>
+            <ul id="fund-summary-txt"><li>분석 중...</li></ul>
           </div>
         </div>
 
@@ -501,6 +506,31 @@
 
   <!-- 에러/알림 배너 -->
   <div id="toast-msg" class="toast hidden">메시지</div>
+
+  <!-- RAVEN SCORE 산정 방식 안내 팝업 — ℹ️ 버튼 클릭 시 표시(요청 반영) -->
+  <div id="score-formula-modal" class="score-formula-modal hidden">
+    <div id="score-formula-backdrop" class="score-formula-backdrop"></div>
+    <div class="score-formula-box" role="dialog" aria-label="RAVEN SCORE 산정 방식">
+      <button id="score-formula-close" class="score-formula-close" type="button" title="닫기">×</button>
+      <h3>RAVEN SCORE 산정 방식</h3>
+      <p class="score-formula-intro">기본 50점에서 시작해, 아래 항목들을 가감해서 0~99점을 만듭니다. 백테스트로 검증된 가중치가 아니라 규칙 기반으로 정한 값이며, 각 항목의 비중은 계속 조정될 수 있습니다.</p>
+      <ul class="score-formula-list">
+        <li><b>단기 추세</b>(최근 6거래일 등락률): ±15점</li>
+        <li><b>중기 추세 강도</b>(MA20 vs MA60 방향 × ADX 강도): 최대 ±16.8점</li>
+        <li><b>RSI 위치</b>(과매도/과매수/중립 구간): −12 ~ +12점</li>
+        <li><b>MA20 이격도</b>(현재가와 20일선 거리): ±6점</li>
+        <li><b>20일 변동성</b>(과도하게 높거나 낮으면 감점): −5 ~ −2점</li>
+        <li><b>R:R(위험 대비 보상)</b>: ±10점</li>
+        <li><b>MACD 골든/데드크로스</b>(당일 발생): ±5점</li>
+        <li><b>MA20/60 골든/데드크로스</b>(당일 발생): ±8점</li>
+        <li><b>주봉 기준 중기 추세</b>(국내 전용): ±6점</li>
+        <li><b>거래량 확인</b>(평소 대비 급증/과소): −4 ~ +4점</li>
+        <li><b>지수 대비 상대강도(RS)</b>(20일 벤치마크 대비): ±8점</li>
+        <li><b>외국인·기관 연속매매</b>(국내, 5일+ 연속 순매수/매도): ±8점</li>
+      </ul>
+      <p class="score-formula-rank">등급(S/A/B/C/D)은 점수 구간으로 나뉘고(S≥85, A≥70, B≥55, C≥35, D&lt;35), 같은 등급 안에서도 점수 위치에 따라 세부등급(+/−)이 붙습니다.</p>
+    </div>
+  </div>
 
   <!-- 메인 스크립트 -->
   <script src="app.js"></script>
