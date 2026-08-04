@@ -1004,6 +1004,40 @@ function detectMaCross(closes) {
   return "NONE";
 }
 
+// 2026-08-04 알고리즘 리뷰: 20/60/120일선이 역배열(하락 추세)인 상태에서 "가격이 5일선을
+// 거래량을 동반하며 뚫어내는" 최초의 순간을 세력 진입/추세전환 초입 신호로 볼 수 있는지 사용자가
+// 문의 — 실제로 트레이더들이 참고하는 패턴이 맞음(가장 빠른 이평선이라 초기 반전 신호로 쓰임).
+// 다만 "빠른 신호"는 태생적으로 "노이즈에도 빠르게 반응"한다는 뜻이라, 거래량 확인 없이 쓰면
+// 대부분 데드캣 바운스(하락 추세 중 일시 반등 후 재하락)로 끝남 — 그래서 이 함수는 반드시
+// 역배열(추세 컨텍스트) + 거래량 확인(volumeRatio) 둘 다 있어야만 신호로 침("빠른 진입 =
+// 손절 폭이 좁아 R:R 자체는 좋아지지만, 그만큼 승률은 낮아지는 트레이드오프"라는 걸 서술에도 명시).
+// 상승 추세(정배열) 쪽도 대칭으로 같이 감지 — "정배열 중 5일선 하향 이탈 + 거래량"은 상승 추세
+// 초기 균열 신호로 볼 수 있음.
+function detectMa5Breakout(closes, ma20, ma60, volumeRatio) {
+  const ma5Series = calcEMASeries(closes, 5);
+  if (!ma5Series || typeof ma20 !== "number" || typeof ma60 !== "number") return null;
+
+  const n = closes.length;
+  const todayMa5 = ma5Series[n - 1];
+  const prevMa5 = ma5Series[n - 2];
+  if (todayMa5 == null || prevMa5 == null) return null;
+
+  const prevClose = closes[n - 2];
+  const todayClose = closes[n - 1];
+  const volumeConfirmed = Number.isFinite(volumeRatio) && volumeRatio >= 1.5;
+
+  const reverseArray = ma20 < ma60; // 역배열(하락 추세 컨텍스트)
+  const normalArray = ma20 > ma60; // 정배열(상승 추세 컨텍스트)
+
+  if (reverseArray && prevClose <= prevMa5 && todayClose > todayMa5) {
+    return { type: "BULL_BREAK", volumeConfirmed };
+  }
+  if (normalArray && prevClose >= prevMa5 && todayClose < todayMa5) {
+    return { type: "BEAR_BREAK", volumeConfirmed };
+  }
+  return null;
+}
+
 // MACD 라인 + 시그널선(9-EMA) + 히스토그램 + 골든/데드 크로스 감지
 // (예전엔 MACD 라인 값 하나만 계산해서 크로스오버를 아예 감지할 수 없었음)
 function calcMACDFull(closes) {
@@ -1443,6 +1477,8 @@ function analyzeData(data, benchmarkData, intradayCloses, weeklyCloses) {
     if (avg > 0) volumeRatio = todayVol / avg;
   }
 
+  const ma5Breakout = detectMa5Breakout(closes, ma20, ma60, volumeRatio);
+
   // 변동성 (20일 수익률 표준편차)
   let volatility = 0;
   if (n >= 21) {
@@ -1533,6 +1569,15 @@ function analyzeData(data, benchmarkData, intradayCloses, weeklyCloses) {
     else if (weeklyTrend.direction === "DOWN") score -= 6;
   }
 
+  // 2026-08-04: 역배열 중 거래량 동반 5일선 상향 돌파(세력 진입 초기 신호 후보) — 빠른 신호라
+  // 노이즈에도 잘 반응하므로 거래량 확인이 없으면 아예 점수에 반영 안 함(위 detectMa5Breakout
+  // 주석 참고). 확인되면 소폭 반영(±5) — MA20/60 크로스(±8)보다는 작게, 아직 더 굵직한 크로스로
+  // 확정되지 않은 "초기 신호"이기 때문.
+  if (ma5Breakout && ma5Breakout.volumeConfirmed) {
+    if (ma5Breakout.type === "BULL_BREAK") score += 5;
+    else if (ma5Breakout.type === "BEAR_BREAK") score -= 5;
+  }
+
   // 거래량 확인 — 예전엔 volumeRatio(20일 평균 대비 당일 거래량)를 계산만 해두고 SCORE엔 전혀
   // 안 썼음. 실제 트레이더는 거래량 확인 없는 가격 움직임을 잘 신뢰하지 않음: 평소보다 훨씬
   // 많은 거래량을 동반한 상승/하락은 확인(가점/감점)으로, 반대로 평소보다 훨씬 적은 거래량은
@@ -1570,6 +1615,7 @@ function analyzeData(data, benchmarkData, intradayCloses, weeklyCloses) {
     macdDivergence,
     maCrossover,
     weeklyTrend,
+    ma5Breakout,
     atr,
     atrPct,
     adx,
@@ -3054,6 +3100,27 @@ function updateUI(data, analysis, fxRate, stockName) {
       return `🔁 트레일링: 이후 가격이 ${formatPrice(halfway)}(1차 목표가의 절반 지점) 부근까지 오르면, 손절가를 진입가(본전) 수준으로 올려 이미 확보한 수익을 방어하는 것을 권장합니다.`;
     };
 
+    // 2026-08-04 피드백: 지지 이탈/저항 돌파 "그 다음"까지 연계해달라는 요청 — 1차 레벨이 뚫렸을 때
+    // 다음 기준점(2차 지지/저항)까지 미리 시나리오로 제시. 2차 레벨 자체가 없으면(먼 과거/거리제한
+    // 밖이라 못 찾은 경우) "다음 기준점이 뚜렷하지 않다"는 사실 자체를 알려줌(없는 숫자를 지어내지 않음).
+    const buildBreakScenarioLine = (kind) => {
+      if (kind === "support") {
+        if (!Number.isFinite(s1)) return "";
+        if (Number.isFinite(s2)) {
+          return `📉 이탈 시나리오: ${formatPrice(s1)} 지지가 종가 기준으로 무너지면, 다음은 2차 지지선 ${formatPrice(s2)}(${fmtLevelPct(s2)}) 부근까지 하락 폭이 열릴 수 있습니다.`;
+        }
+        return `📉 이탈 시나리오: ${formatPrice(s1)} 지지가 무너지면 다음 기준점이 뚜렷하지 않아, 하락 변동성이 커질 수 있는 구간입니다.`;
+      }
+      if (kind === "resistance") {
+        if (!Number.isFinite(r1)) return "";
+        if (Number.isFinite(r2)) {
+          return `📈 돌파 시나리오: ${formatPrice(r1)} 저항을 종가 기준으로 돌파하면, 다음은 2차 저항선 ${formatPrice(r2)}(${fmtLevelPct(r2)}) 부근까지 상승 폭이 열릴 수 있습니다.`;
+        }
+        return `📈 돌파 시나리오: ${formatPrice(r1)} 저항을 돌파하면 다음 기준점이 뚜렷하지 않아, 추세 가속 구간으로 볼 수 있습니다.`;
+      }
+      return "";
+    };
+
     // ⚠️ 실제로 발견된 누락: MACD 크로스오버/다이버전스·ADX·RS 체크가 "지지선 근처 매수"/"저항선
     // 근처 매도" 두 분기에만 있고, "과매도 역추세"·"R:R 불리"·"중립/관망" 세 분기엔 아예 없어서
     // MACD 지표박스엔 골든크로스가 뜨는데 RAVEN SIGNAL엔 언급이 통째로 빠지는 문의를 받음(FLNC로
@@ -3085,6 +3152,18 @@ function updateUI(data, analysis, fxRate, stockName) {
       } else if (analysis.maCrossover === "DEAD") {
         const txt = toneSpan("MA20/60 데드크로스 동반", "neg");
         bits.push(direction === "BUY" ? `다만 ${txt}` : txt);
+      }
+
+      // 2026-08-04: 역배열/정배열 컨텍스트 + 거래량 확인이 같이 있어야만 의미 있는 "초기 신호"라
+      // volumeConfirmed일 때만 서술에 노출(거래량 없는 5일선 돌파는 노이즈일 확률이 높아 생략).
+      if (analysis.ma5Breakout && analysis.ma5Breakout.volumeConfirmed) {
+        if (analysis.ma5Breakout.type === "BULL_BREAK") {
+          const txt = toneSpan("역배열 중 거래량 동반 5일선 상향 돌파(초기 반전 신호 후보)", "pos");
+          bits.push(direction === "SELL" ? `다만 ${txt}` : txt);
+        } else if (analysis.ma5Breakout.type === "BEAR_BREAK") {
+          const txt = toneSpan("정배열 중 거래량 동반 5일선 하향 이탈(초기 균열 신호 후보)", "neg");
+          bits.push(direction === "BUY" ? `다만 ${txt}` : txt);
+        }
       }
 
       // 2026-08-03: 주봉 기준 중기 추세(국내 전용) — 일봉 판정과 같은 방향이면 뒷받침 근거로,
@@ -3233,6 +3312,8 @@ function updateUI(data, analysis, fxRate, stockName) {
         );
         const trailingLine2 = buildTrailingStopLine();
         if (trailingLine2) detailLines.push(trailingLine2);
+        const breakLine2 = buildBreakScenarioLine("support");
+        if (breakLine2) detailLines.push(breakLine2);
       }
     } else if (verdict.tier === "SELL") {
       if (nearResistance) {
@@ -3251,6 +3332,8 @@ function updateUI(data, analysis, fxRate, stockName) {
             "저항 부근에서도 밀리면서 이 가격대까지 빠지면 손절 검토"
           )
         );
+        const breakLine3 = buildBreakScenarioLine("resistance");
+        if (breakLine3) detailLines.push(breakLine3);
       } else {
         mainTxt = "R:R 불리 (위험 대비 보상 부족)";
         const rrBits = buildIndicatorBits("SELL");
@@ -3675,7 +3758,8 @@ function renderEarningsChart(quarters, currency) {
     return;
   }
 
-  const shown = quarters.slice(-8);
+  // 2026-08-04 피드백: 8분기(2년치)는 너무 많아 보임 — 최근 5분기만(예: '25 Q1~'26 Q1)
+  const shown = quarters.slice(-5);
   empty.classList.add("hidden");
 
   // --- SVG 그룹 막대 차트 ---
@@ -3864,11 +3948,12 @@ function renderNewsList(news) {
     const metaLine = [meta, n.source].filter(Boolean).join(" · ");
     const title = n.title || "(제목 없음)";
     // KIS news-title 응답엔 기사 원문 링크 필드 자체가 없음(국내/해외 둘 다 실측 확인 —
-    // 내부 일련번호만 있고 공개 URL 없음) — 제목 그대로 구글 검색으로 연결해 최소한 클릭해서
-    // 찾아볼 수 있게 함
-    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(
+    // 내부 일련번호만 있고 공개 URL 없음, 이 세션에도 재확인함) — 완전한 "원문 링크"는 이
+    // 데이터소스로는 불가능해서, 대신 구글 일반검색(결과 페이지 자체가 뜸)보다 실제 기사가 바로
+    // 클릭되는 구글 뉴스검색으로 교체(요청 반영, 완전한 해결은 아니고 클릭 경험 개선).
+    const searchUrl = `https://news.google.com/search?q=${encodeURIComponent(
       [title, n.source].filter(Boolean).join(" ")
-    )}`;
+    )}&hl=ko&gl=KR`;
     li.innerHTML =
       `<a class="news-title" href="${searchUrl}" target="_blank" rel="noopener noreferrer">${title}</a>` +
       (metaLine ? `<div class="news-meta">${metaLine}</div>` : "");
@@ -4152,7 +4237,39 @@ function renderWatchlistSidebar(list) {
   groupOrder.forEach((groupName) => {
     const header = document.createElement("div");
     header.className = "watchlist-group-header";
-    header.textContent = groupName;
+
+    // 2026-08-04 피드백: 지난번엔 종목 개별 이름 수정으로 오해해서 구현했는데, 실제로는 이
+    // 그룹명(예: "에너지") 자체를 수정하고 싶다는 요청이었음 — 연필 아이콘을 그룹명 "앞"에 배치.
+    // "미분류"는 실제 그룹이 아니라 그룹 미지정 상태를 나타내는 placeholder라 수정 대상에서 제외.
+    if (groupName !== "미분류") {
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "watchlist-group-edit";
+      editBtn.textContent = "✎";
+      editBtn.title = "그룹명 수정";
+      editBtn.addEventListener("click", async () => {
+        const typed = window.prompt("그룹 이름을 입력하세요", groupName);
+        if (!typed || !typed.trim() || typed.trim() === groupName) return;
+        const newName = typed.trim();
+        const members = watchlistCache.filter((w) => (w.group_name || "미분류") === groupName);
+        const results = await Promise.all(
+          members.map((m) => updateWatchlistItemGroup(m.symbol, newName))
+        );
+        if (results.every(Boolean)) {
+          members.forEach((m) => {
+            m.group_name = newName;
+          });
+          renderWatchlistSidebar(watchlistCache);
+        } else {
+          showToast("그룹명 변경에 실패했습니다.");
+        }
+      });
+      header.appendChild(editBtn);
+    }
+
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = groupName;
+    header.appendChild(labelSpan);
     listEl.appendChild(header);
 
     list
@@ -4495,6 +4612,7 @@ async function requestAiAnalysis() {
         macdCrossover: analysis.macdCrossover,
         maCrossover: analysis.maCrossover,
         weeklyTrend: analysis.weeklyTrend,
+        ma5Breakout: analysis.ma5Breakout,
         // ⚠️ 실제로 계산되고 화면(모멘텀/추세 탭)엔 이미 반영되던 값들인데 AI 프롬프트엔
         // 안 보내고 있었던 것들 — 추세 강도 변화(adxTrend)와 MACD 다이버전스는 사람이 볼 때도
         // 중요한 판단 근거라 AI 서술에도 반영되도록 추가함.

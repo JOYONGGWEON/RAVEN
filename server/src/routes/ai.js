@@ -108,6 +108,13 @@ function buildPrompt(payload) {
       `주봉 기준 중기 추세(국내 전용): ${indicators.weeklyTrend.direction === "UP" ? "상승" : indicators.weeklyTrend.direction === "DOWN" ? "하락" : "횡보"} 우위 (주봉 EMA5 vs EMA20 격차 ${fmt(indicators.weeklyTrend.gapPct, 1)}%)`
     );
   }
+  if (indicators?.ma5Breakout && indicators.ma5Breakout.volumeConfirmed) {
+    const label =
+      indicators.ma5Breakout.type === "BULL_BREAK"
+        ? "역배열 중 거래량 동반 5일선 상향 돌파(초기 반전 신호 후보 — 빠른 신호라 승률보다 R:R 위주로 봐야 함)"
+        : "정배열 중 거래량 동반 5일선 하향 이탈(초기 균열 신호 후보 — 빠른 신호라 승률보다 R:R 위주로 봐야 함)";
+    lines.push(`5일선 돌파: ${label}`);
+  }
   if (indicators?.macdDivergence && indicators.macdDivergence.divergence !== "NONE") {
     const d = indicators.macdDivergence;
     lines.push(

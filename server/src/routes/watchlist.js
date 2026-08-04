@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { supabase } = require("../lib/supabaseClient");
 const { checkSignal } = require("../lib/signalDetector");
-const { checkWatchlistAndAlert } = require("../scheduler");
+const { checkWatchlistAndAlert, runDailyJob } = require("../scheduler");
 
 router.get("/", async (req, res) => {
   try {
@@ -127,6 +127,26 @@ router.post("/check-now-and-alert", async (req, res) => {
   } catch (e) {
     console.error("[RAVEN] /api/watchlist/check-now-and-alert error:", e);
     res.status(502).json({ error: "check-now-and-alert error" });
+  }
+});
+
+// Render 무료 플랜은 15분간 요청이 없으면 프로세스가 잠들고, 그 상태에선 06:00 KST internal
+// node-cron도 같이 멈춰서 알림이 조용히 스킵됨(2026-08-04 발견 — scheduler.js의 runDailyJob 주석
+// 참고) — 외부 스케줄러(예: GitHub Actions cron)가 매일 이 라우트를 직접 호출하면, 그 요청 자체가
+// 서버를 깨우면서 수급데이터 수집+알림체크가 실제로 실행됨. SCHEDULER_TRIGGER_SECRET 환경변수가
+// 설정돼 있으면 그 값과 일치하는 쿼리스트링(?secret=)이 있어야만 실행(미설정 시 기존 라우트들과
+// 동일하게 인증 없이 열어둠 — 로컬 개발 편의 유지).
+router.post("/run-daily", async (req, res) => {
+  const expected = process.env.SCHEDULER_TRIGGER_SECRET;
+  if (expected && req.query.secret !== expected) {
+    return res.status(403).json({ error: "invalid secret" });
+  }
+  try {
+    const result = await runDailyJob();
+    res.json({ result });
+  } catch (e) {
+    console.error("[RAVEN] /api/watchlist/run-daily error:", e);
+    res.status(502).json({ error: "run-daily error" });
   }
 });
 

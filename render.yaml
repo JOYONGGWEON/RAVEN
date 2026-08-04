@@ -25,3 +25,5 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: SCHEDULER_TRIGGER_SECRET
+        sync: false

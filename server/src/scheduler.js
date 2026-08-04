@@ -58,35 +58,47 @@ async function checkWatchlistAndAlert() {
   return results;
 }
 
+// 매일 06:00 KST에 도는 전체 작업(수급데이터 수집 + 관심종목 신호체크·알림) — internal node-cron과
+// 외부 트리거(아래 /api/scheduler/run-daily 라우트) 양쪽에서 재사용하려고 별도 함수로 분리함.
+// ⚠️ 2026-08-04 발견: Render 무료 플랜은 15분간 요청이 없으면 프로세스 자체가 잠들고, 그 상태에서는
+// node-cron도 같이 멈춰서 06:00에 아무도 안 깨워주면 이 코드가 통째로 실행이 안 됨(에러조차 안 남음,
+// 그냥 조용히 스킵됨) — 사용자가 "테스트 알림 이후 며칠째 알림이 안 온다"고 보고해서 발견함. 외부에서
+// (예: GitHub Actions cron) 이 라우트를 직접 호출하면 그 요청 자체가 프로세스를 깨우면서 작업도
+// 실행되므로 근본적으로 해결됨 — internal cron은 그대로 두되(서버가 우연히 깨어있는 시간대엔 정상
+// 작동하는 이중 안전장치), 안정적인 트리거는 외부 스케줄러에 맡기는 쪽으로 전환.
+async function runDailyJob() {
+  console.log(`[RAVEN] 일일 작업 시작 ${new Date().toISOString()}`);
+
+  const watchlist = await getWatchlist().catch((e) => {
+    console.error("[RAVEN] 관심종목 조회 실패:", e.message);
+    return [];
+  });
+
+  const domesticSymbols = watchlist.filter((w) => w.domestic).map((w) => w.symbol);
+  const collectResults = [];
+  for (const symbol of domesticSymbols) {
+    const result = await collectSupplyDemandForSymbol(symbol);
+    console.log(`[RAVEN] 수급데이터 수집 결과 ${JSON.stringify(result)}`);
+    collectResults.push(result);
+  }
+
+  const alertResults = await checkWatchlistAndAlert().catch((e) => {
+    console.error("[RAVEN] 관심종목 신호 체크 실패:", e.message);
+    return [];
+  });
+  console.log(`[RAVEN] 신호 체크 결과 ${JSON.stringify(alertResults)}`);
+
+  return { collectResults, alertResults };
+}
+
 function startScheduler() {
   // 매일 새벽 6시(KST) — 국내 수급데이터(전일자 기준)와 관심종목 신호(전일 종가 기준 캔들)
-  // 둘 다 이 시각이면 국내/해외 시장 모두 전일 거래가 확정돼 있어서 같은 슬롯에 묶음
-  cron.schedule(
-    "0 6 * * *",
-    async () => {
-      console.log(`[RAVEN] 스케줄러 시작 ${new Date().toISOString()}`);
-
-      const watchlist = await getWatchlist().catch((e) => {
-        console.error("[RAVEN] 관심종목 조회 실패:", e.message);
-        return [];
-      });
-
-      const domesticSymbols = watchlist.filter((w) => w.domestic).map((w) => w.symbol);
-      for (const symbol of domesticSymbols) {
-        const result = await collectSupplyDemandForSymbol(symbol);
-        console.log(`[RAVEN] 수급데이터 수집 결과 ${JSON.stringify(result)}`);
-      }
-
-      const alertResults = await checkWatchlistAndAlert().catch((e) => {
-        console.error("[RAVEN] 관심종목 신호 체크 실패:", e.message);
-        return [];
-      });
-      console.log(`[RAVEN] 신호 체크 결과 ${JSON.stringify(alertResults)}`);
-    },
-    { timezone: "Asia/Seoul" }
-  );
+  // 둘 다 이 시각이면 국내/해외 시장 모두 전일 거래가 확정돼 있어서 같은 슬롯에 묶음.
+  // Render 무료 플랜에서 서버가 잠들어 있으면 이 cron 자체가 안 도는 한계가 있음(위 runDailyJob
+  // 주석 참고) — 외부 트리거가 주 실행 경로이고, 이건 서버가 우연히 깨어있을 때를 위한 보조 장치.
+  cron.schedule("0 6 * * *", runDailyJob, { timezone: "Asia/Seoul" });
 
   console.log("[RAVEN] 스케줄러 등록 완료 (매일 06:00 KST — 수급데이터 + 관심종목 신호)");
 }
 
-module.exports = { startScheduler, checkWatchlistAndAlert, getWatchlist };
+module.exports = { startScheduler, checkWatchlistAndAlert, getWatchlist, runDailyJob };
