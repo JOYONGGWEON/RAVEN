@@ -516,10 +516,21 @@ body.raven-result-bg {
   white-space: nowrap;
 }
 
+/* 2026-08-09: 이모지(🇺🇸)가 Windows에서 플래그로 안 뜨고 "US" 텍스트로만 나와서 인라인 SVG로
+   교체 — svg 자체 크기를 rem으로 지정해 옆 텍스트(종목명)와 같은 비율로 스케일링되게 함. */
 .watchlist-sidebar-item-flag {
   flex: 0 0 auto;
-  font-size: 0.78rem;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.35);
+}
+
+.watchlist-sidebar-item-flag svg {
+  display: block;
+  width: 1.1rem;
+  height: auto;
 }
 
 .watchlist-sidebar-item-price {

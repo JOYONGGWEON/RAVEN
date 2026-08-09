@@ -4158,6 +4158,21 @@ async function updateWatchlistItemGroup(symbol, groupName) {
   }
 }
 
+// 미국 성조기 — 이모지(🇺🇸)가 Windows에서 "US" 텍스트로만 나오는 문제 때문에 OS/폰트 의존 없는
+// 인라인 SVG로 대체(13줄 stripe + 캔턴만 표현한 단순화 버전, 뱃지 크기가 작아 별 디테일은 생략).
+const US_FLAG_SVG = `<svg viewBox="0 0 19 10" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="미국">
+  <rect width="19" height="10" fill="#B22234"/>
+  <g fill="#fff">
+    <rect y="0.77" width="19" height="0.77"/>
+    <rect y="2.31" width="19" height="0.77"/>
+    <rect y="3.85" width="19" height="0.77"/>
+    <rect y="5.38" width="19" height="0.77"/>
+    <rect y="6.92" width="19" height="0.77"/>
+    <rect y="8.46" width="19" height="0.77"/>
+  </g>
+  <rect width="7.6" height="5.38" fill="#3C3B6E"/>
+</svg>`;
+
 // 관심종목 항목 한 줄 생성 — 이름(코드 괄호 없이)/시장구분 뱃지/현재가·등락률(비동기 채움)/그룹 이동
 // select/삭제 버튼. 종목명 옆 이름수정 연필 아이콘은 삭제함(2026-08-09 피드백 — 그룹명 수정 기능을
 // 만들다가 잘못 종목명 쪽에도 붙었던 것, 그 자리에 시장구분 뱃지를 넣음).
@@ -4182,14 +4197,17 @@ function buildWatchlistItemRow(item, groupNames) {
   label.textContent = item.name || item.symbol;
   labelRow.appendChild(label);
 
-  // 시장구분 뱃지 — 해외는 바로 성조기(🇺🇸), 국내는 KOSPI/KOSDAQ를 비동기로 채움(상장목록 조회가
+  // 시장구분 뱃지 — 해외는 바로 성조기, 국내는 KOSPI/KOSDAQ를 비동기로 채움(상장목록 조회가
   // 필요해서). renderWatchlistSidebar가 rowEl.querySelector로 이 요소를 찾아 채워 넣음.
+  // ⚠️ 이모지 🇺🇸(지역표시 문자 2개 조합)는 Windows(Segoe UI Emoji)가 플래그 리가처를 지원 안 해서
+  // "US" 텍스트 두 글자로만 표시됨(실사용자 스크린샷으로 확인) — OS/폰트에 의존하지 않는 인라인 SVG로
+  // 대체함.
   const marketBadge = document.createElement("span");
   if (isDomesticTicker(item.symbol)) {
     marketBadge.className = "watchlist-sidebar-item-market";
   } else {
     marketBadge.className = "watchlist-sidebar-item-flag";
-    marketBadge.textContent = "🇺🇸";
+    marketBadge.innerHTML = US_FLAG_SVG;
     marketBadge.title = "해외(미국) 종목";
   }
   labelRow.appendChild(marketBadge);
