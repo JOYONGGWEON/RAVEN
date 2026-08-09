@@ -516,23 +516,6 @@ body.raven-result-bg {
   white-space: nowrap;
 }
 
-/* 2026-08-09: 이모지(🇺🇸)가 Windows에서 플래그로 안 뜨고 "US" 텍스트로만 나와서 인라인 SVG로
-   교체 — svg 자체 크기를 rem으로 지정해 옆 텍스트(종목명)와 같은 비율로 스케일링되게 함. */
-.watchlist-sidebar-item-flag {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  border-radius: 0.125rem;
-  overflow: hidden;
-  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.35);
-}
-
-.watchlist-sidebar-item-flag svg {
-  display: block;
-  width: 1.1rem;
-  height: auto;
-}
-
 .watchlist-sidebar-item-price {
   margin-top: 0.15rem;
   font-size: 0.76rem;
@@ -1308,6 +1291,18 @@ body.raven-result-bg {
   white-space: pre-line;
 }
 
+/* 2026-08-09: 돌파/이탈 시나리오처럼 앞 내용과 성격이 다른 문장을 불릿(•) 없이 가로 구분선으로
+   구분 — padding-left(1.2rem)를 상쇄해 컨테이너 폭 전체로 선이 이어지게 함. */
+.narrative-bullets li.narrative-divider {
+  list-style: none;
+  margin-left: -1.2rem;
+  margin-top: 0.1rem;
+  margin-bottom: 0.1rem;
+  border-top: 1px dashed rgba(148, 163, 184, 0.3);
+  height: 0;
+  padding: 0;
+}
+
 .strategy-detail .narrative-bullets li,
 .strategy-box .narrative-bullets li {
   font-size: 0.92rem;
@@ -1681,25 +1676,12 @@ body.raven-result-bg {
   flex: 1;
   text-align: center;
   font-size: 0.62rem;
-  color: var(--text-sub);
+  color: var(--text-main);
   white-space: nowrap;
 }
 
 /* 2026-08-04 피드백: 글씨가 작고(0.78rem) 색상이 흐려서(text-sub) 뭐가 매출/영업이익인지
    잘 안 보인다는 요청 — 제목 바로 아래 줄로 옮기고 글씨를 키우고 밝은 색으로 바꿈. */
-/* 다음 실적발표 예상일 — Yahoo Finance 애널리스트 컨센서스 기준(커버리지 없는 소형주는 데이터가
-   없어 조용히 숨겨짐, 다른 보조지표와 동일한 soft-fail 패턴). 노란색 강조 박스로 눈에 띄게. */
-.fund-next-earnings {
-  margin: 0.5rem 0 0.75rem;
-  padding: 0.55rem 0.8rem;
-  border-radius: 0.625rem;
-  background: rgba(250, 204, 21, 0.08);
-  border: 1px solid rgba(250, 204, 21, 0.3);
-  color: var(--macro-note);
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
 .earnings-legend {
   grid-column: 1 / -1;
   display: flex;
@@ -1755,13 +1737,6 @@ body.raven-result-bg {
   padding: 0 0.5rem;
 }
 
-/* 2026-08-04 피드백: "분기" 헤더 칸만 흐리게(text-sub) 남아있었음 — 데이터 행의 첫 칸을 흐리게
-   하는 .earnings-capsule:first-child 규칙이 헤더 행에도 그대로 걸려서(선택자 우선순위상 이김)
-   "매출"/"영업이익"과 다른 색으로 보였음. 헤더 행의 첫 칸만 다시 밝은 흰색으로 되돌림. */
-.earnings-quarter-header .earnings-capsule:first-child {
-  color: var(--text-main);
-}
-
 .earnings-quarter-list {
   grid-column: 1 / -1;
   margin-top: 0.35rem;
@@ -1790,8 +1765,12 @@ body.raven-result-bg {
   overflow-wrap: anywhere;
 }
 
-.earnings-capsule:first-child {
-  color: var(--text-sub);
+/* 2026-08-09: 다음 실적발표 예상일 — 별도 노란 박스 대신 분기 리스트 맨 위(최근 분기 바로 위)에
+   같은 캡슐 UI로 통합. 모양(패딩/둥근모서리/배경)은 .earnings-capsule 그대로, 글자색만 노란색으로
+   구분해서 "실제 데이터가 아니라 예상"임을 표시. */
+.earnings-capsule-next {
+  color: var(--macro-note);
+  font-weight: 600;
 }
 
 /* ───────── 뉴스 탭 ───────── */

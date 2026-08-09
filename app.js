@@ -438,6 +438,26 @@ async function fetchDomesticStockMarket(code) {
   }
 }
 
+// 해외 티커 → 거래소(NASDAQ/NYSE/AMEX) 조회 (관심종목 뱃지 표시용, 2026-08-09 추가) — 국내의
+// KOSPI/KOSDAQ 뱃지와 같은 "분류 기준"으로 통일해달라는 요청. 이전엔 이모지 성조기(🇺🇸)를 쓰다가
+// Windows에서 리가처가 안 그려져서 SVG로 바꿨는데, 그마저도 모양이 부자연스럽다는 피드백을 받아
+// 아예 텍스트 뱃지로 전환. 세션 안에서는 심볼당 한 번만 조회(위 domesticMarketCache와 동일 패턴).
+const overseasExchangeCache = new Map(); // symbol -> "NASDAQ" | "NYSE" | "AMEX" | null
+async function fetchOverseasExchangeLabel(symbol) {
+  if (overseasExchangeCache.has(symbol)) return overseasExchangeCache.get(symbol);
+  try {
+    const res = await fetch(`${API_BASE}/api/kis/overseas-exchange?symbol=${encodeURIComponent(symbol)}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const exchange = (json.result && json.result.exchange) || null;
+    overseasExchangeCache.set(symbol, exchange);
+    return exchange;
+  } catch (e) {
+    console.warn("[RAVEN] 거래소 조회 실패:", e);
+    return null;
+  }
+}
+
 // 해외 티커 → 한글 종목명 조회 (결과 화면 타이틀 표시용)
 // KIS "해외주식 상품기본정보"(search-info)의 prdt_name 필드가 한글명을 그대로 줌(예: FLNC→"플루언스 에너지").
 // 값이 없으면(신규상장 등) null 반환 — updateUI()의 stockName || data.symbol 폴백이 티커로 표시함.
@@ -2254,9 +2274,14 @@ function splitSentences(text) {
     .filter(Boolean);
 }
 
+// 2026-08-09: RAVEN SIGNAL의 돌파/이탈 시나리오를 기존 멘트와 구분선으로 나눠달라는 요청 —
+// 일반 불릿(•)이 아니라 가로 구분선으로 렌더링되어야 하는 특수 라인을 표시하는 마커.
+const NARRATIVE_DIVIDER = " __DIVIDER__ ";
+
 // 추세/모멘텀/수급/패턴/신호 등 본문 서술을 문장 단위 불릿으로 렌더링.
 // el 자체는 <p>/<div> 등 아무 태그여도 되고(내부에 <ul>을 새로 만들어 넣음), lines의 각 항목은
 // innerHTML로 렌더링되어 toneSpan()으로 만든 부분 강조 문구를 그대로 심을 수 있음.
+// NARRATIVE_DIVIDER가 섞여 있으면 그 자리에 불릿 없는 가로 구분선을 그림.
 function renderNarrativeBullets(el, lines) {
   if (!el) return;
   el.innerHTML = "";
@@ -2267,7 +2292,11 @@ function renderNarrativeBullets(el, lines) {
   lines.forEach((line) => {
     if (!line) return;
     const li = document.createElement("li");
-    li.innerHTML = line;
+    if (line === NARRATIVE_DIVIDER) {
+      li.className = "narrative-divider";
+    } else {
+      li.innerHTML = line;
+    }
     ul.appendChild(li);
   });
   el.appendChild(ul);
@@ -3457,6 +3486,17 @@ function updateUI(data, analysis, fxRate, stockName) {
       return "";
     };
 
+    // 2026-08-09 피드백: 돌파/이탈 시나리오가 "지지선 근처 매수"/"저항선 근처 매도" 두 분기에만 있고
+    // "과매도 역추세"·"R:R 불리"·"중립/관망" 세 분기엔 없다는 지적 — 위 buildIndicatorBits 누락
+    // 버그와 정확히 같은 패턴이라 5개 분기 전부에 적용. 있는 시나리오만 구분선과 함께 덧붙이고
+    // (support/resistance 둘 다 없으면 아무것도 안 붙임), 기존 멘트와는 점선 구분선으로 분리.
+    const addBreakScenarios = (kinds) => {
+      const lines = kinds.map((k) => buildBreakScenarioLine(k)).filter(Boolean);
+      if (!lines.length) return;
+      detailLines.push(NARRATIVE_DIVIDER);
+      lines.forEach((l) => detailLines.push(l));
+    };
+
     // ⚠️ 실제로 발견된 누락: MACD 크로스오버/다이버전스·ADX·RS 체크가 "지지선 근처 매수"/"저항선
     // 근처 매도" 두 분기에만 있고, "과매도 역추세"·"R:R 불리"·"중립/관망" 세 분기엔 아예 없어서
     // MACD 지표박스엔 골든크로스가 뜨는데 RAVEN SIGNAL엔 언급이 통째로 빠지는 문의를 받음(FLNC로
@@ -3651,6 +3691,8 @@ function updateUI(data, analysis, fxRate, stockName) {
         "여기까지 빠지면 지지 여부를 보고 매수 재검토"
       )
     );
+    // NEUTRAL은 지지·저항 사이 어느 쪽으로도 열려있는 구간이라 양쪽 시나리오를 모두 제시
+    addBreakScenarios(["support", "resistance"]);
 
     if (verdict.tier === "BUY") {
       if (typeof rsiVal === "number" && rsiVal < 30) {
@@ -3669,6 +3711,7 @@ function updateUI(data, analysis, fxRate, stockName) {
         );
         const trailingLine1 = buildTrailingStopLine();
         if (trailingLine1) detailLines.push(trailingLine1);
+        addBreakScenarios(["support"]);
       } else {
         mainTxt = "지지선 근처 눌림 매수 우위";
         const bits = [];
@@ -3688,8 +3731,7 @@ function updateUI(data, analysis, fxRate, stockName) {
         );
         const trailingLine2 = buildTrailingStopLine();
         if (trailingLine2) detailLines.push(trailingLine2);
-        const breakLine2 = buildBreakScenarioLine("support");
-        if (breakLine2) detailLines.push(breakLine2);
+        addBreakScenarios(["support"]);
       }
     } else if (verdict.tier === "SELL") {
       if (nearResistance) {
@@ -3708,8 +3750,7 @@ function updateUI(data, analysis, fxRate, stockName) {
             "저항 부근에서도 밀리면서 이 가격대까지 빠지면 손절 검토"
           )
         );
-        const breakLine3 = buildBreakScenarioLine("resistance");
-        if (breakLine3) detailLines.push(breakLine3);
+        addBreakScenarios(["resistance"]);
       } else {
         mainTxt = "R:R 불리 (위험 대비 보상 부족)";
         const rrBits = buildIndicatorBits("SELL");
@@ -3725,6 +3766,7 @@ function updateUI(data, analysis, fxRate, stockName) {
             "이 가격대까지 밀리면 추가 하락 리스크가 커지는 구간"
           )
         );
+        addBreakScenarios(["resistance"]);
       }
     }
 
@@ -4175,6 +4217,8 @@ function resetEarningsPanel() {
   if (listEl) {
     listEl.innerHTML = "";
     listEl.classList.add("hidden");
+    delete listEl.dataset.hasQuarters; // 새 검색 시작 — 아래 updateNextEarningsPill이 실제 분기
+    // 데이터가 채워지기 전까지 실적발표일 핀을 넣지 않도록 리셋
   }
   if (headerEl) headerEl.classList.add("hidden");
   if (empty) {
@@ -4182,22 +4226,37 @@ function resetEarningsPanel() {
     empty.classList.remove("hidden");
   }
   if (summaryEl) renderBulletList(summaryEl, ["분석 중..."]);
-
-  const nextEarningsEl = $("fund-next-earnings");
-  if (nextEarningsEl) nextEarningsEl.classList.add("hidden");
 }
 
-// 다음 실적발표 예상일 표시 — 애널리스트 커버리지가 없어 데이터가 없으면(info: null) 조용히
-// 숨김(다른 보조지표와 동일한 패턴, "정보 없음" 문구로 채우지 않음).
+// 2026-08-09 피드백: 다음 실적발표 예상일을 별도 노란 박스 대신, 분기별 매출/영업이익 표(가장
+// 최근 분기가 맨 위에 오는 리스트) 위에 동일한 캡슐(pill) UI로 통합. renderNextEarningsDate와
+// renderEarningsChart는 각자 다른 시점에(둘 다 비동기, 순서 보장 없음) 리스트에 이 핀을 반영해야
+// 해서, "현재 알고 있는 상태로 핀을 다시 그리는" 함수 하나로 일원화 — 어느 쪽이 먼저 끝나도 안전함.
+function updateNextEarningsPill() {
+  const listEl = $("fund-quarter-list");
+  if (!listEl) return;
+
+  const existing = listEl.querySelector(".earnings-next-pill");
+  if (existing) existing.remove();
+
+  const info = lastAnalysis && lastAnalysis.nextEarningsInfo;
+  if (!info || !info.date) return;
+  // 리스트가 아직 실제 분기 데이터로 채워지기 전(로딩 중)이면 핀만 먼저 넣지 않음 —
+  // renderEarningsChart가 분기 데이터를 그린 뒤 이 함수를 다시 호출해서 채워줌.
+  if (!listEl.dataset.hasQuarters) return;
+
+  const li = document.createElement("li");
+  li.className = "earnings-quarter-row earnings-next-pill";
+  const estimateTxt = info.isEstimate ? " (예상)" : "";
+  li.innerHTML = `<span class="earnings-capsule earnings-capsule-next">📅 다음 실적발표: ${info.date}${estimateTxt}</span>`;
+  listEl.insertBefore(li, listEl.firstChild);
+}
+
+// 다음 실적발표 예상일 조회 결과 반영 — 애널리스트 커버리지가 없어 데이터가 없으면(info: null)
+// 조용히 생략(다른 보조지표와 동일한 soft-fail 패턴, "정보 없음" 문구로 채우지 않음).
 function renderNextEarningsDate(info) {
-  const el = $("fund-next-earnings");
-  if (!el) return;
-  if (!info || !info.date) {
-    el.classList.add("hidden");
-    return;
-  }
-  el.textContent = `📅 다음 실적발표 예상일: ${info.date}${info.isEstimate ? " (컨센서스 기준 예상치)" : ""}`;
-  el.classList.remove("hidden");
+  if (lastAnalysis) lastAnalysis.nextEarningsInfo = info || null;
+  updateNextEarningsPill();
 }
 
 // KIS 손익계산서(국내)는 억원 단위로 옴 — 1조원 넘어가면 "조원" 단위로 환산해서 표시(가독성)
@@ -4273,38 +4332,46 @@ function renderEarningsChart(quarters, currency) {
   const shown = quarters.slice(-5);
   empty.classList.add("hidden");
 
-  // --- SVG 그룹 막대 차트 ---
+  // --- SVG 차트: 매출액/영업이익을 독립된 스케일의 위/아래 두 구간으로 분리해서 그림 ---
+  // 2026-08-09 피드백: 같은 스케일에 나란히 그리던 예전 방식은 매출액이 보통 영업이익보다
+  // 5~10배+ 커서 영업이익 막대가 안 보일 만큼 짧아지는 문제가 있었음 — 위(매출액)/아래(영업이익)
+  // 로 나눠서 각자 자기 데이터 범위 안에서 꽉 차게 그리도록 재설계.
   const slotWidth = 60;
-  const barWidth = 18;
-  const gap = 4;
+  const barWidth = 26;
   const height = 100;
+  const revRowH = 42;
+  const rowGap = 16;
+  const profitRowH = 42;
   const width = shown.length * slotWidth;
 
-  const maxPos = Math.max(1, ...shown.map((q) => Math.max(q.revenue, q.operatingProfit, 0)));
-  const maxNeg = Math.max(0, ...shown.map((q) => Math.max(-q.operatingProfit, 0)));
-  const span = maxPos + maxNeg;
-  const baselineY = height * (maxPos / span);
+  const maxRev = Math.max(1, ...shown.map((q) => Math.max(q.revenue, 0)));
+  const maxProfitPos = Math.max(1, ...shown.map((q) => Math.max(q.operatingProfit, 0)));
+  const maxProfitNeg = Math.max(0, ...shown.map((q) => Math.max(-q.operatingProfit, 0)));
+  const profitSpan = maxProfitPos + maxProfitNeg;
+  const profitBaselineY = revRowH + rowGap + profitRowH * (maxProfitPos / profitSpan);
 
   let svgContent = "";
-  if (maxNeg > 0) {
-    svgContent += `<line x1="0" y1="${baselineY.toFixed(2)}" x2="${width}" y2="${baselineY.toFixed(2)}" stroke="rgba(148,163,184,0.35)" stroke-width="1" />`;
+  // 두 구간을 나누는 얇은 점선 + 영업이익 구간 안의 기준선(적자 분기가 있을 때만)
+  svgContent += `<line x1="0" y1="${(revRowH + rowGap / 2).toFixed(2)}" x2="${width}" y2="${(revRowH + rowGap / 2).toFixed(2)}" stroke="rgba(148,163,184,0.2)" stroke-width="0.5" stroke-dasharray="2,2" />`;
+  if (maxProfitNeg > 0) {
+    svgContent += `<line x1="0" y1="${profitBaselineY.toFixed(2)}" x2="${width}" y2="${profitBaselineY.toFixed(2)}" stroke="rgba(148,163,184,0.35)" stroke-width="1" />`;
   }
 
   shown.forEach((q, i) => {
-    const groupPad = (slotWidth - (barWidth * 2 + gap)) / 2;
-    const revX = i * slotWidth + groupPad;
-    const profitX = revX + barWidth + gap;
+    const barX = i * slotWidth + (slotWidth - barWidth) / 2;
 
-    const revHeight = (q.revenue / span) * height;
-    svgContent += `<rect x="${revX.toFixed(2)}" y="${(baselineY - revHeight).toFixed(2)}" width="${barWidth}" height="${revHeight.toFixed(2)}" rx="2" fill="var(--accent)" />`;
+    // 매출액 — 위쪽 구간 바닥에서 위로 자람
+    const revHeight = (Math.max(q.revenue, 0) / maxRev) * revRowH;
+    svgContent += `<rect x="${barX.toFixed(2)}" y="${(revRowH - revHeight).toFixed(2)}" width="${barWidth}" height="${revHeight.toFixed(2)}" rx="2" fill="var(--accent)" />`;
 
+    // 영업이익 — 아래쪽 구간, 자체 기준선에서 +/- 방향으로 자람
     const profit = q.operatingProfit;
     if (profit >= 0) {
-      const h = (profit / span) * height;
-      svgContent += `<rect x="${profitX.toFixed(2)}" y="${(baselineY - h).toFixed(2)}" width="${barWidth}" height="${h.toFixed(2)}" rx="2" fill="var(--success)" />`;
+      const h = (profit / profitSpan) * profitRowH;
+      svgContent += `<rect x="${barX.toFixed(2)}" y="${(profitBaselineY - h).toFixed(2)}" width="${barWidth}" height="${h.toFixed(2)}" rx="2" fill="var(--success)" />`;
     } else {
-      const h = (-profit / span) * height;
-      svgContent += `<rect x="${profitX.toFixed(2)}" y="${baselineY.toFixed(2)}" width="${barWidth}" height="${h.toFixed(2)}" rx="2" fill="var(--danger)" />`;
+      const h = (-profit / profitSpan) * profitRowH;
+      svgContent += `<rect x="${barX.toFixed(2)}" y="${profitBaselineY.toFixed(2)}" width="${barWidth}" height="${h.toFixed(2)}" rx="2" fill="var(--danger)" />`;
     }
   });
 
@@ -4344,6 +4411,8 @@ function renderEarningsChart(quarters, currency) {
         listEl.appendChild(li);
       });
     listEl.classList.remove("hidden");
+    listEl.dataset.hasQuarters = "1";
+    updateNextEarningsPill(); // 실적발표일이 이 시점 이전에 먼저 도착해 있었을 수 있으니 반영
     if (headerEl) headerEl.classList.remove("hidden");
   }
 
@@ -4573,21 +4642,6 @@ async function updateWatchlistItemGroup(symbol, groupName) {
   }
 }
 
-// 미국 성조기 — 이모지(🇺🇸)가 Windows에서 "US" 텍스트로만 나오는 문제 때문에 OS/폰트 의존 없는
-// 인라인 SVG로 대체(13줄 stripe + 캔턴만 표현한 단순화 버전, 뱃지 크기가 작아 별 디테일은 생략).
-const US_FLAG_SVG = `<svg viewBox="0 0 19 10" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="미국">
-  <rect width="19" height="10" fill="#B22234"/>
-  <g fill="#fff">
-    <rect y="0.77" width="19" height="0.77"/>
-    <rect y="2.31" width="19" height="0.77"/>
-    <rect y="3.85" width="19" height="0.77"/>
-    <rect y="5.38" width="19" height="0.77"/>
-    <rect y="6.92" width="19" height="0.77"/>
-    <rect y="8.46" width="19" height="0.77"/>
-  </g>
-  <rect width="7.6" height="5.38" fill="#3C3B6E"/>
-</svg>`;
-
 // 관심종목 항목 한 줄 생성 — 이름(코드 괄호 없이)/시장구분 뱃지/현재가·등락률(비동기 채움)/그룹 이동
 // select/삭제 버튼. 종목명 옆 이름수정 연필 아이콘은 삭제함(2026-08-09 피드백 — 그룹명 수정 기능을
 // 만들다가 잘못 종목명 쪽에도 붙었던 것, 그 자리에 시장구분 뱃지를 넣음).
@@ -4612,19 +4666,13 @@ function buildWatchlistItemRow(item, groupNames) {
   label.textContent = item.name || item.symbol;
   labelRow.appendChild(label);
 
-  // 시장구분 뱃지 — 해외는 바로 성조기, 국내는 KOSPI/KOSDAQ를 비동기로 채움(상장목록 조회가
-  // 필요해서). renderWatchlistSidebar가 rowEl.querySelector로 이 요소를 찾아 채워 넣음.
-  // ⚠️ 이모지 🇺🇸(지역표시 문자 2개 조합)는 Windows(Segoe UI Emoji)가 플래그 리가처를 지원 안 해서
-  // "US" 텍스트 두 글자로만 표시됨(실사용자 스크린샷으로 확인) — OS/폰트에 의존하지 않는 인라인 SVG로
-  // 대체함.
+  // 시장구분 뱃지 — 국내는 KOSPI/KOSDAQ, 해외는 NASDAQ/NYSE/AMEX를 비동기로 채움(둘 다 같은
+  // "거래소 분류" 기준, 2026-08-09 피드백 — 원래 해외는 성조기 아이콘이었는데 이모지(🇺🇸)가
+  // Windows에서 "US" 텍스트로만 나오고, 그 대안으로 만든 SVG 국기도 모양이 어색하다는 피드백을
+  // 받아 국내와 동일하게 텍스트 뱃지로 통일함). renderWatchlistSidebar가 rowEl.querySelector로
+  // 이 요소를 찾아 채워 넣음.
   const marketBadge = document.createElement("span");
-  if (isDomesticTicker(item.symbol)) {
-    marketBadge.className = "watchlist-sidebar-item-market";
-  } else {
-    marketBadge.className = "watchlist-sidebar-item-flag";
-    marketBadge.innerHTML = US_FLAG_SVG;
-    marketBadge.title = "해외(미국) 종목";
-  }
+  marketBadge.className = "watchlist-sidebar-item-market";
   labelRow.appendChild(marketBadge);
   main.appendChild(labelRow);
 
@@ -4806,17 +4854,29 @@ function renderWatchlistSidebar(list) {
     }, i * 350);
   });
 
-  // 시장구분(KOSPI/KOSDAQ)은 우리 서버 자체 조회(캐시된 상장목록)라 KIS 레이트리밋과 무관 —
-  // 시차 없이 한 번에 조회. 못 찾은 경우(상장폐지 등)는 빈 뱃지를 그냥 숨김.
+  // 국내(KOSPI/KOSDAQ)는 우리 서버 자체 조회(캐시된 상장목록)라 KIS 레이트리밋과 무관 — 시차 없이
+  // 한 번에 조회. 해외(NASDAQ/NYSE/AMEX)는 미확인 심볼이면 실제 KIS 호출이 나가므로(위
+  // fetchOverseasExchangeLabel 주석 참고) 가격 조회와 같은 350ms 시차를 적용. 못 찾은 경우
+  // (상장폐지 등)는 빈 뱃지를 그냥 숨김.
+  let overseasIdx = 0;
   marketTargets.forEach(({ symbol, el }) => {
-    fetchDomesticStockMarket(symbol).then((market) => {
-      if (!el) return;
-      if (market) {
-        el.textContent = market;
-      } else {
-        el.remove();
-      }
-    });
+    if (isDomesticTicker(symbol)) {
+      fetchDomesticStockMarket(symbol).then((market) => {
+        if (!el) return;
+        if (market) el.textContent = market;
+        else el.remove();
+      });
+    } else {
+      const delay = overseasIdx * 350;
+      overseasIdx += 1;
+      setTimeout(() => {
+        fetchOverseasExchangeLabel(symbol).then((exchange) => {
+          if (!el) return;
+          if (exchange) el.textContent = exchange;
+          else el.remove();
+        });
+      }, delay);
+    }
   });
 }
 

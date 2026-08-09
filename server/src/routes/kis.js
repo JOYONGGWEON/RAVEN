@@ -11,6 +11,7 @@ const {
   fetchDomesticWeeklyCandles,
   fetchKospiNightFutures,
   isDomesticSymbol,
+  resolveOverseasExchange,
 } = require("../lib/kisMarket");
 const { fetchIncomeStatement } = require("../lib/kisFundamentals");
 const { fetchNews } = require("../lib/kisNews");
@@ -220,6 +221,24 @@ router.get("/news", async (req, res) => {
   } catch (e) {
     console.error("[RAVEN] /api/kis/news error:", e);
     res.status(502).json({ error: "KIS news proxy error" });
+  }
+});
+
+// 해외 종목 거래소(NASDAQ/NYSE/AMEX) 조회 — 2026-08-09 피드백: 관심종목 뱃지에서 이모지 성조기가
+// Windows에서 "US" 텍스트로만 나오던 문제(이전 라운드에서 SVG로 1차 대응)를 아예 국내와 동일한
+// "KOSPI/KOSDAQ 같은 분류 기준"으로 바꿔달라는 요청 — 이미 캔들/뉴스 조회에 쓰던
+// resolveOverseasExchange()의 캐시를 그대로 재사용(추가 KIS 호출 없이 응답 가능한 경우가 많음).
+const EXCHANGE_LABELS = { NAS: "NASDAQ", NYS: "NYSE", AMS: "AMEX" };
+router.get("/overseas-exchange", async (req, res) => {
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: "symbol query param required" });
+
+  try {
+    const code = await resolveOverseasExchange(symbol.toUpperCase());
+    res.json({ result: { exchange: EXCHANGE_LABELS[code] || code || null } });
+  } catch (e) {
+    console.error("[RAVEN] /api/kis/overseas-exchange error:", e);
+    res.status(502).json({ error: "overseas exchange lookup error" });
   }
 });
 
