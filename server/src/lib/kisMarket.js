@@ -282,6 +282,55 @@ async function fetchOverseasIntradayCandles(symbol) {
   }));
 }
 
+// 2026-08-09: 지지/저항 알고리즘에 60분봉을 반영해달라는 요청 — 위 fetchOverseasIntradayCandles는
+// "당일 장중 흐름"(모멘텀 보조지표)용으로 PINC=0(당일치 최대 20건)만 받아서 스윙 고점/저점을 잡기엔
+// 너무 짧음(하루~이틀치로는 노이즈와 진짜 스윙을 구분 못 함). 별도로 PINC=1 페이지네이션을 써서
+// 여러 거래일치(페이지 2개 = 최대 240건 ≈ 최근 10~12거래일)를 모으는 전용 함수를 분리함 — 실측으로
+// 페이지네이션 자체는 확인됨(KEYB에 마지막 봉의 날짜+시간을 그대로 넣어 다음 페이지 요청, output1.next
+// 가 "1"이면 계속). 국내는 여전히 1분봉·당일 30건 한계(위 주석 참고)라 해외 전용으로 남겨둠.
+// 페이지를 4개까지 더 늘릴 수도 있었지만(실측 확인), 검색 한 번마다 이미 여러 KIS 호출이 몰리는
+// 상황에서 지연시간/레이트리밋 부담을 늘리는 것보다 2페이지(10~12거래일)로도 좌우 2봉 피벗
+// 탐지엔 충분하다고 판단해 그 선에서 끊음.
+async function fetchOverseasSwingIntraday(symbol) {
+  const excd = await resolveOverseasExchange(symbol);
+  let keyb = "";
+  let allRows = [];
+
+  for (let page = 0; page < 2; page++) {
+    await sleep(600);
+    const json = await kisGet(
+      "/uapi/overseas-price/v1/quotations/inquire-time-itemchartprice",
+      "HHDFS76950200",
+      {
+        AUTH: "",
+        EXCD: excd,
+        SYMB: symbol,
+        NMIN: "60",
+        PINC: "1",
+        NEXT: page > 0 ? "1" : "",
+        NREC: "120",
+        FILL: "",
+        KEYB: keyb,
+      }
+    );
+    const rows = json.output2 || [];
+    if (!rows.length) break;
+    allRows = allRows.concat(rows);
+    const last = rows[rows.length - 1];
+    keyb = `${last.xymd}${last.xhms}`;
+    if (json.output1?.next !== "1") break;
+  }
+
+  return allRows.map((r) => ({
+    date: r.xymd,
+    openPrice: Number(r.open),
+    closePrice: Number(r.last),
+    highPrice: Number(r.high),
+    lowPrice: Number(r.low),
+    volume: Number(r.evol),
+  }));
+}
+
 // symbol만 보고 국내/해외 자동 판별해 최근 단기 캔들을 가져옴 (최신순 — 호출측이 chronological로
 // 뒤집어 씀, 기존 fetchCandles와 같은 규약). 해외는 60분봉(위 주석 참고), 국내는 여전히 1분봉만
 // 가능함 — 다만 국내는 1회 호출 최대 30건(=30분치)뿐이라 60분봉으로 리샘플링해도 1개 봉도 안 되는
@@ -358,6 +407,7 @@ module.exports = {
   isDomesticSymbol,
   fetchOverseasStockName,
   fetchIntradayCandles,
+  fetchOverseasSwingIntraday,
   fetchKospiNightFutures,
   fetchDomesticWeeklyCandles,
   resolveOverseasExchange,

@@ -119,6 +119,12 @@ function buildPrompt(payload) {
       `주봉 기준 중기 추세(국내 전용): ${indicators.weeklyTrend.direction === "UP" ? "상승" : indicators.weeklyTrend.direction === "DOWN" ? "하락" : "횡보"} 우위 (주봉 EMA5 vs EMA20 격차 ${fmt(indicators.weeklyTrend.gapPct, 1)}%)`
     );
   }
+  if (indicators?.intradaySR && (Number.isFinite(indicators.intradaySR.support) || Number.isFinite(indicators.intradaySR.resistance))) {
+    const parts = [];
+    if (Number.isFinite(indicators.intradaySR.support)) parts.push(`지지 ${fmt(indicators.intradaySR.support, 0)}`);
+    if (Number.isFinite(indicators.intradaySR.resistance)) parts.push(`저항 ${fmt(indicators.intradaySR.resistance, 0)}`);
+    lines.push(`60분봉 기준 장중 지지/저항(해외 전용): ${parts.join(" / ")} — 아래 일봉 기준 지지/저항선과 같은 자리인지 참고하세요`);
+  }
   if (indicators?.ma5Breakout && indicators.ma5Breakout.volumeConfirmed) {
     const label =
       indicators.ma5Breakout.type === "BULL_BREAK"

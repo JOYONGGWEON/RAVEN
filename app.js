@@ -747,6 +747,88 @@ async function fetchWeeklyCandles(symbol) {
   }
 }
 
+// 2026-08-09: 지지/저항 알고리즘에 60분봉 반영 — 위 fetchIntradayCandles(당일치 20건, 모멘텀
+// 보조지표용)와는 목적이 달라서 별도 함수로 분리. 서버가 페이지네이션으로 최근 10~12거래일치를
+// 모아주는 /api/kis/intraday-swing을 그대로 받아 highs/lows/closes 배열로 변환(일봉과 같은 배열
+// 형태라 아래 calcIntradaySR이 기존 clusterSwingLevels/pickSupportResistance를 그대로 재사용).
+// 해외 전용(국내는 fetchWeeklyCandles가 이미 중기 프레임 공백을 메움).
+async function fetchIntradaySwingData(symbol) {
+  const finalUrl = `${API_BASE}/api/kis/intraday-swing?symbol=${encodeURIComponent(symbol)}`;
+  try {
+    const response = await fetch(finalUrl);
+    if (!response.ok) throw new Error("Network Error");
+    const json = await response.json();
+
+    const candles = json?.result?.candles;
+    if (!candles || candles.length < 15) throw new Error("Not enough intraday swing candles");
+
+    const chronological = [...candles].reverse();
+    const highs = [];
+    const lows = [];
+    const closes = [];
+    for (const c of chronological) {
+      const h = Number(c.highPrice);
+      const l = Number(c.lowPrice);
+      const cl = Number(c.closePrice);
+      if (!Number.isNaN(h) && !Number.isNaN(l) && !Number.isNaN(cl)) {
+        highs.push(h);
+        lows.push(l);
+        closes.push(cl);
+      }
+    }
+    if (highs.length < 15) throw new Error("Not enough clean intraday swing bars");
+
+    return { highs, lows, closes };
+  } catch (e) {
+    console.warn("[RAVEN] 60분봉 스윙 데이터 조회 실패:", e);
+    return null;
+  }
+}
+
+// 60분봉 스윙 고점/저점으로 "장중 기준" 지지/저항 후보를 뽑음 — 일봉 기준 support1/resistance1을
+// 대체하지 않고(그쪽은 목표가/손절/R:R 계산까지 얽혀있어 건드리면 회귀 위험이 큼), 같은 자리가
+// 장중에도 지지/저항으로 확인되는지 보여주는 보조 신호로만 씀. clusterSwingLevels/
+// pickSupportResistance는 일봉용과 동일 알고리즘 재사용 — 다만 60분봉은 봉 하나하나의 변동폭이
+// 일봉보다 훨씬 작아서 허용오차(tol)와 최대거리(maxDist)를 그만큼 좁게 잡음.
+function calcIntradaySR(intradayHighs, intradayLows, lastPrice, atrPct) {
+  const n = intradayHighs?.length || 0;
+  if (n < 15 || !Number.isFinite(lastPrice) || lastPrice <= 0) return null;
+
+  const swingLows = [];
+  const swingHighs = [];
+  for (let i = 2; i < n - 2; i++) {
+    const h = intradayHighs[i];
+    const l = intradayLows[i];
+    if (
+      h > intradayHighs[i - 1] && h > intradayHighs[i - 2] &&
+      h > intradayHighs[i + 1] && h > intradayHighs[i + 2]
+    ) {
+      swingHighs.push({ price: h, idx: i });
+    }
+    if (
+      l < intradayLows[i - 1] && l < intradayLows[i - 2] &&
+      l < intradayLows[i + 1] && l < intradayLows[i + 2]
+    ) {
+      swingLows.push({ price: l, idx: i });
+    }
+  }
+
+  const tol = Number.isFinite(atrPct)
+    ? Math.max(0.008, Math.min(0.04, (atrPct * 0.8) / 100))
+    : 0.015;
+  const lowClusters = clusterSwingLevels(swingLows, n, tol);
+  const highClusters = clusterSwingLevels(swingHighs, n, tol);
+
+  const maxDist = 0.06; // 일봉(최대 30%)보다 훨씬 좁게 — 장중 신호는 가까운 범위에서만 의미 있음
+  const supports = pickSupportResistance(lowClusters, lastPrice, true, maxDist);
+  const resistances = pickSupportResistance(highClusters, lastPrice, false, maxDist);
+
+  return {
+    support: supports.length ? supports[0].price : null,
+    resistance: resistances.length ? resistances[0].price : null,
+  };
+}
+
 // 주봉 종가로 중기 추세 판단 — 일봉의 MA20/60(단기~중기)과 같은 방식이지만 주봉 EMA5(≈1개월)
 // vs EMA20(≈5개월)로, "몇 달짜리 중기 추세"를 별도 확인. 며칠짜리 일봉 신호와 몇 달짜리 주봉
 // 추세가 같은 방향이면 신뢰도가 높고, 반대면(예: 일봉은 반등 중인데 주봉은 여전히 하락 추세)
@@ -1339,7 +1421,7 @@ function pickSupportResistance(clusters, lastPrice, isSupport, maxDistPct = 0.3)
 }
 
 // 5. 지표 계산 엔진
-function analyzeData(data, benchmarkData, intradayCloses, weeklyCloses) {
+function analyzeData(data, benchmarkData, intradayCloses, weeklyCloses, intradaySwing) {
   const closes = data.closes;
   const highs = data.highs;
   const lows = data.lows;
@@ -1468,6 +1550,12 @@ function analyzeData(data, benchmarkData, intradayCloses, weeklyCloses) {
       }
     }
   }
+
+  // 60분봉 기준 장중 지지/저항(해외 전용, 위 calcIntradaySR 참고) — target/stop/R:R 계산에는
+  // 관여하지 않고, 일봉 기준 support1/resistance1과 같은 자리인지 교차 확인하는 용도로만 씀.
+  const intradaySR = intradaySwing
+    ? calcIntradaySR(intradaySwing.highs, intradaySwing.lows, lastPrice, atrPct)
+    : null;
 
   // R:R / 목표가·손절
   // 지지선이 없을 때 예전엔 종목 변동성과 무관하게 고정 -5%를 손절가로 썼음 →
@@ -1662,6 +1750,7 @@ function analyzeData(data, benchmarkData, intradayCloses, weeklyCloses) {
     macdDivergence,
     maCrossover,
     weeklyTrend,
+    intradaySR,
     ma5Breakout,
     atr,
     atrPct,
@@ -3248,6 +3337,22 @@ function updateUI(data, analysis, fxRate, stockName) {
         }
       }
 
+      // 2026-08-09: 60분봉 기준 장중 지지/저항(해외 전용) — 일봉 기준 1차 지지/저항과 가까운 자리에
+      // 장중 스윙에서도 같은 레벨이 확인되면 "여러 타임프레임에서 겹치는 자리"라는 신뢰도 근거로 추가.
+      // target/stop 자체는 그대로 일봉 기준(위 analyzeData 주석 참고), 여기선 확인 문구만 덧붙임.
+      if (analysis.intradaySR) {
+        const isSr = analysis.intradaySR.support;
+        const irR = analysis.intradaySR.resistance;
+        if (Number.isFinite(isSr) && Number.isFinite(s1) && Math.abs(isSr - s1) / s1 <= 0.015) {
+          const txt = toneSpan("60분봉 기준으로도 같은 지지 자리 확인", "pos");
+          bits.push(direction === "SELL" ? `다만 ${txt}` : txt);
+        }
+        if (Number.isFinite(irR) && Number.isFinite(r1) && Math.abs(irR - r1) / r1 <= 0.015) {
+          const txt = toneSpan("60분봉 기준으로도 같은 저항 자리 확인", "neg");
+          bits.push(direction === "BUY" ? `다만 ${txt}` : txt);
+        }
+      }
+
       if (analysis.macdCrossover === "GOLDEN") {
         const txt = toneSpan("MACD 골든크로스 동반", "pos");
         bits.push(direction === "SELL" ? `다만 ${txt}` : txt);
@@ -4587,17 +4692,19 @@ async function runAnalysisForTicker(rawSymbol) {
     // 60분봉으로 리샘플링해도 1개 봉이 안 나올 만큼 데이터가 얕음 — 30분치 노이즈로 "장중 흐름이
     // 엇갈립니다" 같은 판단을 내리는 게 오히려 신뢰도를 떨어뜨린다고 판단해서 국내는 이 보조지표
     // 자체를 아예 호출하지 않음(해외는 서버가 60분봉으로 전환됨 — kisMarket.js 참고).
-    const [data, fxRate, stockName, benchmarkData, intradayCloses, weeklyCloses] = await Promise.all([
+    const [data, fxRate, stockName, benchmarkData, intradayCloses, weeklyCloses, intradaySwing] = await Promise.all([
       fetchStockData(symbol),
       fetchFxRate(),
       domestic ? fetchDomesticStockName(symbol) : fetchOverseasStockName(symbol),
       fetchBenchmarkData(domestic),
       domestic ? Promise.resolve(null) : fetchIntradayCandles(symbol),
       // 주봉(중기 추세) — 국내 전용, 위 fetchWeeklyCandles 주석 참고
-      domestic ? fetchWeeklyCandles(symbol) : Promise.resolve(null)
+      domestic ? fetchWeeklyCandles(symbol) : Promise.resolve(null),
+      // 60분봉 스윙 지지/저항 — 해외 전용, 위 fetchIntradaySwingData 주석 참고
+      domestic ? Promise.resolve(null) : fetchIntradaySwingData(symbol)
     ]);
 
-    const analysis = analyzeData(data, benchmarkData, intradayCloses, weeklyCloses);
+    const analysis = analyzeData(data, benchmarkData, intradayCloses, weeklyCloses, intradaySwing);
     updateUI(data, analysis, fxRate, stockName);
     updateWatchlistStarState();
     // 관심종목 텔레그램 신호 교차 확인 — 메인 분석을 늦추지 않도록 비동기(수급/실적 탭과 같은 패턴)
@@ -4719,6 +4826,7 @@ async function requestAiAnalysis() {
         macdCrossover: analysis.macdCrossover,
         maCrossover: analysis.maCrossover,
         weeklyTrend: analysis.weeklyTrend,
+        intradaySR: analysis.intradaySR,
         ma5Breakout: analysis.ma5Breakout,
         // ⚠️ 실제로 계산되고 화면(모멘텀/추세 탭)엔 이미 반영되던 값들인데 AI 프롬프트엔
         // 안 보내고 있었던 것들 — 추세 강도 변화(adxTrend)와 MACD 다이버전스는 사람이 볼 때도

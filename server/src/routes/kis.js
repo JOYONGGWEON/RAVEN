@@ -7,6 +7,7 @@ const {
   fetchCandles,
   fetchOverseasStockName,
   fetchIntradayCandles,
+  fetchOverseasSwingIntraday,
   fetchDomesticWeeklyCandles,
   fetchKospiNightFutures,
   isDomesticSymbol,
@@ -173,6 +174,24 @@ router.get("/weekly-candles", async (req, res) => {
   } catch (e) {
     console.error("[RAVEN] /api/kis/weekly-candles error:", e);
     res.status(502).json({ error: "KIS weekly-candles proxy error" });
+  }
+});
+
+// 해외 종목 다중일치 60분봉(스윙 지지/저항 전용) — 국내는 1분봉·당일 30건 한계라 미지원(위
+// fetchOverseasSwingIntraday 주석 참고).
+router.get("/intraday-swing", async (req, res) => {
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: "symbol query param required" });
+  if (isDomesticSymbol(symbol)) {
+    return res.status(400).json({ error: "intraday-swing only supports overseas symbols" });
+  }
+
+  try {
+    const candles = await fetchOverseasSwingIntraday(symbol.toUpperCase());
+    res.json({ result: { candles } });
+  } catch (e) {
+    console.error("[RAVEN] /api/kis/intraday-swing error:", e);
+    res.status(502).json({ error: "KIS intraday-swing proxy error" });
   }
 });
 
