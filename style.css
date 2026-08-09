@@ -500,21 +500,26 @@ body.raven-result-bg {
   min-width: 0;
 }
 
-/* 이름 수정 아이콘 — 평소엔 은은하게, hover 시에만 또렷하게 (라벨 옆에 항상 떠 있으면 산만해서) */
-.watchlist-sidebar-item-edit {
+/* 2026-08-09: 종목명 옆 이름수정 연필 아이콘 자리에 시장구분 뱃지로 교체 — 국내는 KOSPI/KOSDAQ
+   캡슐, 해외는 성조기. 국내 뱃지만 비동기로 채워지므로(상장목록 조회 필요) 빈 상태에서도 레이아웃이
+   튀지 않게 caps-lock 텍스트 기준 최소폭을 살짝 잡아둠. */
+.watchlist-sidebar-item-market {
   flex: 0 0 auto;
-  border: none;
-  background: transparent;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   color: var(--text-sub);
-  font-size: 0.72rem;
-  opacity: 0.55;
-  cursor: pointer;
-  padding: 0 2px;
+  background: rgba(148, 163, 184, 0.15);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+  padding: 0.1rem 0.4rem;
+  white-space: nowrap;
 }
 
-.watchlist-sidebar-item-edit:hover {
-  opacity: 1;
-  color: var(--text-main);
+.watchlist-sidebar-item-flag {
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  line-height: 1;
 }
 
 .watchlist-sidebar-item-price {
@@ -750,18 +755,23 @@ body.raven-result-bg {
   text-align: center;
 }
 
-/* 메인 헤더 검색바 – ENTRY 카드와 동일한 캡슐, 폭은 카드 안으로만 */
+/* 메인 헤더 검색바 – ENTRY 카드와 동일한 캡슐, 폭은 카드 안으로만
+   2026-08-09 피드백: 위쪽의 fluid root font-size 수정(1920~2560px 연속 스케일링) 이후에도 이
+   캡슐만 크기가 그대로였음 — 원인은 gap/padding/border-radius/width가 전부 rem이 아니라 고정
+   px였기 때문(안의 입력창 글자는 rem이라 줄어드는데 감싸는 캡슐은 안 줄어들어 불균형해 보였음).
+   rem으로 바꿔서 html font-size 스케일을 그대로 따라가게 함(같은 이유로 .entry-card/#entry-ticker/
+   #search-btn·#analyze-btn·.entry-btn도 동일하게 수정함). */
 .ticker-form {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 18px;
-  border-radius: 24px;
+  gap: 0.625rem;
+  padding: 0.875rem 1.125rem;
+  border-radius: 1.5rem;
   background: #050709cc;
   box-shadow: 0 18px 45px rgba(0, 0, 0, 0.55);
 
-  /* BTC 카드 폭 안에서 동작 (데스크탑 520px, 그 외 90vw 이내) */
-  width: min(520px, 90vw);
+  /* BTC 카드 폭 안에서 동작 (데스크탑 32.5rem = 520px, 그 외 90vw 이내) */
+  width: min(32.5rem, 90vw);
   max-width: 90vw;
   margin: 0 auto;
 }
@@ -774,7 +784,7 @@ body.raven-result-bg {
   background: transparent;
   color: #fff;
   font-size: 1.05rem;
-  padding: 8px 4px;
+  padding: 0.5rem 0.25rem;
 }
 
 #ticker-input::placeholder {
@@ -786,7 +796,7 @@ body.raven-result-bg {
 #analyze-btn {
   border: none;
   outline: none;
-  padding: 10px 22px;
+  padding: 0.625rem 1.375rem;
   border-radius: 999px;
   background: linear-gradient(135deg, #4dabf7, #9775fa);
   color: #fff;
@@ -2640,12 +2650,12 @@ body.raven-result-bg {
 .entry-card {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 18px;
-  border-radius: 24px;
+  gap: 0.625rem;
+  padding: 0.875rem 1.125rem;
+  border-radius: 1.5rem;
   background: #050709cc;
   box-shadow: 0 18px 45px rgba(0, 0, 0, 0.55);
-  min-width: min(520px, 90vw);
+  min-width: min(32.5rem, 90vw);
   max-width: 90vw;
   transform-origin: center;
   transition: transform 0.5s ease, opacity 0.45s ease, border-radius 0.5s ease;
@@ -2663,7 +2673,7 @@ body.raven-result-bg {
   background: transparent;
   color: #fff;
   font-size: 1.05rem;
-  padding: 8px 4px;
+  padding: 0.5rem 0.25rem;
 }
 
 #entry-ticker::placeholder {
@@ -2704,7 +2714,7 @@ body.raven-result-bg {
 .entry-btn {
   border: none;
   outline: none;
-  padding: 10px 22px;
+  padding: 0.625rem 1.375rem;
   border-radius: 999px;
   background: linear-gradient(135deg, #4dabf7, #9775fa);
   color: #fff;

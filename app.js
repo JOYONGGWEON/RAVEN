@@ -420,6 +420,24 @@ async function fetchDomesticStockName(code) {
   }
 }
 
+// 국내 종목코드 → 시장구분(KOSPI/KOSDAQ) 조회 (관심종목 뱃지 표시용) — 같은 엔드포인트를 쓰지만
+// 상장목록은 하루 단위로만 바뀌므로, 세션 안에서는 심볼당 한 번만 조회하도록 캐싱함.
+const domesticMarketCache = new Map(); // symbol -> "KOSPI" | "KOSDAQ" | null
+async function fetchDomesticStockMarket(code) {
+  if (domesticMarketCache.has(code)) return domesticMarketCache.get(code);
+  try {
+    const res = await fetch(`${API_BASE}/api/stocks/name?code=${encodeURIComponent(code)}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const market = json.market || null;
+    domesticMarketCache.set(code, market);
+    return market;
+  } catch (e) {
+    console.warn("[RAVEN] 시장구분 조회 실패:", e);
+    return null;
+  }
+}
+
 // 해외 티커 → 한글 종목명 조회 (결과 화면 타이틀 표시용)
 // KIS "해외주식 상품기본정보"(search-info)의 prdt_name 필드가 한글명을 그대로 줌(예: FLNC→"플루언스 에너지").
 // 값이 없으면(신규상장 등) null 반환 — updateUI()의 stockName || data.symbol 폴백이 티커로 표시함.
@@ -4140,21 +4158,9 @@ async function updateWatchlistItemGroup(symbol, groupName) {
   }
 }
 
-async function updateWatchlistItemName(symbol, name) {
-  try {
-    const res = await fetch(`${API_BASE}/api/watchlist/${encodeURIComponent(symbol)}/name`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name })
-    });
-    return res.ok;
-  } catch (e) {
-    console.warn("[RAVEN] 관심종목 이름 변경 실패:", e);
-    return false;
-  }
-}
-
-// 관심종목 항목 한 줄 생성 — 이름(코드 괄호 없이)/현재가·등락률(비동기 채움)/그룹 이동 select/삭제 버튼
+// 관심종목 항목 한 줄 생성 — 이름(코드 괄호 없이)/시장구분 뱃지/현재가·등락률(비동기 채움)/그룹 이동
+// select/삭제 버튼. 종목명 옆 이름수정 연필 아이콘은 삭제함(2026-08-09 피드백 — 그룹명 수정 기능을
+// 만들다가 잘못 종목명 쪽에도 붙었던 것, 그 자리에 시장구분 뱃지를 넣음).
 function buildWatchlistItemRow(item, groupNames) {
   const row = document.createElement("div");
   row.className = "watchlist-sidebar-item";
@@ -4167,7 +4173,7 @@ function buildWatchlistItemRow(item, groupNames) {
   const main = document.createElement("div");
   main.className = "watchlist-sidebar-item-main";
 
-  // 라벨 + 이름수정 아이콘을 한 줄(가로)로, 그 아래 가격을 별도 줄(세로)로 배치하기 위한 래퍼.
+  // 라벨 + 시장구분 뱃지를 한 줄(가로)로, 그 아래 가격을 별도 줄(세로)로 배치하기 위한 래퍼.
   const labelRow = document.createElement("div");
   labelRow.className = "watchlist-sidebar-item-label-row";
 
@@ -4176,28 +4182,17 @@ function buildWatchlistItemRow(item, groupNames) {
   label.textContent = item.name || item.symbol;
   labelRow.appendChild(label);
 
-  // 이름 수정 — 이미 등록된 관심종목의 표시 이름을 나중에 바꿀 수 있게(요청 반영).
-  // 그룹 select와 같은 패턴(prompt 입력 + PATCH)이라 별도 모달 없이 가볍게 구현.
-  const editBtn = document.createElement("button");
-  editBtn.type = "button";
-  editBtn.className = "watchlist-sidebar-item-edit";
-  editBtn.textContent = "✎";
-  editBtn.title = "이름 수정";
-  editBtn.addEventListener("click", async (e) => {
-    e.stopPropagation();
-    const typed = window.prompt("관심종목 표시 이름을 입력하세요", item.name || item.symbol);
-    if (!typed || !typed.trim() || typed.trim() === item.name) return;
-    const newName = typed.trim();
-    const ok = await updateWatchlistItemName(item.symbol, newName);
-    if (ok) {
-      const cacheItem = watchlistCache.find((w) => w.symbol === item.symbol);
-      if (cacheItem) cacheItem.name = newName;
-      renderWatchlistSidebar(watchlistCache);
-    } else {
-      showToast("이름 변경에 실패했습니다.");
-    }
-  });
-  labelRow.appendChild(editBtn);
+  // 시장구분 뱃지 — 해외는 바로 성조기(🇺🇸), 국내는 KOSPI/KOSDAQ를 비동기로 채움(상장목록 조회가
+  // 필요해서). renderWatchlistSidebar가 rowEl.querySelector로 이 요소를 찾아 채워 넣음.
+  const marketBadge = document.createElement("span");
+  if (isDomesticTicker(item.symbol)) {
+    marketBadge.className = "watchlist-sidebar-item-market";
+  } else {
+    marketBadge.className = "watchlist-sidebar-item-flag";
+    marketBadge.textContent = "🇺🇸";
+    marketBadge.title = "해외(미국) 종목";
+  }
+  labelRow.appendChild(marketBadge);
   main.appendChild(labelRow);
 
   const priceEl = document.createElement("span");
@@ -4311,6 +4306,7 @@ function renderWatchlistSidebar(list) {
 
   listEl.innerHTML = "";
   const priceTargets = []; // { symbol, el } — 렌더링 끝난 뒤 시차를 두고 순차 조회
+  const marketTargets = []; // { symbol, el } — 국내 종목만, KOSPI/KOSDAQ 뱃지 비동기로 채움
 
   groupOrder.forEach((groupName) => {
     const header = document.createElement("div");
@@ -4356,6 +4352,8 @@ function renderWatchlistSidebar(list) {
         const rowEl = buildWatchlistItemRow(item, groupOrder);
         listEl.appendChild(rowEl);
         priceTargets.push({ symbol: item.symbol, el: rowEl.querySelector(".watchlist-sidebar-item-price") });
+        const marketEl = rowEl.querySelector(".watchlist-sidebar-item-market");
+        if (marketEl) marketTargets.push({ symbol: item.symbol, el: marketEl });
       });
   });
 
@@ -4373,6 +4371,19 @@ function renderWatchlistSidebar(list) {
       el.textContent = `${priceTxt} ${arrow}${Math.abs(quote.changePct).toFixed(2)}%`;
       el.classList.add(quote.changePct > 0 ? "sentiment-pos" : quote.changePct < 0 ? "sentiment-neg" : "");
     }, i * 350);
+  });
+
+  // 시장구분(KOSPI/KOSDAQ)은 우리 서버 자체 조회(캐시된 상장목록)라 KIS 레이트리밋과 무관 —
+  // 시차 없이 한 번에 조회. 못 찾은 경우(상장폐지 등)는 빈 뱃지를 그냥 숨김.
+  marketTargets.forEach(({ symbol, el }) => {
+    fetchDomesticStockMarket(symbol).then((market) => {
+      if (!el) return;
+      if (market) {
+        el.textContent = market;
+      } else {
+        el.remove();
+      }
+    });
   });
 }
 
