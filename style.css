@@ -1232,6 +1232,21 @@ body.raven-result-bg {
 }
 
 
+/* 거래량 프로파일(Volume Profile) — earnings-svg와 동일한 순수 SVG 막대 방식(외부 라이브러리 없음).
+   POC(최대거래구간) 막대만 노란색으로 강조, 나머지는 파란색. */
+.volume-profile-svg {
+  width: 100%;
+  height: 180px;
+  overflow: visible;
+}
+
+.volume-profile-caption {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
 /* ───────── Grid Sections ───────── */
 
 .section-box {
@@ -1384,10 +1399,12 @@ body.raven-result-bg {
 /* 2026-08-02: RS 박스만 유독 넓고 RSI는 좁아 보이던 버그 — 높이는 grid stretch로 이미 똑같았지만
    "1fr" 트랙의 기본 최소폭이 auto(=내용물의 줄바꿈 없는 최대폭)라서, RS의 긴 문구
    ("20일/60일 = -18.4/+6.6(%p)")가 다른 칸의 폭을 잠식해서 실제로는 폭이 90px~184px로 제각각이었음
-   (실측 확인). minmax(0, 1fr)로 최소폭을 0으로 강제해야 5칸이 진짜 균등폭이 됨. */
+   (실측 확인). minmax(0, 1fr)로 최소폭을 0으로 강제해야 칸이 진짜 균등폭이 됨.
+   2026-08-09: VWAP 박스 추가로 5→6개 — 6칸을 억지로 한 줄에 다 넣으면 너무 좁아져서, 3칸×2줄로
+   재배치(짝수라 자연스럽게 균등 분할됨). */
 .indicator-row {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
   margin-bottom: 1.25rem;
   grid-column: span 2;
@@ -1652,6 +1669,19 @@ body.raven-result-bg {
 
 /* 2026-08-04 피드백: 글씨가 작고(0.78rem) 색상이 흐려서(text-sub) 뭐가 매출/영업이익인지
    잘 안 보인다는 요청 — 제목 바로 아래 줄로 옮기고 글씨를 키우고 밝은 색으로 바꿈. */
+/* 다음 실적발표 예상일 — Yahoo Finance 애널리스트 컨센서스 기준(커버리지 없는 소형주는 데이터가
+   없어 조용히 숨겨짐, 다른 보조지표와 동일한 soft-fail 패턴). 노란색 강조 박스로 눈에 띄게. */
+.fund-next-earnings {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 0.625rem;
+  background: rgba(250, 204, 21, 0.08);
+  border: 1px solid rgba(250, 204, 21, 0.3);
+  color: var(--macro-note);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 .earnings-legend {
   grid-column: 1 / -1;
   display: flex;

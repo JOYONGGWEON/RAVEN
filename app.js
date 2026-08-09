@@ -482,6 +482,21 @@ async function fetchIncomeStatementData(symbol, domestic) {
   }
 }
 
+// 다음 실적발표 예상일 — 국내+해외 모두 Yahoo Finance(애널리스트 컨센서스). 소형주 등 커버리지
+// 없는 종목은 result:null로 옴(정상 — 서버 fetchEarningsDate 주석 참고), 그 경우 화면에서 조용히 생략.
+async function fetchEarningsDate(symbol, domestic) {
+  const url = `${API_BASE}/api/yahoo/earnings-date?symbol=${encodeURIComponent(symbol)}&domestic=${domestic}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.result || null;
+  } catch (e) {
+    console.warn("[RAVEN] 실적발표일 조회 실패:", e);
+    return null;
+  }
+}
+
 // 뉴스 탭 — 국내/해외 둘 다 KIS 하나로 커버됨(Phase 5, 4단계)
 async function fetchNewsData(symbol) {
   try {
@@ -873,6 +888,91 @@ function calcRelativeStrength(stockData, benchmarkData) {
     rs20: sRet20 != null && bRet20 != null ? sRet20 - bRet20 : null,
     rs60: sRet60 != null && bRet60 != null ? sRet60 - bRet60 : null
   };
+}
+
+// VWAP(거래량가중평균가) — 2026-08-09 추가(원래 기획 단계 제안 아이디어, "기관 매매 기준선").
+// 하루짜리 세션 VWAP(데이트레이더용 — 장중에만 의미있고 다음날 리셋)이 아니라, RAVEN이 스윙(며칠~
+// 몇 주) 도구인 점에 맞춰 최근 20일 롤링 윈도우로 계산. typical price(H+L+C)/3 × 거래량을 누적해
+// 거래량으로 나누므로, 단순 종가 이동평균(MA)과 달리 "거래량이 많이 몰린 가격대"에 더 큰 가중치가
+// 실려서 기관/큰손 평균 매수단가에 더 가까운 기준선이 됨.
+function calcVWAP(highs, lows, closes, volumes, lookback = 20) {
+  const n = closes.length;
+  if (n < lookback || !Array.isArray(volumes) || volumes.length < n) return null;
+
+  const start = n - lookback;
+  let sumPV = 0;
+  let sumV = 0;
+  for (let i = start; i < n; i++) {
+    const typical = (highs[i] + lows[i] + closes[i]) / 3;
+    const vol = volumes[i] || 0;
+    sumPV += typical * vol;
+    sumV += vol;
+  }
+  if (sumV <= 0) return null;
+
+  const vwap = sumPV / sumV;
+  const lastPrice = closes[n - 1];
+  const distPct = vwap !== 0 ? ((lastPrice - vwap) / vwap) * 100 : 0;
+  return { vwap, distPct };
+}
+
+// 거래량 프로파일(Volume Profile) — 2026-08-09 추가(원래 기획 단계 제안 아이디어, "가격대별 거래량
+// 분포로 지지/저항 재검증"). 틱/분봉 단위 실제 체결가별 거래량이 없어서(일봉만 있음), 일봉의
+// [저가,고가] 구간에 그날 거래량을 균등 분배하는 방식으로 근사(틱 데이터가 없을 때 흔히 쓰는
+// 근사법 — 실제 프로 툴처럼 정밀하진 않지만 "어느 가격대에 거래가 몰렸는지" 큰 그림은 충분히 보여줌).
+// 최근 60일 롤링 윈도우에서 가장 거래량이 몰린 가격대(POC, Point of Control)를 찾음 — 시장 참여자들이
+// 가장 많이 합의한 "공정가치" 가격대라 그 근처가 지지/저항으로도 자주 작동함.
+function calcVolumeProfile(highs, lows, closes, volumes, lookback = 60, bucketCount = 16) {
+  const n = closes.length;
+  if (n < 20 || !Array.isArray(volumes) || volumes.length < n) return null;
+
+  const start = Math.max(0, n - lookback);
+  const sliceHighs = highs.slice(start, n);
+  const sliceLows = lows.slice(start, n);
+  const sliceVolumes = volumes.slice(start, n);
+  if (sliceHighs.length < 10) return null;
+
+  const rangeLow = Math.min(...sliceLows);
+  const rangeHigh = Math.max(...sliceHighs);
+  if (!(rangeHigh > rangeLow)) return null;
+
+  const bucketSize = (rangeHigh - rangeLow) / bucketCount;
+  const buckets = new Array(bucketCount).fill(0);
+
+  for (let i = 0; i < sliceHighs.length; i++) {
+    const h = sliceHighs[i];
+    const l = sliceLows[i];
+    const vol = sliceVolumes[i] || 0;
+    if (vol <= 0 || !(h > l)) continue;
+
+    const startBucket = Math.min(bucketCount - 1, Math.max(0, Math.floor((l - rangeLow) / bucketSize)));
+    const endBucket = Math.min(bucketCount - 1, Math.max(0, Math.floor((h - rangeLow) / bucketSize)));
+    const spanCount = endBucket - startBucket + 1;
+    const volPerBucket = vol / spanCount;
+    for (let b = startBucket; b <= endBucket; b++) {
+      buckets[b] += volPerBucket;
+    }
+  }
+
+  let pocIdx = 0;
+  for (let b = 1; b < bucketCount; b++) {
+    if (buckets[b] > buckets[pocIdx]) pocIdx = b;
+  }
+
+  const poc = rangeLow + (pocIdx + 0.5) * bucketSize;
+  const lastPrice = closes[n - 1];
+  const distPct = poc !== 0 ? ((lastPrice - poc) / poc) * 100 : 0;
+
+  const maxVol = Math.max(...buckets);
+  // 버킷은 낮은 가격(index 0) → 높은 가격 순서 — 렌더링 쪽에서 화면상 위=높은 가격으로 뒤집어서 씀
+  const bars = buckets.map((v, i) => ({
+    priceLow: rangeLow + i * bucketSize,
+    priceHigh: rangeLow + (i + 1) * bucketSize,
+    ratio: maxVol > 0 ? v / maxVol : 0,
+    isPoc: i === pocIdx
+  }));
+
+  return { poc, distPct, bars };
 }
 
 // 3-2. 환율(USD/KRW) — Yahoo Finance(KRW=X). 지연시세지만 환율은 장중 변동폭이 작아 영향 미미.
@@ -1433,6 +1533,8 @@ function analyzeData(data, benchmarkData, intradayCloses, weeklyCloses, intraday
   const rsInfo = benchmarkData ? calcRelativeStrength(data, benchmarkData) : null;
   const intradayInfo = calcIntradayMomentum(intradayCloses);
   const weeklyTrend = calcWeeklyTrend(weeklyCloses);
+  const vwapInfo = calcVWAP(highs, lows, closes, volumes, 20);
+  const volumeProfile = calcVolumeProfile(highs, lows, closes, volumes, 60, 16);
 
   const ma5 = calcEMA(closes, 5);
   const ma20 = calcEMA(closes, 20);
@@ -1732,6 +1834,12 @@ function analyzeData(data, benchmarkData, intradayCloses, weeklyCloses, intraday
     score += clamp(rsInfo.rs20 * 0.4, -8, 8);
   }
 
+  // VWAP(20일 롤링) — 현재가가 거래량 가중 평균단가보다 위/아래인지. RS(±8)보다는 약한 보조
+  // 신호로만 반영(±4) — 이미 MA20/60·MACD 등 추세 지표가 있어서 중복 반영을 피하기 위함.
+  if (vwapInfo && Number.isFinite(vwapInfo.distPct)) {
+    score += clamp(vwapInfo.distPct * 0.5, -4, 4);
+  }
+
   score = Math.round(Math.max(0, Math.min(99, score)));
   const rank = rankFromScore(score);
 
@@ -1751,6 +1859,8 @@ function analyzeData(data, benchmarkData, intradayCloses, weeklyCloses, intraday
     maCrossover,
     weeklyTrend,
     intradaySR,
+    vwapInfo,
+    volumeProfile,
     ma5Breakout,
     atr,
     atrPct,
@@ -2005,7 +2115,7 @@ function computeVerdict(analysis) {
 // 이 요약들은 "추세는/수급은/패턴은 각각 어떤 쪽을 가리키는가"를 답하는 역할 분담.
 // ────────────────────────────────
 function summarizeTrendMomentum(analysis) {
-  const { ma20, ma60, ma120, rsi, macd, adx, adxTrend, rsiCross, macdCrossover, rsInfo, macdDivergence, intradayInfo } = analysis;
+  const { ma20, ma60, ma120, rsi, macd, adx, adxTrend, rsiCross, macdCrossover, rsInfo, macdDivergence, intradayInfo, vwapInfo } = analysis;
 
   let bullPoints = 0;
   let bearPoints = 0;
@@ -2775,7 +2885,9 @@ function updateUI(data, analysis, fxRate, stockName) {
     adxTrend,
     atr,
     atrPct,
-    rsInfo
+    rsInfo,
+    vwapInfo,
+    volumeProfile
   } = analysis;
 
   // ==== 목표가/손절가 박스 (달러 + 현재가 대비 %) ====
@@ -2882,6 +2994,66 @@ function updateUI(data, analysis, fxRate, stockName) {
       setIndicatorBox(rsEl, display, verdict, sentiment);
     } else {
       setIndicatorBox(rsEl, "데이터 부족");
+    }
+  }
+
+  // ==== VWAP(거래량가중평균가) — RSI/MACD/ADX/ATR/RS와 같은 지표 박스로 통일 ====
+  // 하루짜리 세션 VWAP(데이트레이더용)이 아니라 최근 20일 롤링 윈도우로 계산(스윙 타임프레임에 맞춤,
+  // 위 calcVWAP 참고) — "기관 매매 평균단가 기준선" 역할. 종가 평균(MA)과 달리 거래량이 몰린
+  // 가격대에 더 큰 가중치를 둬서, 단순 이평선보다 "실제 자금이 몰린 가격"에 가까움.
+  const vwapEl = $("vwap-txt");
+  if (vwapEl) {
+    if (vwapInfo && Number.isFinite(vwapInfo.vwap)) {
+      const display = `${formatPrice(vwapInfo.vwap)} (${vwapInfo.distPct >= 0 ? "+" : ""}${vwapInfo.distPct.toFixed(1)}%)`;
+      let verdict = "VWAP 근접 — 뚜렷한 우위 없음";
+      let sentiment = "neu";
+      if (vwapInfo.distPct >= 2) {
+        verdict = "VWAP 위 — 평균 매수단가보다 유리한 자리";
+        sentiment = "pos";
+      } else if (vwapInfo.distPct <= -2) {
+        verdict = "VWAP 아래 — 평균 매수단가보다 불리한 자리";
+        sentiment = "neg";
+      }
+      setIndicatorBox(vwapEl, display, verdict, sentiment);
+    } else {
+      setIndicatorBox(vwapEl, "데이터 부족");
+    }
+  }
+
+  // ==== 거래량 프로파일(Volume Profile) — 순수 SVG 수평 막대(위 earnings-svg와 동일한 방식,
+  // 외부 차트 라이브러리 없이 직접 그림). 버킷은 낮은 가격(index 0)이 먼저 오므로, 화면상
+  // 위=높은 가격이 되도록 y좌표를 뒤집어서 그림. POC(최대거래 구간)만 노란색으로 강조. ====
+  {
+    const vpEmpty = $("vp-empty");
+    const vpChart = $("vp-chart");
+    const vpCaption = $("vp-caption");
+    if (vpEmpty && vpChart && vpCaption) {
+      if (!volumeProfile || !volumeProfile.bars || !volumeProfile.bars.length) {
+        vpChart.classList.add("hidden");
+        vpCaption.classList.add("hidden");
+        vpEmpty.classList.remove("hidden");
+      } else {
+        vpEmpty.classList.add("hidden");
+        vpChart.classList.remove("hidden");
+        vpCaption.classList.remove("hidden");
+
+        const bars = volumeProfile.bars;
+        const n = bars.length;
+        const barHeight = 100 / n;
+        const gap = barHeight * 0.18;
+        let svgContent = "";
+        bars.forEach((b, i) => {
+          const yTop = (n - 1 - i) * barHeight + gap / 2;
+          const h = barHeight - gap;
+          const w = Math.max(1.5, b.ratio * 97);
+          const fill = b.isPoc ? "#facc15" : "rgba(77, 171, 247, 0.55)";
+          svgContent += `<rect x="0" y="${yTop.toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" fill="${fill}" rx="1.5" />`;
+        });
+        vpChart.innerHTML = svgContent;
+
+        const distTxt = `${volumeProfile.distPct >= 0 ? "+" : ""}${volumeProfile.distPct.toFixed(1)}%`;
+        vpCaption.textContent = `📍 POC(최대 거래 가격대): ${formatPrice(volumeProfile.poc)} (현재가 대비 ${distTxt}) — 최근 60일간 거래가 가장 많이 몰린 가격대입니다.`;
+      }
     }
   }
 
@@ -3349,6 +3521,17 @@ function updateUI(data, analysis, fxRate, stockName) {
         }
         if (Number.isFinite(irR) && Number.isFinite(r1) && Math.abs(irR - r1) / r1 <= 0.015) {
           const txt = toneSpan("60분봉 기준으로도 같은 저항 자리 확인", "neg");
+          bits.push(direction === "BUY" ? `다만 ${txt}` : txt);
+        }
+      }
+
+      // 2026-08-09: VWAP(20일 롤링, 위 calcVWAP 참고) — 거래량 가중 평균단가 위/아래 위치.
+      if (analysis.vwapInfo && Number.isFinite(analysis.vwapInfo.distPct)) {
+        if (analysis.vwapInfo.distPct >= 2) {
+          const txt = toneSpan("VWAP(거래량가중평균가) 위에서 거래 중", "pos");
+          bits.push(direction === "SELL" ? `다만 ${txt}` : txt);
+        } else if (analysis.vwapInfo.distPct <= -2) {
+          const txt = toneSpan("VWAP(거래량가중평균가) 아래에서 거래 중", "neg");
           bits.push(direction === "BUY" ? `다만 ${txt}` : txt);
         }
       }
@@ -3888,6 +4071,22 @@ function resetEarningsPanel() {
     empty.classList.remove("hidden");
   }
   if (summaryEl) renderBulletList(summaryEl, ["분석 중..."]);
+
+  const nextEarningsEl = $("fund-next-earnings");
+  if (nextEarningsEl) nextEarningsEl.classList.add("hidden");
+}
+
+// 다음 실적발표 예상일 표시 — 애널리스트 커버리지가 없어 데이터가 없으면(info: null) 조용히
+// 숨김(다른 보조지표와 동일한 패턴, "정보 없음" 문구로 채우지 않음).
+function renderNextEarningsDate(info) {
+  const el = $("fund-next-earnings");
+  if (!el) return;
+  if (!info || !info.date) {
+    el.classList.add("hidden");
+    return;
+  }
+  el.textContent = `📅 다음 실적발표 예상일: ${info.date}${info.isEstimate ? " (컨센서스 기준 예상치)" : ""}`;
+  el.classList.remove("hidden");
 }
 
 // KIS 손익계산서(국내)는 억원 단위로 옴 — 1조원 넘어가면 "조원" 단위로 환산해서 표시(가독성)
@@ -4735,6 +4934,12 @@ async function runAnalysisForTicker(rawSymbol) {
       if (!lastAnalysis || lastAnalysis.data.symbol !== symbol) return; // 그 사이 다른 종목 검색 시 무시
       renderEarningsChart(quarters, domestic ? "KRW" : "USD");
     });
+    // 다음 실적발표 예상일 — 별도 API(Yahoo)라 손익계산서와 독립적으로 로드(하나가 실패해도 다른
+    // 하나엔 영향 없음).
+    fetchEarningsDate(symbol, domestic).then((info) => {
+      if (!lastAnalysis || lastAnalysis.data.symbol !== symbol) return;
+      renderNextEarningsDate(info);
+    });
 
     // 뉴스 탭 — 국내/해외 모두 지원(Phase 5, 4단계), 비동기 로드 (resetNewsPanel()도 updateUI() 안에서 호출됨).
     // lastAnalysis.news에도 캐싱해둬서 AI 분석 요청 시 최근 헤드라인을 실제 근거로 같이 보낼 수 있게 함.
@@ -4827,6 +5032,8 @@ async function requestAiAnalysis() {
         maCrossover: analysis.maCrossover,
         weeklyTrend: analysis.weeklyTrend,
         intradaySR: analysis.intradaySR,
+        vwapInfo: analysis.vwapInfo,
+        volumeProfile: analysis.volumeProfile,
         ma5Breakout: analysis.ma5Breakout,
         // ⚠️ 실제로 계산되고 화면(모멘텀/추세 탭)엔 이미 반영되던 값들인데 AI 프롬프트엔
         // 안 보내고 있었던 것들 — 추세 강도 변화(adxTrend)와 MACD 다이버전스는 사람이 볼 때도

@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
-const { fetchOverseasIncomeStatement } = require("../lib/yahooFundamentals");
+const { fetchOverseasIncomeStatement, fetchEarningsDate } = require("../lib/yahooFundamentals");
+const { getStockInfoByCode } = require("../lib/stockDirectory");
 
 const YAHOO_CHART_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/";
 
@@ -61,6 +62,29 @@ router.get("/income-statement", async (req, res) => {
   } catch (e) {
     console.error("[RAVEN] /api/yahoo/income-statement error:", e);
     res.status(502).json({ error: "Yahoo income-statement proxy error" });
+  }
+});
+
+// 다음 실적발표 예상일 — 국내+해외 모두 Yahoo Finance(calendarEvents)로 커버(KIS/DART엔 이 데이터가
+// 없음). 국내는 KOSPI/KOSDAQ에 따라 .KS/.KQ 접미사가 필요해서(실측 확인 — 접미사 없으면 매칭 자체가
+// 안 됨) stockDirectory의 시장구분(관심종목 뱃지 기능에서 이미 쓰던 것)을 그대로 재사용해 접미사를
+// 붙임. 애널리스트 커버리지 없는 종목은 result:null로 응답(에러 아님 — fetchEarningsDate 주석 참고).
+router.get("/earnings-date", async (req, res) => {
+  const { symbol, domestic } = req.query;
+  if (!symbol) return res.status(400).json({ error: "symbol query param required" });
+
+  try {
+    let yahooSymbol = symbol.toUpperCase();
+    if (domestic === "true") {
+      const info = await getStockInfoByCode(symbol);
+      const suffix = info?.market === "KOSDAQ" ? ".KQ" : ".KS";
+      yahooSymbol = `${symbol}${suffix}`;
+    }
+    const result = await fetchEarningsDate(yahooSymbol);
+    res.json({ result });
+  } catch (e) {
+    console.error("[RAVEN] /api/yahoo/earnings-date error:", e);
+    res.status(502).json({ error: "Yahoo earnings-date proxy error" });
   }
 });
 

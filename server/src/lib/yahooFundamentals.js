@@ -77,4 +77,43 @@ async function fetchOverseasIncomeStatement(symbol) {
   return quarters;
 }
 
-module.exports = { fetchOverseasIncomeStatement };
+async function requestCalendarEvents(symbol, cookie, crumb) {
+  const url =
+    `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}` +
+    `?modules=calendarEvents&crumb=${encodeURIComponent(crumb)}`;
+  const res = await fetch(url, {
+    headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", cookie },
+  });
+  const json = await res.json();
+  if (!res.ok) {
+    const err = new Error(`Yahoo calendarEvents error: HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  return json;
+}
+
+// 다음 실적발표 예상일(애널리스트 컨센서스 기준) — quoteSummary의 calendarEvents 모듈.
+// ⚠️ 실측 확인: 커버리지 있는 대형주(AAPL, 005930.KS 둘 다 확인됨)는 예상일이 오지만, 애널리스트
+// 커버리지가 없는 종목(예: 058610.KQ 코스닥 소형주)은 rt_cd 에러 없이 그냥 빈 배열로 옴 — 그 경우
+// null 반환해서 화면에서 조용히 생략(다른 보조지표들과 동일한 soft-fail 패턴, 없는 데이터를
+// 지어내지 않음). symbol은 호출측(routes/yahoo.js)이 국내는 .KS/.KQ 접미사를 붙여서 넘겨줘야 함.
+async function fetchEarningsDate(yahooSymbol) {
+  let { cookie, crumb } = await getYahooCookieCrumb();
+  let json;
+  try {
+    json = await requestCalendarEvents(yahooSymbol, cookie, crumb);
+  } catch (e) {
+    if (e.status !== 401) throw e;
+    ({ cookie, crumb } = await getYahooCookieCrumb(true));
+    json = await requestCalendarEvents(yahooSymbol, cookie, crumb);
+  }
+
+  const calendarEvents = json?.quoteSummary?.result?.[0]?.calendarEvents;
+  const dateEntry = calendarEvents?.earnings?.earningsDate?.[0];
+  if (!dateEntry?.fmt) return null;
+
+  return { date: dateEntry.fmt, isEstimate: !!calendarEvents.earnings.isEarningsDateEstimate };
+}
+
+module.exports = { fetchOverseasIncomeStatement, fetchEarningsDate };

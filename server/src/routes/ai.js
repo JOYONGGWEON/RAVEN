@@ -125,6 +125,16 @@ function buildPrompt(payload) {
     if (Number.isFinite(indicators.intradaySR.resistance)) parts.push(`저항 ${fmt(indicators.intradaySR.resistance, 0)}`);
     lines.push(`60분봉 기준 장중 지지/저항(해외 전용): ${parts.join(" / ")} — 아래 일봉 기준 지지/저항선과 같은 자리인지 참고하세요`);
   }
+  if (indicators?.vwapInfo && Number.isFinite(indicators.vwapInfo.vwap)) {
+    lines.push(
+      `VWAP(거래량가중평균가, 20일 롤링): ${fmt(indicators.vwapInfo.vwap, 0)} (현재가 대비 ${fmt(indicators.vwapInfo.distPct, 1)}%) — 거래량이 몰린 가격대 기준 평균단가`
+    );
+  }
+  if (indicators?.volumeProfile && Number.isFinite(indicators.volumeProfile.poc)) {
+    lines.push(
+      `거래량 프로파일 POC(최근 60일 최대거래 가격대): ${fmt(indicators.volumeProfile.poc, 0)} (현재가 대비 ${fmt(indicators.volumeProfile.distPct, 1)}%)`
+    );
+  }
   if (indicators?.ma5Breakout && indicators.ma5Breakout.volumeConfirmed) {
     const label =
       indicators.ma5Breakout.type === "BULL_BREAK"

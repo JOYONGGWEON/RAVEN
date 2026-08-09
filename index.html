@@ -401,6 +401,16 @@
               <h4><span class="indicator-title">🔸 RS</span><span class="indicator-sub">: 지수 대비 강도</span></h4>
               <p id="rs-txt">—</p>
             </div>
+            <div class="indicator-box">
+              <h4><span class="indicator-title">🔸 VWAP</span><span class="indicator-sub">: 거래량가중평균가</span></h4>
+              <p id="vwap-txt">—</p>
+            </div>
+          </div>
+          <div class="section-box wide">
+            <h3>📊 거래량 프로파일 <span class="indicator-sub">: 최근 60일 매물대</span></h3>
+            <div id="vp-empty" class="earnings-empty hidden">데이터 부족</div>
+            <svg id="vp-chart" class="volume-profile-svg hidden" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+            <div id="vp-caption" class="volume-profile-caption hidden"></div>
           </div>
           <div class="section-box wide tab-summary-box">
             <h3>🧭 추세·모멘텀 종합</h3>
@@ -446,6 +456,7 @@
         <div class="tab-panel" data-tab-panel="fund">
           <div class="section-box wide">
             <h3>🏦 실적 (분기별 매출액 · 영업이익)</h3>
+            <div id="fund-next-earnings" class="fund-next-earnings hidden"></div>
             <div id="fund-legend" class="earnings-legend hidden">
               <span class="earnings-legend-item"><i class="earnings-swatch revenue"></i>매출액</span>
               <span class="earnings-legend-item"><i class="earnings-swatch profit-pos"></i>영업이익(흑자)</span>
