@@ -618,6 +618,7 @@ async function fetchCandleData(symbol) {
   const highs = [];
   const lows = [];
   const volumes = [];
+  const dates = []; // "YYYY-MM-DD" — 국내 종목 자체 차트(lightweight-charts)의 시간축용
 
   for (const c of chronological) {
     const o = Number(c.openPrice);
@@ -633,6 +634,10 @@ async function fetchCandleData(symbol) {
     highs.push(h);
     lows.push(l);
     volumes.push(v);
+    // KIS 날짜는 "YYYYMMDD" 문자열로 옴(국내/해외 공통) — lightweight-charts가 요구하는
+    // "YYYY-MM-DD" 형식으로 변환. 원본이 없거나 형식이 다르면 빈 문자열(차트 쪽에서 걸러냄).
+    const raw = String(c.date || "");
+    dates.push(raw.length === 8 ? `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}` : "");
   }
 
   if (closes.length < 2) throw new Error("Not enough clean OHLC data");
@@ -644,7 +649,8 @@ async function fetchCandleData(symbol) {
     closes,
     highs,
     lows,
-    volumes
+    volumes,
+    dates
   };
 }
 
@@ -3862,7 +3868,109 @@ function updateUI(data, analysis, fxRate, stockName) {
 // ===============================
 // TradingView 차트 위젯 연동
 // ===============================
-function renderTradingViewChart(symbol) {
+// 2026-08-09: 국내 종목 자체 차트 — TradingView 무료 위젯이 KRX 실시간 데이터 재배포를 막아둬서
+// (아래 renderTradingViewChart 주석 참고) 대신 우리가 이미 KIS로 정식 조회 중인 캔들 데이터를
+// TradingView의 오픈소스 라이브러리(Lightweight Charts, Apache 2.0)로 직접 그림 — "재배포"가
+// 아니라 우리가 정식으로 받은 데이터를 우리가 표시하는 것이라 그 라이선스 제약과 무관함(투자닷컴/
+// 네이버 등 다른 무료 대안도 재조사했지만 전부 같은 재배포 제약이나 리스크가 있어 채택 안 함,
+// [[project_raven_trading_app]] 참고). 라이브러리 자체는 무료지만 라이선스 조건상 저작권 표시가
+// 필요해서 차트 아래 작은 캡션으로 TradingView 링크를 남겨둠.
+function renderDomesticLightweightChart(container, data) {
+  container.innerHTML = "";
+
+  const initChart = () => {
+    if (typeof LightweightCharts === "undefined" || !LightweightCharts.createChart) {
+      console.warn("[RAVEN] LightweightCharts 라이브러리 로드 실패");
+      container.innerHTML =
+        '<div class="chart-placeholder">📈 차트를 불러오지 못했습니다.<br />위 지표/분석 내용을 참고해 주세요.</div>';
+      return;
+    }
+
+    const { dates, opens, highs, lows, closes, volumes } = data || {};
+    const candleData = [];
+    const volumeData = [];
+    for (let i = 0; i < (dates || []).length; i++) {
+      if (!dates[i]) continue; // 날짜 파싱 실패한 봉은 제외(위 fetchCandleData 주석 참고)
+      candleData.push({ time: dates[i], open: opens[i], high: highs[i], low: lows[i], close: closes[i] });
+      // 국내 증권 업계 관례(HTS/TradingView와 동일): 양봉=빨강, 음봉=파랑 — 앱 전체가 쓰는
+      // "상승=초록/하락=빨강"(등락률 텍스트 등) 관례와는 별개로, 캔들 자체의 색은 이 업계 표준을 따름.
+      volumeData.push({
+        time: dates[i],
+        value: volumes[i],
+        color: closes[i] >= opens[i] ? "rgba(239, 68, 68, 0.5)" : "rgba(59, 130, 246, 0.5)"
+      });
+    }
+
+    if (candleData.length < 2) {
+      container.innerHTML =
+        '<div class="chart-placeholder">📈 차트 데이터가 부족합니다.<br />위 지표/분석 내용을 참고해 주세요.</div>';
+      return;
+    }
+
+    const chart = LightweightCharts.createChart(container, {
+      layout: { background: { color: "transparent" }, textColor: "#94a3b8" },
+      grid: {
+        vertLines: { color: "rgba(148, 163, 184, 0.08)" },
+        horzLines: { color: "rgba(148, 163, 184, 0.08)" }
+      },
+      rightPriceScale: { borderColor: "rgba(148, 163, 184, 0.2)" },
+      timeScale: { borderColor: "rgba(148, 163, 184, 0.2)" },
+      autoSize: true
+    });
+
+    const candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
+      upColor: "#ef4444",
+      downColor: "#3b82f6",
+      borderUpColor: "#ef4444",
+      borderDownColor: "#3b82f6",
+      wickUpColor: "#ef4444",
+      wickDownColor: "#3b82f6"
+    });
+    candleSeries.setData(candleData);
+
+    const volumeSeries = chart.addSeries(LightweightCharts.HistogramSeries, {
+      priceFormat: { type: "volume" },
+      priceScaleId: "" // 별도 스케일 — 캔들과 같은 축을 안 씀(거래량 막대가 화면 아래쪽 20%만 차지)
+    });
+    volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    volumeSeries.setData(volumeData);
+
+    chart.timeScale().fitContent();
+
+    // Lightweight Charts(Apache 2.0) 라이선스 조건 — 저작권 표시 + tradingview.com 링크 필요.
+    // 재검색 때마다 중복 추가되지 않도록 기존 캡션을 먼저 지우고 다시 붙임.
+    const existingCaption = document.getElementById("lwc-attribution");
+    if (existingCaption) existingCaption.remove();
+    const caption = document.createElement("div");
+    caption.id = "lwc-attribution";
+    caption.className = "lwc-attribution";
+    caption.innerHTML =
+      'Chart by <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView</a>';
+    container.insertAdjacentElement("afterend", caption);
+  };
+
+  if (typeof LightweightCharts === "undefined") {
+    const existing = document.querySelector('script[src*="lightweight-charts"]');
+    if (existing) {
+      existing.addEventListener("load", initChart, { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    // jsdelivr에 특정 버전을 고정 — CDN이 나중에 major 버전을 올려도(API가 바뀔 수 있음) 이 차트가
+    // 조용히 깨지지 않게 함(unpkg는 302 리다이렉트라 jsdelivr의 200 직접 응답을 사용).
+    script.src = "https://cdn.jsdelivr.net/npm/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js";
+    script.onload = initChart;
+    script.onerror = () => {
+      container.innerHTML =
+        '<div class="chart-placeholder">📈 차트를 불러오지 못했습니다.<br />위 지표/분석 내용을 참고해 주세요.</div>';
+    };
+    document.head.appendChild(script);
+  } else {
+    initChart();
+  }
+}
+
+function renderTradingViewChart(symbol, data) {
   // HTML에서 우선순위대로 컨테이너 탐색
   let container =
     document.getElementById("tv-chart") ||
@@ -3882,14 +3990,17 @@ function renderTradingViewChart(symbol) {
   }
   const containerId = container.id;
 
-  // 이전 차트 정리
+  // 이전 차트 정리 — 직전 검색이 국내(lightweight-charts) 종목이었다면 저작권 표시 캡션도
+  // container 바깥(형제 노드)에 남아있으므로 같이 지움.
   container.innerHTML = "";
+  const prevCaption = document.getElementById("lwc-attribution");
+  if (prevCaption) prevCaption.remove();
 
   // TradingView 무료 위젯은 KRX(한국거래소) 실시간 데이터 재배포를 막아둬서
-  // 국내 종목은 심볼 형식과 무관하게 항상 에러가 남 — 위젯 호출 자체를 생략하고 안내만 표시
+  // 국내 종목은 심볼 형식과 무관하게 항상 에러가 남 — 위젯 대신 우리 데이터로 직접 그림
+  // (위 renderDomesticLightweightChart 참고, 2026-08-09부터).
   if (isDomesticTicker(symbol)) {
-    container.innerHTML =
-      '<div class="chart-placeholder">📈 국내 종목 차트는 준비 중입니다.<br />위 지표/분석 내용을 참고해 주세요.</div>';
+    renderDomesticLightweightChart(container, data);
     return;
   }
 
@@ -4909,8 +5020,8 @@ async function runAnalysisForTicker(rawSymbol) {
     // 관심종목 텔레그램 신호 교차 확인 — 메인 분석을 늦추지 않도록 비동기(수급/실적 탭과 같은 패턴)
     renderWatchlistCrossCheck(symbol);
 
-    // 차트 위젯 렌더
-    renderTradingViewChart(symbol);
+    // 차트 위젯 렌더 (국내는 자체 캔들 데이터, 해외는 TradingView 위젯 — 위 renderTradingViewChart 참고)
+    renderTradingViewChart(symbol, data);
 
     // 🔹 모든 세팅이 끝난 뒤 결과 카드 페이드인
     showResultCard();
