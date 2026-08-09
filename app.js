@@ -3002,24 +3002,26 @@ function updateUI(data, analysis, fxRate, stockName) {
       const isBearTrend =
         ma20 < ma60 && price < ma20 && price < ma60 && price < ma120;
 
+      // 2026-08-10 피드백: RAVEN SIGNAL에만 있던 긍정/중립/부정 색상 코딩을 "종합" 요약뿐 아니라
+      // 각 탭 본문의 핵심 판단 문구에도 적용.
       if (isBullTrend) {
         lines = [
-          "20·60·120일선이 정배열이고, 현재가도 20일선 위에 위치한 전형적인 상승 추세 구간입니다.",
+          `20·60·120일선이 정배열이고, 현재가도 20일선 위에 위치한 전형적인 ${toneSpan("상승 추세", "pos")} 구간입니다.`,
           "추세 추종 매매가 유리한 자리입니다."
         ];
       } else if (isBullPullback) {
         lines = [
-          "중장기적으로는 정배열 상승 추세지만, 현재가는 20일선 아래/60일선 위의 눌림 구간입니다.",
+          `중장기적으로는 정배열 ${toneSpan("상승 추세", "pos")}지만, 현재가는 20일선 아래/60일선 위의 눌림 구간입니다.`,
           "추세 안에서의 단기 조정으로 보는 쪽이 자연스럽습니다."
         ];
       } else if (isBearTrend) {
         lines = [
-          "20·60·120일선이 역배열에 가깝고, 현재가도 주요 이평선 아래에 위치한 약세/하락 추세 구간입니다.",
+          `20·60·120일선이 역배열에 가깝고, 현재가도 주요 이평선 아래에 위치한 ${toneSpan("약세/하락 추세", "neg")} 구간입니다.`,
           "반등보다는 하락 추세 연장이 우세한 자리입니다."
         ];
       } else {
         lines = [
-          "이평선 배열과 현재가 위치가 애매한 중립/전환 구간입니다.",
+          `이평선 배열과 현재가 위치가 애매한 ${toneSpan("중립/전환 구간", "neu")}입니다.`,
           "추세보다는 지지·저항과 수급 변화를 우선적으로 보는 편이 좋습니다."
         ];
       }
@@ -3146,27 +3148,27 @@ function updateUI(data, analysis, fxRate, stockName) {
 
     if (rsi >= 70) {
       lines = [
-        `RSI ${rsi.toFixed(1)}로 단기 과열 구간에 진입한 상태입니다.`,
+        `RSI ${rsi.toFixed(1)}로 단기 ${toneSpan("과열", "neu")} 구간에 진입한 상태입니다.`,
         "추세는 강하지만 신규 진입보다는 분할 청산/눌림 대기가 더 유리할 수 있습니다."
       ];
     } else if (rsi >= 60) {
       lines = [
-        `RSI ${rsi.toFixed(1)}로 모멘텀은 강세 우위입니다.`,
+        `RSI ${rsi.toFixed(1)}로 모멘텀은 ${toneSpan("강세 우위", "pos")}입니다.`,
         "추세 추종 관점에서 눌림 매수나 돌파 매매를 고려할 수 있는 구간입니다."
       ];
     } else if (rsi <= 30) {
       lines = [
-        `RSI ${rsi.toFixed(1)}로 과매도 구간에 가까운 자리입니다.`,
+        `RSI ${rsi.toFixed(1)}로 ${toneSpan("과매도", "neu")} 구간에 가까운 자리입니다.`,
         "기술적 반등 여지는 있지만, 추세 자체가 약세라면 역추세 매매는 고위험 구간입니다."
       ];
     } else if (rsi <= 40) {
       lines = [
-        `RSI ${rsi.toFixed(1)}로 모멘텀은 다소 약세 쪽으로 기울어 있습니다.`,
+        `RSI ${rsi.toFixed(1)}로 모멘텀은 다소 ${toneSpan("약세", "neg")} 쪽으로 기울어 있습니다.`,
         "추가 하락이 이어질 수 있어 보수적인 접근이 필요합니다."
       ];
     } else {
       lines = [
-        `RSI ${rsi.toFixed(1)}로 모멘텀은 중립 구간입니다.`,
+        `RSI ${rsi.toFixed(1)}로 모멘텀은 ${toneSpan("중립", "neu")} 구간입니다.`,
         "뚜렷한 과열/과매도 신호보다는 추세와 지지·저항에서 방향성을 확인하는 편이 좋습니다."
       ];
     }
@@ -3355,7 +3357,10 @@ function updateUI(data, analysis, fxRate, stockName) {
       const others = patterns.slice(1, 3);
       const otherNames = others.map((p) => p.name).join(", ");
 
-      const patternLines = [`대표 패턴: [${top.name}]`, `해석: ${top.comment}`];
+      const patternLines = [
+        `대표 패턴: ${toneSpan(`[${top.name}]`, top.direction || "neu")}`,
+        `해석: ${top.comment}`
+      ];
       if (otherNames) {
         patternLines.push(`보조 패턴(참고용): ${otherNames}`);
       }
@@ -3410,15 +3415,15 @@ function updateUI(data, analysis, fxRate, stockName) {
         );
         if (flowType === "BUY_DOMINANT" || flowType === "REBOUND_BUY") {
           signalLines.push(
-            "지지선에서 매수세가 우위인 구조라면, 다음 캔들이 지지선 위 양봉으로 마감할 경우 단기 매수 시그널로 해석할 수 있습니다."
+            `지지선에서 ${toneSpan("매수세가 우위", "pos")}인 구조라면, 다음 캔들이 지지선 위 양봉으로 마감할 경우 단기 매수 시그널로 해석할 수 있습니다.`
           );
         } else if (flowType === "SELL_DOMINANT") {
           signalLines.push(
-            "다만 아직 매도 우위 흐름이 강하다면, 지지선 이탈 음봉이 한 번 더 나올 수 있어 보수적인 접근이 필요합니다."
+            `다만 아직 ${toneSpan("매도 우위 흐름", "neg")}이 강하다면, 지지선 이탈 음봉이 한 번 더 나올 수 있어 보수적인 접근이 필요합니다.`
           );
         } else {
           signalLines.push(
-            "수급이 중립에 가까워, 추가 하락 후 진짜 매수세가 들어오는지 한 차례 더 지켜본 뒤 진입하는 편이 안전합니다."
+            `수급이 ${toneSpan("중립", "neu")}에 가까워, 추가 하락 후 진짜 매수세가 들어오는지 한 차례 더 지켜본 뒤 진입하는 편이 안전합니다.`
           );
         }
       } else if (nearResistance) {
@@ -3427,15 +3432,15 @@ function updateUI(data, analysis, fxRate, stockName) {
         );
         if (flowType === "BUY_DOMINANT") {
           signalLines.push(
-            "강한 매수 우위 속에서 저항 돌파를 시도하는 구간이라, 다음 캔들이 저항 위에서 안착하면 돌파 추세 추종 시그널로 볼 수 있습니다."
+            `강한 ${toneSpan("매수 우위", "pos")} 속에서 저항 돌파를 시도하는 구간이라, 다음 캔들이 저항 위에서 안착하면 돌파 추세 추종 시그널로 볼 수 있습니다.`
           );
         } else if (flowType === "REJECTION_SELL" || flowType === "SELL_DOMINANT") {
           signalLines.push(
-            "저항선에서 매도/청산이 강하게 나오는 형태라면, 다음 캔들이 저항 아래 음봉으로 마감될 경우 단기 조정/하락 파동 진입 신호로 볼 수 있습니다."
+            `저항선에서 ${toneSpan("매도/청산이 강하게", "neg")} 나오는 형태라면, 다음 캔들이 저항 아래 음봉으로 마감될 경우 단기 조정/하락 파동 진입 신호로 볼 수 있습니다.`
           );
         } else {
           signalLines.push(
-            "수급이 애매한 상태라, 돌파 실패 시 되돌림 폭이 커질 수 있습니다. 신규 매수보다는 기존 보유 물량 관리에 중점을 두는 편이 좋습니다."
+            `수급이 ${toneSpan("애매한 상태", "neu")}라, 돌파 실패 시 되돌림 폭이 커질 수 있습니다. 신규 매수보다는 기존 보유 물량 관리에 중점을 두는 편이 좋습니다.`
           );
         }
       } else {
@@ -3978,6 +3983,8 @@ function renderDomesticLightweightChart(container, data) {
     const { dates, opens, highs, lows, closes, volumes } = data || {};
     const candleData = [];
     const volumeData = [];
+    const validDates = [];
+    const validCloses = [];
     for (let i = 0; i < (dates || []).length; i++) {
       if (!dates[i]) continue; // 날짜 파싱 실패한 봉은 제외(위 fetchCandleData 주석 참고)
       candleData.push({ time: dates[i], open: opens[i], high: highs[i], low: lows[i], close: closes[i] });
@@ -3988,6 +3995,8 @@ function renderDomesticLightweightChart(container, data) {
         value: volumes[i],
         color: closes[i] >= opens[i] ? "rgba(239, 68, 68, 0.5)" : "rgba(59, 130, 246, 0.5)"
       });
+      validDates.push(dates[i]);
+      validCloses.push(closes[i]);
     }
 
     if (candleData.length < 2) {
@@ -4031,6 +4040,39 @@ function renderDomesticLightweightChart(container, data) {
     });
     volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     volumeSeries.setData(volumeData);
+
+    // 2026-08-10 피드백: 이동평균선(5/15/33/60/112/224/448) 오버레이 추가 — 해외 TradingView
+    // 위젯의 studies(위 renderTradingViewChart 참고)와 동일한 기간으로 통일. 국내 KIS 일봉은
+    // 최대 약 200봉까지만 조회 가능해서(서버 kisMarket.js의 2회 스티칭 한계), MA224/MA448처럼
+    // 필요 데이터가 더 긴 선은 워밍업 구간이 부족하면 calcEMASeries가 null을 반환 — 이 경우
+    // 조용히 해당 선만 생략(빈 배열이라 해가 되는 에러 없이 나머지 선은 정상 표시).
+    const MA_PERIODS = [
+      { period: 5, color: "#fde047" },
+      { period: 15, color: "#fb923c" },
+      { period: 33, color: "#f87171" },
+      { period: 60, color: "#c084fc" },
+      { period: 112, color: "#60a5fa" },
+      { period: 224, color: "#34d399" },
+      { period: 448, color: "#94a3b8" }
+    ];
+    MA_PERIODS.forEach(({ period, color }) => {
+      const series = calcEMASeries(validCloses, period);
+      if (!series) return;
+      const lineData = [];
+      for (let i = 0; i < series.length; i++) {
+        if (series[i] == null) continue;
+        lineData.push({ time: validDates[i], value: series[i] });
+      }
+      if (!lineData.length) return;
+      const maSeries = chart.addSeries(LightweightCharts.LineSeries, {
+        color,
+        lineWidth: 1,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        title: `MA${period}`
+      });
+      maSeries.setData(lineData);
+    });
 
     chart.timeScale().fitContent();
 
@@ -4122,10 +4164,13 @@ function renderTradingViewChart(symbol, data) {
       hide_legend: false,
       save_image: false,
       container_id: containerId,
-      // 기본 지표: RSI, MACD, MA(5/20/60/120)
+      // 기본 지표: RSI, MACD, MA(5/15/33/60/112/224/448) — 2026-08-10 피드백으로 기간 변경
       studies: [
         "RSI@tv-basicstudies",
         "MACD@tv-basicstudies",
+        "MAExp@tv-basicstudies",
+        "MAExp@tv-basicstudies",
+        "MAExp@tv-basicstudies",
         "MAExp@tv-basicstudies",
         "MAExp@tv-basicstudies",
         "MAExp@tv-basicstudies",
@@ -4133,9 +4178,12 @@ function renderTradingViewChart(symbol, data) {
       ],
       study_overrides: {
         "moving average 1.length": 5,
-        "moving average 2.length": 20,
-        "moving average 3.length": 60,
-        "moving average 4.length": 120
+        "moving average 2.length": 15,
+        "moving average 3.length": 33,
+        "moving average 4.length": 60,
+        "moving average 5.length": 112,
+        "moving average 6.length": 224,
+        "moving average 7.length": 448
       }
     });
   };
@@ -4281,6 +4329,11 @@ function resetEarningsPanel() {
     delete listEl.dataset.hasQuarters; // 새 검색 시작 — 아래 updateNextEarningsPill이 실제 분기
     // 데이터가 채워지기 전까지 실적발표일 핀을 넣지 않도록 리셋
   }
+  const nextEarningsBar = $("fund-next-earnings");
+  if (nextEarningsBar) {
+    nextEarningsBar.innerHTML = "";
+    nextEarningsBar.classList.add("hidden");
+  }
   if (headerEl) headerEl.classList.add("hidden");
   if (empty) {
     empty.textContent = "데이터를 불러오는 중...";
@@ -4289,28 +4342,28 @@ function resetEarningsPanel() {
   if (summaryEl) renderBulletList(summaryEl, ["분석 중..."]);
 }
 
-// 2026-08-09 피드백: 다음 실적발표 예상일을 별도 노란 박스 대신, 분기별 매출/영업이익 표(가장
-// 최근 분기가 맨 위에 오는 리스트) 위에 동일한 캡슐(pill) UI로 통합. renderNextEarningsDate와
-// renderEarningsChart는 각자 다른 시점에(둘 다 비동기, 순서 보장 없음) 리스트에 이 핀을 반영해야
-// 해서, "현재 알고 있는 상태로 핀을 다시 그리는" 함수 하나로 일원화 — 어느 쪽이 먼저 끝나도 안전함.
+// 2026-08-09 피드백: 다음 실적발표 예상일을 별도 노란 박스 대신 캡슐(pill) UI로 통합.
+// renderNextEarningsDate와 renderEarningsChart는 각자 다른 시점에(둘 다 비동기, 순서 보장 없음)
+// 반영해야 해서, "현재 알고 있는 상태로 다시 그리는" 함수 하나로 일원화 — 어느 쪽이 먼저 끝나도 안전함.
+// 2026-08-10 피드백: 분기 리스트 맨 위 행으로 끼워 넣으니 표 안에 섞여 보였음 — 표 아래에
+// 가로로 긴 별도 바(bar)로 분리.
 function updateNextEarningsPill() {
   const listEl = $("fund-quarter-list");
-  if (!listEl) return;
-
-  const existing = listEl.querySelector(".earnings-next-pill");
-  if (existing) existing.remove();
+  const barEl = $("fund-next-earnings");
+  if (!listEl || !barEl) return;
 
   const info = lastAnalysis && lastAnalysis.nextEarningsInfo;
-  if (!info || !info.date) return;
-  // 리스트가 아직 실제 분기 데이터로 채워지기 전(로딩 중)이면 핀만 먼저 넣지 않음 —
+  // 리스트가 아직 실제 분기 데이터로 채워지기 전(로딩 중)이면 먼저 넣지 않음 —
   // renderEarningsChart가 분기 데이터를 그린 뒤 이 함수를 다시 호출해서 채워줌.
-  if (!listEl.dataset.hasQuarters) return;
+  if (!info || !info.date || !listEl.dataset.hasQuarters) {
+    barEl.classList.add("hidden");
+    barEl.innerHTML = "";
+    return;
+  }
 
-  const li = document.createElement("li");
-  li.className = "earnings-quarter-row earnings-next-pill";
   const estimateTxt = info.isEstimate ? " (예상)" : "";
-  li.innerHTML = `<span class="earnings-capsule earnings-capsule-next">📅 다음 실적발표: ${info.date}${estimateTxt}</span>`;
-  listEl.insertBefore(li, listEl.firstChild);
+  barEl.innerHTML = `📅 다음 실적발표 예상일: ${info.date}${estimateTxt}`;
+  barEl.classList.remove("hidden");
 }
 
 // 다음 실적발표 예상일 조회 결과 반영 — 애널리스트 커버리지가 없어 데이터가 없으면(info: null)

@@ -1250,12 +1250,15 @@ body.raven-result-bg {
   display: flex;
   align-items: stretch;
   gap: 0.4rem;
-  height: 180px;
+  /* 2026-08-10 피드백: 16개 매물대가 180px 안에 다 들어가면 한 줄당 11px 남짓이라 너무 촘촘해서
+     가격 글씨와 막대 줄이 안 맞아 보였음(글씨가 줄 높이를 넘치는 수준) — 높이를 크게 늘려 줄당
+     여백을 확보. */
+  height: 320px;
 }
 
 .volume-profile-price-labels {
   flex: 0 0 auto;
-  width: 4.2rem;
+  width: 4.6rem;
   display: flex;
   flex-direction: column;
 }
@@ -1267,9 +1270,16 @@ body.raven-result-bg {
   /* 2026-08-10 피드백: 우측(막대 쪽) 정렬은 숫자 자릿수가 다 달라 왼쪽 시작점이 들쭉날쭉해서
      어느 막대와 짝인지 눈으로 따라가기 어려웠음 — 좌측 정렬로 시작점을 고정. */
   justify-content: flex-start;
-  font-size: 0.6rem;
+  /* 2026-08-10 피드백: 글씨가 너무 작다는 지적 — 키움. 줄 사이 옅은 구분선도 추가해서
+     어느 가격이 어느 막대 줄인지 눈으로 따라가기 쉽게 함. */
+  font-size: 0.72rem;
   color: var(--text-sub);
   white-space: nowrap;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.volume-profile-price-labels span:last-child {
+  border-bottom: none;
 }
 
 .volume-profile-price-labels span.vp-poc-label {
@@ -1739,10 +1749,20 @@ li.no-marker {
 
 .earnings-panel-title {
   text-align: center;
-  font-size: 0.78rem;
+  margin-bottom: 0.6rem;
+}
+
+/* 2026-08-10 피드백: 매출액/영업이익 제목을 가로로 긴 PILL UI로, 흰 글씨로 — 검색버튼
+   (#search-btn/#analyze-btn)과 같은 브랜드 그라디언트를 그대로 재사용해 톤을 통일. */
+.earnings-panel-pill {
+  display: inline-block;
+  width: 100%;
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #4dabf7, #9775fa);
+  color: #fff;
+  font-size: 0.8rem;
   font-weight: 700;
-  color: var(--text-sub);
-  margin-bottom: 0.4rem;
 }
 
 .earnings-svg {
@@ -1817,9 +1837,12 @@ li.no-marker {
   color: var(--text-main);
 }
 
-.earnings-quarter-header .earnings-capsule {
-  background: none;
-  padding: 0 0.5rem;
+/* 2026-08-10 피드백: 분기/매출/영업이익 제목 행이 배경 없이 밋밋해 보인다는 지적 — 검색버튼과
+   같은 브랜드 그라디언트 pill로 변경(위 .earnings-panel-pill과 동일 톤). */
+.earnings-quarter-header .earnings-capsule-title {
+  background: linear-gradient(135deg, #4dabf7, #9775fa);
+  color: #fff;
+  padding: 0.4rem 0.5rem;
 }
 
 .earnings-quarter-list {
@@ -1850,12 +1873,18 @@ li.no-marker {
   overflow-wrap: anywhere;
 }
 
-/* 2026-08-09: 다음 실적발표 예상일 — 별도 노란 박스 대신 분기 리스트 맨 위(최근 분기 바로 위)에
-   같은 캡슐 UI로 통합. 모양(패딩/둥근모서리/배경)은 .earnings-capsule 그대로, 글자색만 노란색으로
-   구분해서 "실제 데이터가 아니라 예상"임을 표시. */
-.earnings-capsule-next {
-  color: var(--macro-note);
+/* 2026-08-10 피드백: 다음 실적발표 예상일을 분기 리스트 안에 섞인 행이 아니라, 표 아래 별도의
+   가로로 긴 바(bar)로 분리 — 검색버튼과 같은 브랜드 그라디언트로 시선을 끌게 함. */
+.earnings-next-earnings {
+  grid-column: 1 / -1;
+  margin-top: 0.6rem;
+  padding: 0.55rem 1rem;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, #4dabf7, #9775fa);
+  color: #fff;
+  font-size: 0.85rem;
   font-weight: 600;
+  text-align: center;
 }
 
 /* ───────── 뉴스 탭 ───────── */
