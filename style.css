@@ -1264,7 +1264,9 @@ body.raven-result-bg {
   flex: 1;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  /* 2026-08-10 피드백: 우측(막대 쪽) 정렬은 숫자 자릿수가 다 달라 왼쪽 시작점이 들쭉날쭉해서
+     어느 막대와 짝인지 눈으로 따라가기 어려웠음 — 좌측 정렬로 시작점을 고정. */
+  justify-content: flex-start;
   font-size: 0.6rem;
   color: var(--text-sub);
   white-space: nowrap;
@@ -1703,8 +1705,9 @@ li.no-marker {
 
 .earnings-chart-wrap {
   grid-column: 1 / -1;
-  /* 2026-08-04 피드백: 제목 바로 아래로 옮긴 범례와 차트 사이 간격 */
-  margin-top: 1rem;
+  /* 2026-08-04 피드백: 제목 바로 아래로 옮긴 범례와 차트 사이 간격
+     2026-08-10 피드백: 좌우 패널로 바뀐 뒤 범례 바로 아래가 답답해 보인다는 지적 — 살짝 더 벌림 */
+  margin-top: 1.5rem;
 }
 
 .earnings-empty {
@@ -1726,6 +1729,12 @@ li.no-marker {
 
 .earnings-chart-panel {
   min-width: 0;
+  /* 2026-08-10 피드백: 매출액/영업이익 두 그래프를 묶는 독립된 박스가 있으면 좋겠다는 요청 —
+     바깥 section-box보다 옅은 톤의 카드로 감싸서 "박스 안의 박스"로 구분되게 함. */
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 0.75rem;
+  padding: 0.9rem 0.75rem 0.7rem;
 }
 
 .earnings-panel-title {
@@ -1801,7 +1810,8 @@ li.no-marker {
   grid-column: 1 / -1;
   display: flex;
   gap: 0.5rem;
-  margin-top: 1.75rem;
+  /* 2026-08-10 피드백: 좌우 패널 도입 후 차트와 표 사이가 다시 좁아 보인다는 지적 — 살짝 더 벌림 */
+  margin-top: 2.25rem;
   font-size: 0.8rem;
   font-weight: 700;
   color: var(--text-main);

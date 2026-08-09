@@ -2223,14 +2223,33 @@ function summarizeTrendMomentum(analysis) {
   return bullets;
 }
 
+// 수급 상태(flowType)를 긍정(초록)/부정(빨강)/중립(노랑)으로 매핑 — RAVEN SIGNAL(전략요약)의
+// buildContextLine()과 아래 summarizeSupply()가 같은 기준을 쓰도록 모듈 스코프로 공용화.
+// 2026-08-04 피드백: 수급/캔들패턴 태그가 실제 방향성과 무관하게 항상 노란색(highlight) 하나였음 —
+// 다른 신호들처럼 긍정(초록)/부정(빨강)/중립(노랑)으로 분리.
+const FLOW_DIRECTION = {
+  BUY_DOMINANT: "pos",
+  REBOUND_BUY: "pos",
+  SELL_DOMINANT: "neg",
+  REJECTION_SELL: "neg",
+  NEUTRAL: "neu",
+  BATTLE: "neu",
+  EMPTY: "neu",
+  INDECISION: "neu",
+};
+
+// 2026-08-10 피드백: RAVEN SIGNAL(전략요약)에만 있던 긍정/중립/부정 글씨색 구분을 추세·수급·패턴
+// 등 다른 탭의 "종합" 요약 박스에도 동일하게 적용해달라는 요청 — 각 요약 함수가 toneSpan()으로
+// 감싼 HTML을 반환하도록 확장(renderBulletList가 innerHTML로 렌더링하도록 함께 수정, 아래 참고).
 function summarizeSupply(flowInfo) {
-  const { flowLabel, obvInfo } = flowInfo;
-  const bullets = [`수급은 [${flowLabel}] 상태입니다.`];
+  const { flowLabel, flowType, obvInfo } = flowInfo;
+  const sentiment = FLOW_DIRECTION[flowType] || "neu";
+  const bullets = [`수급은 ${toneSpan(`[${flowLabel}]`, sentiment)} 상태입니다.`];
 
   if (obvInfo && obvInfo.divergence === "BEARISH") {
-    bullets.push("다만 최근 10일 OBV 다이버전스가 나와, 상승 동력이 약해지고 있을 가능성을 함께 감안해야 합니다.");
+    bullets.push(`다만 최근 10일 ${toneSpan("OBV 다이버전스", "neg")}가 나와, 상승 동력이 약해지고 있을 가능성을 함께 감안해야 합니다.`);
   } else if (obvInfo && obvInfo.divergence === "BULLISH") {
-    bullets.push("최근 10일 OBV 기준으로는 저점 매집 신호도 함께 감지됩니다.");
+    bullets.push(`최근 10일 OBV 기준으로는 ${toneSpan("저점 매집 신호", "pos")}도 함께 감지됩니다.`);
   } else if (obvInfo) {
     bullets.push("최근 10일 누적 수급(OBV) 방향도 대체로 같은 쪽을 가리키고 있습니다.");
   }
@@ -2240,16 +2259,19 @@ function summarizeSupply(flowInfo) {
 
 function summarizePattern(patterns, verdict) {
   const top = patterns && patterns[0];
+  const tierSentiment = verdict.tier === "BUY" ? "pos" : verdict.tier === "SELL" ? "neg" : "neu";
   const tierWord =
     verdict.tier === "BUY" ? "매수 우위" : verdict.tier === "SELL" ? "매도 신중" : "중립·관망";
+  const tierSpan = toneSpan(`[${tierWord}]`, tierSentiment);
 
   if (top) {
+    const patternSpan = toneSpan(`[${top.name}]`, top.direction || "neu");
     return [
-      `대표 패턴은 [${top.name}]이고, R:R 기준 판정은 [${tierWord}]입니다.`,
+      `대표 패턴은 ${patternSpan}이고, R:R 기준 판정은 ${tierSpan}입니다.`,
       "패턴과 R:R이 같은 방향을 가리키는지 함께 확인하는 것이 좋습니다."
     ];
   }
-  return [`뚜렷한 캔들 패턴은 감지되지 않았고, R:R 기준 판정은 [${tierWord}]입니다.`];
+  return [`뚜렷한 캔들 패턴은 감지되지 않았고, R:R 기준 판정은 ${tierSpan}입니다.`];
 }
 
 // 탭 하단 종합 요약(불릿 리스트)을 <ul> 요소에 렌더링
@@ -2259,12 +2281,16 @@ function summarizePattern(patterns, verdict) {
 // 판별해서, 새로 추가되는 이모지 접두 문구에도 자동으로 적용되게 함.
 const STARTS_WITH_EMOJI = /^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
 
+// 2026-08-10 피드백: 다른 탭 종합 요약에도 RAVEN SIGNAL과 같은 긍정/중립/부정 색상 코딩을 적용하기
+// 위해 textContent(순수 텍스트) → innerHTML로 변경 — summarizeSupply/summarizePattern 등이
+// toneSpan()으로 감싼 부분 강조를 그대로 심을 수 있게 됨(renderNarrativeBullets와 동일 패턴).
+// 이 함수를 거치는 문자열은 전부 내부에서 생성한 것이라(사용자 입력 없음) HTML 이스케이프 불필요.
 function renderBulletList(el, bullets) {
   if (!el) return;
   el.innerHTML = "";
   (bullets || []).forEach((line) => {
     const li = document.createElement("li");
-    li.textContent = line;
+    li.innerHTML = line;
     if (STARTS_WITH_EMOJI.test(line)) li.classList.add("no-marker");
     el.appendChild(li);
   });
@@ -3484,7 +3510,9 @@ function updateUI(data, analysis, fxRate, stockName) {
       if (!Number.isFinite(target1) || !Number.isFinite(px) || target1 === px) return "";
       const halfway = px + (target1 - px) * 0.5;
       if (!Number.isFinite(halfway)) return "";
-      return `🔁 트레일링: 이후 가격이 ${formatPrice(halfway)}(1차 목표가의 절반 지점) 부근까지 오르면, 손절가를 진입가(본전) 수준으로 올려 이미 확보한 수익을 방어하는 것을 권장합니다.`;
+      // 2026-08-10 피드백: "트레일링"만 적혀있어 오타인지 헷갈린다는 지적 — 줄임말 대신
+      // 정식 용어(트레일링 스탑, trailing stop)로 표기.
+      return `🔁 트레일링 스탑: 이후 가격이 ${formatPrice(halfway)}(1차 목표가의 절반 지점) 부근까지 오르면, 손절가를 진입가(본전) 수준으로 올려 이미 확보한 수익을 방어하는 것을 권장합니다.`;
     };
 
     // 2026-08-04 피드백: 지지 이탈/저항 돌파 "그 다음"까지 연계해달라는 요청 — 1차 레벨이 뚫렸을 때
@@ -3650,18 +3678,7 @@ function updateUI(data, analysis, fxRate, stockName) {
     // 위쪽 "수급"/"패턴" 탭에서 이미 계산해둔 신호를 전략요약에도 반영 —
     // 예전엔 지지·저항·R:R만 보고 판단해서 같은 화면 안의 수급/패턴 정보와 따로 놀았음
     // [수급 상태]/[캔들 패턴]은 눈에 잘 띄어야 하는 핵심 키워드라 노란색으로 강조(toneSpan highlight)
-    // 2026-08-04 피드백: 수급/캔들패턴 태그가 실제 방향성과 무관하게 항상 노란색(highlight)
-    // 하나였음 — 다른 신호들처럼 긍정(초록)/부정(빨강)/중립(노랑)으로 분리.
-    const FLOW_DIRECTION = {
-      BUY_DOMINANT: "pos",
-      REBOUND_BUY: "pos",
-      SELL_DOMINANT: "neg",
-      REJECTION_SELL: "neg",
-      NEUTRAL: "neu",
-      BATTLE: "neu",
-      EMPTY: "neu",
-      INDECISION: "neu",
-    };
+    // FLOW_DIRECTION은 모듈 스코프로 뺌(summarizeSupply()와 공용, 위 참고) — 2026-08-10.
     const buildContextLine = () => {
       const bits = [];
       if (flowInfo && flowInfo.flowLabel) {
@@ -3674,6 +3691,10 @@ function updateUI(data, analysis, fxRate, stockName) {
       }
       return bits.length ? `참고로 현재 ${bits.join(", ")} 상태입니다.` : "";
     };
+    // 2026-08-10 피드백: 이 줄이 항상 맨 마지막(돌파/이탈 시나리오 아래)에 붙어서 마치 시나리오
+    // 섹션 안의 내용처럼 보였음 — 목표가/손절가 등 본론 서술 바로 뒤, 시나리오 구분선 위로 이동.
+    // 분기별 상황(방향/근거)에 안 좌우되는 값이라 여기서 한 번만 계산해 각 분기에서 재사용.
+    const ctxLine = buildContextLine();
 
     let mainTxt = "중립 / 관망 구간";
     let detailLines = [];
@@ -3713,6 +3734,7 @@ function updateUI(data, analysis, fxRate, stockName) {
         "여기까지 빠지면 지지 여부를 보고 매수 재검토"
       )
     );
+    if (ctxLine) detailLines.push(ctxLine);
     // NEUTRAL은 지지·저항 사이 어느 쪽으로도 열려있는 구간이라 양쪽 시나리오를 모두 제시
     addBreakScenarios(["support", "resistance"]);
 
@@ -3733,6 +3755,7 @@ function updateUI(data, analysis, fxRate, stockName) {
         );
         const trailingLine1 = buildTrailingStopLine();
         if (trailingLine1) detailLines.push(trailingLine1);
+        if (ctxLine) detailLines.push(ctxLine);
         addBreakScenarios(["support"]);
       } else {
         mainTxt = "지지선 근처 눌림 매수 우위";
@@ -3753,6 +3776,7 @@ function updateUI(data, analysis, fxRate, stockName) {
         );
         const trailingLine2 = buildTrailingStopLine();
         if (trailingLine2) detailLines.push(trailingLine2);
+        if (ctxLine) detailLines.push(ctxLine);
         addBreakScenarios(["support"]);
       }
     } else if (verdict.tier === "SELL") {
@@ -3772,6 +3796,7 @@ function updateUI(data, analysis, fxRate, stockName) {
             "저항 부근에서도 밀리면서 이 가격대까지 빠지면 손절 검토"
           )
         );
+        if (ctxLine) detailLines.push(ctxLine);
         addBreakScenarios(["resistance"]);
       } else {
         mainTxt = "R:R 불리 (위험 대비 보상 부족)";
@@ -3788,12 +3813,10 @@ function updateUI(data, analysis, fxRate, stockName) {
             "이 가격대까지 밀리면 추가 하락 리스크가 커지는 구간"
           )
         );
+        if (ctxLine) detailLines.push(ctxLine);
         addBreakScenarios(["resistance"]);
       }
     }
-
-    const ctx = buildContextLine();
-    if (ctx) detailLines.push(ctx);
 
     if (stratMain) {
       stratMain.textContent = mainTxt;
@@ -4467,6 +4490,7 @@ function renderEarningsChart(quarters, currency) {
   }
 }
 
+// 2026-08-10 피드백: RAVEN SIGNAL의 긍정/중립/부정 색상 코딩을 실적 탭 종합 요약에도 적용.
 function summarizeEarnings(shown, allQuarters, fmt) {
   const bullets = [];
   const latest = shown[shown.length - 1];
@@ -4481,22 +4505,24 @@ function summarizeEarnings(shown, allQuarters, fmt) {
     latest.revenue
   )}, 영업이익 ${fmt(latest.operatingProfit)}`;
   if (Number.isFinite(latestMargin)) latestLine += `(영업이익률 ${latestMargin.toFixed(1)}%)`;
-  if (latest.operatingProfit < 0) latestLine += " — 영업적자";
+  if (latest.operatingProfit < 0) latestLine += ` — ${toneSpan("영업적자", "neg")}`;
   bullets.push(latestLine + ".");
 
   if (yearAgo) {
     let yoyLine = "";
     const revYoy = yearAgo.revenue ? ((latest.revenue - yearAgo.revenue) / yearAgo.revenue) * 100 : null;
     if (Number.isFinite(revYoy)) {
-      yoyLine += `전년 동기 대비 매출 ${revYoy >= 0 ? "+" : ""}${revYoy.toFixed(1)}%`;
+      const revYoyTxt = `전년 동기 대비 매출 ${revYoy >= 0 ? "+" : ""}${revYoy.toFixed(1)}%`;
+      yoyLine += toneSpan(revYoyTxt, revYoy >= 0 ? "pos" : "neg");
     }
     if (yearAgo.operatingProfit < 0 && latest.operatingProfit >= 0) {
-      yoyLine += (yoyLine ? ", " : "") + "영업이익 흑자 전환";
+      yoyLine += (yoyLine ? ", " : "") + toneSpan("영업이익 흑자 전환", "pos");
     } else if (yearAgo.operatingProfit >= 0 && latest.operatingProfit < 0) {
-      yoyLine += (yoyLine ? ", " : "") + "영업이익 적자 전환";
+      yoyLine += (yoyLine ? ", " : "") + toneSpan("영업이익 적자 전환", "neg");
     } else if (yearAgo.operatingProfit) {
       const opYoy = ((latest.operatingProfit - yearAgo.operatingProfit) / Math.abs(yearAgo.operatingProfit)) * 100;
-      yoyLine += (yoyLine ? ", " : "") + `영업이익 ${opYoy >= 0 ? "+" : ""}${opYoy.toFixed(1)}%`;
+      const opYoyTxt = `영업이익 ${opYoy >= 0 ? "+" : ""}${opYoy.toFixed(1)}%`;
+      yoyLine += (yoyLine ? ", " : "") + toneSpan(opYoyTxt, opYoy >= 0 ? "pos" : "neg");
     }
     if (yoyLine) bullets.push(yoyLine + ".");
   }
@@ -4509,21 +4535,23 @@ function summarizeEarnings(shown, allQuarters, fmt) {
       .filter((q, i) => q.revenue > recent[i].revenue).length;
     const revDownCount = recent.length - 1 - revUpCount;
     let trendWord = "혼조";
-    if (revUpCount >= recent.length - 1) trendWord = "꾸준한 증가";
-    else if (revDownCount >= recent.length - 1) trendWord = "꾸준한 감소";
-    else if (revUpCount > revDownCount) trendWord = "대체로 증가";
-    else if (revDownCount > revUpCount) trendWord = "대체로 감소";
-    bullets.push(`최근 ${recent.length}개 분기 매출액은 ${trendWord} 추세입니다.`);
+    let trendSentiment = "neu";
+    if (revUpCount >= recent.length - 1) { trendWord = "꾸준한 증가"; trendSentiment = "pos"; }
+    else if (revDownCount >= recent.length - 1) { trendWord = "꾸준한 감소"; trendSentiment = "neg"; }
+    else if (revUpCount > revDownCount) { trendWord = "대체로 증가"; trendSentiment = "pos"; }
+    else if (revDownCount > revUpCount) { trendWord = "대체로 감소"; trendSentiment = "neg"; }
+    bullets.push(`최근 ${recent.length}개 분기 매출액은 ${toneSpan(trendWord, trendSentiment)} 추세입니다.`);
 
     const margins = recent
       .map((q) => (q.revenue ? (q.operatingProfit / q.revenue) * 100 : null))
       .filter((m) => Number.isFinite(m));
     if (margins.length >= 3) {
       const marginDelta = margins[margins.length - 1] - margins[0];
+      const marginTxt = `${margins[0].toFixed(1)}%→${margins[margins.length - 1].toFixed(1)}%`;
       if (marginDelta >= 2) {
-        bullets.push(`영업이익률이 ${margins[0].toFixed(1)}%→${margins[margins.length - 1].toFixed(1)}%로 개선되는 흐름입니다.`);
+        bullets.push(`영업이익률이 ${marginTxt}로 ${toneSpan("개선되는 흐름", "pos")}입니다.`);
       } else if (marginDelta <= -2) {
-        bullets.push(`영업이익률이 ${margins[0].toFixed(1)}%→${margins[margins.length - 1].toFixed(1)}%로 악화되는 흐름입니다.`);
+        bullets.push(`영업이익률이 ${marginTxt}로 ${toneSpan("악화되는 흐름", "neg")}입니다.`);
       } else {
         bullets.push(`영업이익률은 최근 ${recent.length}개 분기 동안 ${margins[0].toFixed(1)}%대에서 큰 변화 없이 유지되고 있습니다.`);
       }
