@@ -345,13 +345,13 @@ body.raven-result-bg {
 
 .watchlist-rail-toggle {
   position: fixed;
-  top: 90px;
+  top: 5.625rem;
   left: 0;
   z-index: 6000;
-  width: 32px;
-  height: 44px;
+  width: 2rem;
+  height: 2.75rem;
   border: none;
-  border-radius: 0 10px 10px 0;
+  border-radius: 0 0.625rem 0.625rem 0;
   background: rgba(30, 41, 59, 0.95);
   border: 1px solid rgba(148, 163, 184, 0.25);
   border-left: none;
@@ -401,7 +401,7 @@ body.raven-result-bg {
 .watchlist-sidebar-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   margin-bottom: 1rem;
   padding-bottom: 0.75rem;
   padding-left: 2.2rem; /* 왼쪽 화살표 버튼과 안 겹치게 */
@@ -417,7 +417,7 @@ body.raven-result-bg {
 .watchlist-sidebar-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.375rem;
 }
 
 .watchlist-group-header {
@@ -458,9 +458,9 @@ body.raven-result-bg {
 .watchlist-sidebar-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   padding: 0.6rem 0.7rem;
-  border-radius: 10px;
+  border-radius: 0.625rem;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -471,7 +471,7 @@ body.raven-result-bg {
 
 .watchlist-sidebar-item-star {
   color: var(--macro-note);
-  font-size: 13px;
+  font-size: 0.8125rem;
   flex: 0 0 auto;
 }
 
@@ -486,7 +486,7 @@ body.raven-result-bg {
 .watchlist-sidebar-item-label-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 0.25rem;
   min-width: 0;
 }
 
@@ -522,7 +522,7 @@ body.raven-result-bg {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  border-radius: 2px;
+  border-radius: 0.125rem;
   overflow: hidden;
   box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.35);
 }
@@ -547,11 +547,11 @@ body.raven-result-bg {
 .watchlist-sidebar-item-group-wrap {
   position: relative;
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
+  width: 1.25rem;
+  height: 1.25rem;
   background: rgba(15, 23, 42, 0.9);
   border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 6px;
+  border-radius: 0.375rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -576,16 +576,16 @@ body.raven-result-bg {
 /* 2026-08-04 피드백: 그룹 화살표 버튼(둥근 사각형 박스)과 스타일 통일 */
 .watchlist-sidebar-item-remove {
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
+  width: 1.25rem;
+  height: 1.25rem;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 6px;
+  border-radius: 0.375rem;
   background: rgba(15, 23, 42, 0.9);
   color: #ffffff99;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1;
   cursor: pointer;
   padding: 0;
@@ -638,9 +638,9 @@ body.raven-result-bg {
 }
 
 .macro-box {
-  min-width: 150px;
+  min-width: 9.375rem;
   padding: 0.75rem 1rem;
-  border-radius: 12px;
+  border-radius: 0.75rem;
   background: rgba(15, 23, 42, 0.9);
   border: 1px solid rgba(148, 163, 184, 0.25);
   text-align: left;
@@ -649,7 +649,7 @@ body.raven-result-bg {
 /* 펼치기 패널 안에 놓이는 index-chip(다우존스/러셀2000선물)은 .macro-box 형제들과
    나란히 있을 때 그리드가 아니라 flex-wrap 컨텍스트라 폭을 맞춰줘야 함 */
 .macro-row .index-chip {
-  min-width: 150px;
+  min-width: 9.375rem;
 }
 
 .macro-label {
@@ -677,7 +677,7 @@ body.raven-result-bg {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 0.5rem;
-  max-width: 640px;
+  max-width: 40rem;
   margin-left: auto;
   margin-right: auto;
   padding: 0 1rem;
@@ -685,7 +685,7 @@ body.raven-result-bg {
 
 .index-chip {
   padding: 0.55rem 0.4rem;
-  border-radius: 10px;
+  border-radius: 0.625rem;
   background: rgba(15, 23, 42, 0.9);
   border: 1px solid rgba(148, 163, 184, 0.25);
   text-align: center;
@@ -833,7 +833,7 @@ body.raven-result-bg {
 /* 기존 z-button (다른 곳에서 사용 가능) */
 .z-button {
   padding: 0 2rem;
-  border-radius: 12px;
+  border-radius: 0.75rem;
   border: none;
   background: var(--accent);
   color: white;
@@ -856,7 +856,7 @@ body.raven-result-bg {
   max-width: 1000px;
   margin: 0 auto 3rem;
   background: var(--bg-card);
-  border-radius: 24px;
+  border-radius: 1.5rem;
   padding: 2.5rem;
   box-shadow: 0 20px 50px rgba(0,0,0,0.4);
   border: 1px solid rgba(255,255,255,0.05);
@@ -908,7 +908,7 @@ body.raven-result-bg {
     display: block;
     min-width: 0; /* 그리드 자식이 내용물 때문에 억지로 넓어지는 것 방지 */
     background: var(--bg-card);
-    border-radius: 24px;
+    border-radius: 1.5rem;
     padding: 2rem;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
     border: 1px solid rgba(255, 255, 255, 0.05);
@@ -1015,7 +1015,7 @@ body.raven-result-bg {
 .status-badge {
   display: inline-block;
   padding: 0.3rem 0.8rem;
-  border-radius: 6px;
+  border-radius: 0.375rem;
   font-size: 0.8rem;
   font-weight: 700;
   background: var(--bg-input);
@@ -1055,8 +1055,8 @@ body.raven-result-bg {
 .z-badge {
   background: linear-gradient(145deg, #1e2640, #111827);
   padding: 1.5rem;
-  border-radius: 16px;
-  min-width: 140px;
+  border-radius: 1rem;
+  min-width: 8.75rem;
   text-align: center;
   border: 1px solid rgba(255,255,255,0.05);
 }
@@ -1111,7 +1111,7 @@ body.raven-result-bg {
   font-size: 0.72rem;
   color: var(--text-sub);
   text-align: right;
-  max-width: 280px;
+  max-width: 17.5rem;
 }
 
 /* ℹ️를 장식용 텍스트가 아니라 실제 클릭 가능한 버튼으로(요청 반영 — 누르면 산정방식 팝업) */
@@ -1151,9 +1151,9 @@ body.raven-result-bg {
   z-index: 1;
   background: var(--bg-card);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
+  border-radius: 1rem;
   padding: 1.75rem;
-  max-width: 480px;
+  max-width: 30rem;
   max-height: 80vh;
   overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
@@ -1214,7 +1214,7 @@ body.raven-result-bg {
 .chart-container {
   height: 400px;
   background: #000;
-  border-radius: 16px;
+  border-radius: 1rem;
   margin-bottom: 2rem;
   overflow: hidden;
 }
@@ -1228,7 +1228,7 @@ body.raven-result-bg {
   color: var(--text-sub);
   font-size: 0.95rem;
   line-height: 1.6;
-  padding: 20px;
+  padding: 1.25rem;
 }
 
 
@@ -1237,7 +1237,7 @@ body.raven-result-bg {
 .section-box {
   background: rgba(255,255,255,0.05);
   padding: 1.5rem;
-  border-radius: 16px;
+  border-radius: 1rem;
 }
 
 .section-box h3 {
@@ -1307,7 +1307,7 @@ body.raven-result-bg {
 .wave-ladder {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
+  gap: 0.5rem;
   margin-bottom: 1.1rem;
 }
 
@@ -1317,7 +1317,7 @@ body.raven-result-bg {
 
 .wave-chip {
   padding: 0.9rem 0.5rem;
-  border-radius: 14px;
+  border-radius: 0.875rem;
   text-align: center;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1331,7 +1331,7 @@ body.raven-result-bg {
   font-size: 0.76rem;
   font-weight: 600;
   color: var(--text-sub);
-  margin-bottom: 5px;
+  margin-bottom: 0.3125rem;
   /* 값이 "—"(없음)인 칸은 그리드 열이 CJK 글자 단위 줄바꿈으로 극단적으로 좁아질 수 있어서
      라벨이 세로로 한 글자씩 쌓이는 버그가 있었음(실측 확인) — 줄바꿈 금지로 고정폭 확보 */
   white-space: nowrap;
@@ -1344,7 +1344,7 @@ body.raven-result-bg {
 }
 
 .wave-chip-pct {
-  margin-top: 3px;
+  margin-top: 0.1875rem;
   font-size: 0.8rem;
   font-weight: 700;
 }
@@ -1397,7 +1397,7 @@ body.raven-result-bg {
   background: linear-gradient(160deg, rgba(59, 130, 246, 0.12), rgba(255, 255, 255, 0.02));
   border: 1px solid rgba(59, 130, 246, 0.2);
   padding: 1.1rem 1.25rem;
-  border-radius: 14px;
+  border-radius: 0.875rem;
   min-width: 0;
 }
 
@@ -1405,7 +1405,7 @@ body.raven-result-bg {
   margin: 0 0 0.55rem 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0.125rem;
 }
 
 .indicator-title {
@@ -1424,7 +1424,7 @@ body.raven-result-bg {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0.25rem;
 }
 
 .indicator-value {
@@ -1501,7 +1501,7 @@ body.raven-result-bg {
 .ai-analyze-btn {
   width: 100%;
   padding: 0.9rem 1rem;
-  border-radius: 14px;
+  border-radius: 0.875rem;
   border: none;
   background: linear-gradient(135deg, #4dabf7, #9775fa);
   color: #fff;
@@ -1526,7 +1526,7 @@ body.raven-result-bg {
 .ai-analysis-result {
   margin-top: 1rem;
   padding: 1.5rem 1.75rem;
-  border-radius: 18px;
+  border-radius: 1.125rem;
   background: rgba(15, 23, 42, 0.9);
   border: 1px solid rgba(148, 163, 184, 0.45);
 }
@@ -1552,7 +1552,7 @@ body.raven-result-bg {
 
 .tabs-bar {
   display: flex;
-  gap: 6px;
+  gap: 0.375rem;
   margin: 2rem 0 1rem 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -1673,7 +1673,7 @@ body.raven-result-bg {
   display: inline-block;
   width: 0.85rem;
   height: 0.85rem;
-  border-radius: 3px;
+  border-radius: 0.1875rem;
 }
 
 .earnings-swatch.revenue {
@@ -1737,7 +1737,7 @@ body.raven-result-bg {
   min-width: 0;
   text-align: center;
   padding: 0.4rem 0.5rem;
-  border-radius: 8px;
+  border-radius: 0.5rem;
   background: rgba(15, 23, 42, 0.6);
   overflow-wrap: anywhere;
 }
@@ -1760,7 +1760,7 @@ body.raven-result-bg {
 
 .news-row {
   padding: 0.6rem 0.7rem;
-  border-radius: 10px;
+  border-radius: 0.625rem;
   background: rgba(15, 23, 42, 0.6);
   border: 1px solid rgba(148, 163, 184, 0.15);
 }
@@ -1800,7 +1800,7 @@ body.raven-result-bg {
   flex: 1;
   background: rgba(255,255,255,0.05);
   padding: 1.5rem;
-  border-radius: 16px;
+  border-radius: 1rem;
   text-align: center;
 }
 
@@ -1843,8 +1843,8 @@ body.raven-result-bg {
 }
 
 .loading-spinner {
-  width: 40px;
-  height: 40px;
+  width: 2.5rem;
+  height: 2.5rem;
   border: 4px solid rgba(255,255,255,0.1);
   border-top-color: var(--accent);
   border-radius: 50%;
@@ -1866,7 +1866,7 @@ body.raven-result-bg {
   max-width: 1000px;
   margin: 0 auto 3rem;
   background: var(--bg-card);
-  border-radius: 24px;
+  border-radius: 1.5rem;
   padding: 2.5rem;
   box-shadow: 0 20px 50px rgba(0,0,0,0.4);
   border: 1px solid rgba(239, 68, 68, 0.15);
@@ -1899,7 +1899,7 @@ body.raven-result-bg {
   transform: translateX(-50%);
   background: #333;
   padding: 1rem 2rem;
-  border-radius: 50px;
+  border-radius: 3.125rem;
   box-shadow: 0 10px 30px rgba(0,0,0,0.5);
   z-index: 100;
   animation: slideUp 0.3s;
@@ -1939,7 +1939,7 @@ body.raven-result-bg {
 .strategy-box {
   margin-top: 2rem;
   padding: 1.5rem 1.75rem;
-  border-radius: 18px;
+  border-radius: 1.125rem;
   background: rgba(15, 23, 42, 0.9);
   border: 1px solid rgba(148, 163, 184, 0.45);
 }
@@ -2697,10 +2697,10 @@ body.raven-result-bg {
   z-index: 10000;
   background: var(--bg-card);
   border: 1px solid #ffffff22;
-  border-radius: 12px;
+  border-radius: 0.75rem;
   box-shadow: 0 18px 45px rgba(0, 0, 0, 0.55);
   overflow: hidden;
-  max-height: 260px;
+  max-height: 16.25rem;
   overflow-y: auto;
 }
 
@@ -2709,7 +2709,7 @@ body.raven-result-bg {
 }
 
 .ticker-suggest-item {
-  padding: 10px 14px;
+  padding: 0.625rem 0.875rem;
   font-size: 0.92rem;
   color: var(--text-main);
   cursor: pointer;
