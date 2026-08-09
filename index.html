@@ -409,7 +409,10 @@
           <div class="section-box wide">
             <h3>📊 거래량 프로파일 <span class="indicator-sub">: 최근 60일 매물대</span></h3>
             <div id="vp-empty" class="earnings-empty hidden">데이터 부족</div>
-            <svg id="vp-chart" class="volume-profile-svg hidden" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+            <div id="vp-chart-wrap" class="volume-profile-wrap hidden">
+              <div id="vp-price-labels" class="volume-profile-price-labels"></div>
+              <svg id="vp-chart" class="volume-profile-svg" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+            </div>
             <div id="vp-caption" class="volume-profile-caption hidden"></div>
           </div>
           <div class="section-box wide tab-summary-box">
@@ -463,8 +466,18 @@
             </div>
             <div id="fund-chart-wrap" class="earnings-chart-wrap">
               <div id="fund-chart-empty" class="earnings-empty hidden">데이터를 불러오는 중...</div>
-              <svg id="fund-chart" class="earnings-svg hidden" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
-              <div id="fund-chart-labels" class="earnings-chart-labels hidden"></div>
+              <div id="fund-chart-panels" class="earnings-chart-panels hidden">
+                <div class="earnings-chart-panel">
+                  <div class="earnings-panel-title">매출액</div>
+                  <svg id="fund-chart-revenue" class="earnings-svg hidden" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+                  <div id="fund-chart-labels-revenue" class="earnings-chart-labels hidden"></div>
+                </div>
+                <div class="earnings-chart-panel">
+                  <div class="earnings-panel-title">영업이익</div>
+                  <svg id="fund-chart-profit" class="earnings-svg hidden" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+                  <div id="fund-chart-labels-profit" class="earnings-chart-labels hidden"></div>
+                </div>
+              </div>
             </div>
             <div id="fund-quarter-header" class="earnings-quarter-header hidden">
               <span class="earnings-capsule">분기</span>

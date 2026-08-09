@@ -2253,12 +2253,19 @@ function summarizePattern(patterns, verdict) {
 }
 
 // 탭 하단 종합 요약(불릿 리스트)을 <ul> 요소에 렌더링
+// 2026-08-10 피드백: 이모지로 이미 시작하는 문장(📉 이탈 시나리오, 🎯 목표가 등)은 그 이모지
+// 자체가 이미 "표시" 역할을 해서, 앞에 불릿(•)까지 붙으면 중복으로 보임 — 이모지로 시작하는
+// 줄이면 불릿 마커를 생략. 특정 이모지 몇 개만 하드코딩하지 않고 넓은 이모지 유니코드 범위로
+// 판별해서, 새로 추가되는 이모지 접두 문구에도 자동으로 적용되게 함.
+const STARTS_WITH_EMOJI = /^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
+
 function renderBulletList(el, bullets) {
   if (!el) return;
   el.innerHTML = "";
   (bullets || []).forEach((line) => {
     const li = document.createElement("li");
     li.textContent = line;
+    if (STARTS_WITH_EMOJI.test(line)) li.classList.add("no-marker");
     el.appendChild(li);
   });
 }
@@ -2296,6 +2303,7 @@ function renderNarrativeBullets(el, lines) {
       li.className = "narrative-divider";
     } else {
       li.innerHTML = line;
+      if (STARTS_WITH_EMOJI.test(line)) li.classList.add("no-marker");
     }
     ul.appendChild(li);
   });
@@ -3060,16 +3068,18 @@ function updateUI(data, analysis, fxRate, stockName) {
   // 위=높은 가격이 되도록 y좌표를 뒤집어서 그림. POC(최대거래 구간)만 노란색으로 강조. ====
   {
     const vpEmpty = $("vp-empty");
+    const vpWrap = $("vp-chart-wrap");
     const vpChart = $("vp-chart");
+    const vpLabels = $("vp-price-labels");
     const vpCaption = $("vp-caption");
-    if (vpEmpty && vpChart && vpCaption) {
+    if (vpEmpty && vpWrap && vpChart && vpLabels && vpCaption) {
       if (!volumeProfile || !volumeProfile.bars || !volumeProfile.bars.length) {
-        vpChart.classList.add("hidden");
+        vpWrap.classList.add("hidden");
         vpCaption.classList.add("hidden");
         vpEmpty.classList.remove("hidden");
       } else {
         vpEmpty.classList.add("hidden");
-        vpChart.classList.remove("hidden");
+        vpWrap.classList.remove("hidden");
         vpCaption.classList.remove("hidden");
 
         const bars = volumeProfile.bars;
@@ -3081,10 +3091,22 @@ function updateUI(data, analysis, fxRate, stockName) {
           const yTop = (n - 1 - i) * barHeight + gap / 2;
           const h = barHeight - gap;
           const w = Math.max(1.5, b.ratio * 97);
-          const fill = b.isPoc ? "#facc15" : "rgba(77, 171, 247, 0.55)";
+          const fill = b.isPoc ? "#facc15" : "rgba(77, 171, 244, 0.55)";
           svgContent += `<rect x="0" y="${yTop.toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" fill="${fill}" rx="1.5" />`;
         });
         vpChart.innerHTML = svgContent;
+
+        // 라벨은 SVG 막대와 같은 순서(위=높은 가격 → 아래=낮은 가격)로 표시해야 나란히 정렬됨.
+        // bars[0]가 최저가라 reverse()로 뒤집어서 위에서부터 그림.
+        let labelsHtml = "";
+        bars
+          .slice()
+          .reverse()
+          .forEach((b) => {
+            const mid = (b.priceLow + b.priceHigh) / 2;
+            labelsHtml += `<span class="${b.isPoc ? "vp-poc-label" : ""}">${formatPrice(mid)}</span>`;
+          });
+        vpLabels.innerHTML = labelsHtml;
 
         const distTxt = `${volumeProfile.distPct >= 0 ? "+" : ""}${volumeProfile.distPct.toFixed(1)}%`;
         vpCaption.textContent = `📍 POC(최대 거래 가격대): ${formatPrice(volumeProfile.poc)} (현재가 대비 ${distTxt}) — 최근 60일간 거래가 가장 많이 몰린 가격대입니다.`;
@@ -3882,7 +3904,9 @@ function updateUI(data, analysis, fxRate, stockName) {
         if (volatility > 6) { volTxt = " · 20일 변동성 높음(점수 감점 요인)"; sentiment = "neg"; }
         else if (volatility > 0 && volatility < 2) { volTxt = " · 20일 변동성 매우 낮음(점수 감점 요인)"; sentiment = "neg"; }
       }
-      setIndicatorBox(atrBox, `${formatPrice(atr)}${atrPctTxt}`, `손절폭 산정 기준${volTxt}`, sentiment);
+      // 2026-08-10 피드백: "손절폭 산정 기준"이 무슨 뜻인지 모르겠다는 지적 — 라벨처럼 짧게만
+      // 적혀있어서 "이 숫자로 손절폭을 계산한다"는 의미가 전달 안 됐음, 문장으로 풀어서 명확히 함.
+      setIndicatorBox(atrBox, `${formatPrice(atr)}${atrPctTxt}`, `이 값 기준으로 손절폭을 계산합니다${volTxt}`, sentiment);
     } else {
       setIndicatorBox(atrBox, "데이터 부족");
     }
@@ -3949,7 +3973,15 @@ function renderDomesticLightweightChart(container, data) {
       return;
     }
 
-    const chart = LightweightCharts.createChart(container, {
+    // 2026-08-10 피드백: 차트를 #tv-chart(container) 자체에 바로 그리면 캔버스가 컨테이너 경계에
+    // 딱 붙어서, 오른쪽 가격축/아래쪽 시간축 라벨이 container의 둥근 모서리(overflow:hidden)에
+    // 살짝 걸려 잘리는 느낌이 났음(해외 TradingView 위젯은 자체 iframe에 내부 여백이 있어서 이
+    // 문제가 없었음) — 안쪽에 약간 여백을 둔 host div를 하나 더 만들어 거기에 그림.
+    const chartHost = document.createElement("div");
+    chartHost.className = "lwc-chart-host";
+    container.appendChild(chartHost);
+
+    const chart = LightweightCharts.createChart(chartHost, {
       layout: { background: { color: "transparent" }, textColor: "#94a3b8" },
       grid: {
         vertLines: { color: "rgba(148, 163, 184, 0.08)" },
@@ -4197,23 +4229,29 @@ function renderSupplyDemandBox(data) {
 
 // 새 티커 분석 시작 시 이전 종목의 실적 차트를 지우고 로딩 상태로 리셋
 function resetEarningsPanel() {
-  const svg = $("fund-chart");
+  const revSvg = $("fund-chart-revenue");
+  const profitSvg = $("fund-chart-profit");
   const empty = $("fund-chart-empty");
+  const panelsEl = $("fund-chart-panels");
   const legend = $("fund-legend");
-  const labelsEl = $("fund-chart-labels");
+  const revLabelsEl = $("fund-chart-labels-revenue");
+  const profitLabelsEl = $("fund-chart-labels-profit");
   const listEl = $("fund-quarter-list");
   const headerEl = $("fund-quarter-header");
   const summaryEl = $("fund-summary-txt");
 
-  if (svg) {
+  [revSvg, profitSvg].forEach((svg) => {
+    if (!svg) return;
     svg.innerHTML = "";
     svg.classList.add("hidden");
-  }
+  });
+  if (panelsEl) panelsEl.classList.add("hidden");
   if (legend) legend.classList.add("hidden");
-  if (labelsEl) {
+  [revLabelsEl, profitLabelsEl].forEach((labelsEl) => {
+    if (!labelsEl) return;
     labelsEl.innerHTML = "";
     labelsEl.classList.add("hidden");
-  }
+  });
   if (listEl) {
     listEl.innerHTML = "";
     listEl.classList.add("hidden");
@@ -4301,23 +4339,25 @@ function shortQuarterLabel(yyyymm) {
 // 영업적자 분기는 기준선(baseline) 아래로 내려가는 빨간 막대로 표시.
 // currency: "KRW"(국내, KIS 억원 단위) | "USD"(해외, Yahoo Finance 달러 원단위) — 단위 포맷터만 다름.
 function renderEarningsChart(quarters, currency) {
-  const svg = $("fund-chart");
+  const revSvg = $("fund-chart-revenue");
+  const profitSvg = $("fund-chart-profit");
   const empty = $("fund-chart-empty");
+  const panelsEl = $("fund-chart-panels");
   const legend = $("fund-legend");
-  const labelsEl = $("fund-chart-labels");
+  const revLabelsEl = $("fund-chart-labels-revenue");
+  const profitLabelsEl = $("fund-chart-labels-profit");
   const listEl = $("fund-quarter-list");
   const headerEl = $("fund-quarter-header");
   const summaryEl = $("fund-summary-txt");
-  if (!svg || !empty) return;
+  if (!revSvg || !profitSvg || !empty) return;
 
   const fmt = currency === "USD" ? formatUsdCompact : formatEokwon;
 
   const showEmpty = (msg) => {
     empty.textContent = msg;
     empty.classList.remove("hidden");
-    svg.classList.add("hidden");
+    if (panelsEl) panelsEl.classList.add("hidden");
     if (legend) legend.classList.add("hidden");
-    if (labelsEl) labelsEl.classList.add("hidden");
     if (listEl) listEl.classList.add("hidden");
     if (headerEl) headerEl.classList.add("hidden");
     renderBulletList(summaryEl, [msg]);
@@ -4331,65 +4371,68 @@ function renderEarningsChart(quarters, currency) {
   // 2026-08-04 피드백: 8분기(2년치)는 너무 많아 보임 — 최근 5분기만(예: '25 Q1~'26 Q1)
   const shown = quarters.slice(-5);
   empty.classList.add("hidden");
+  if (panelsEl) panelsEl.classList.remove("hidden");
 
-  // --- SVG 차트: 매출액/영업이익을 독립된 스케일의 위/아래 두 구간으로 분리해서 그림 ---
-  // 2026-08-09 피드백: 같은 스케일에 나란히 그리던 예전 방식은 매출액이 보통 영업이익보다
-  // 5~10배+ 커서 영업이익 막대가 안 보일 만큼 짧아지는 문제가 있었음 — 위(매출액)/아래(영업이익)
-  // 로 나눠서 각자 자기 데이터 범위 안에서 꽉 차게 그리도록 재설계.
+  // --- SVG 차트: 매출액/영업이익을 좌우로 나란히 붙인 독립 패널로 각각 그림(2026-08-10 피드백) ---
+  // 이전엔 하나의 SVG 안에 위(매출)/아래(영업이익) 두 구간으로 나눠 그렸는데, 이번엔 아예 패널
+  // 자체를 좌우로 분리해서 각자 자기만의 제목 + 분기 라벨을 갖도록 재설계.
   const slotWidth = 60;
-  const barWidth = 26;
+  const barWidth = 34;
   const height = 100;
-  const revRowH = 42;
-  const rowGap = 16;
-  const profitRowH = 42;
   const width = shown.length * slotWidth;
 
-  const maxRev = Math.max(1, ...shown.map((q) => Math.max(q.revenue, 0)));
-  const maxProfitPos = Math.max(1, ...shown.map((q) => Math.max(q.operatingProfit, 0)));
-  const maxProfitNeg = Math.max(0, ...shown.map((q) => Math.max(-q.operatingProfit, 0)));
-  const profitSpan = maxProfitPos + maxProfitNeg;
-  const profitBaselineY = revRowH + rowGap + profitRowH * (maxProfitPos / profitSpan);
+  // svgEl/labelsEl/values/color를 받아 하나의 독립 패널(자체 스케일)을 그리는 공용 함수
+  function buildEarningsPanel(svgEl, labelsEl, values, colorFn) {
+    const maxPos = Math.max(1, ...values.map((v) => Math.max(v, 0)));
+    const maxNeg = Math.max(0, ...values.map((v) => Math.max(-v, 0)));
+    const span = maxPos + maxNeg;
+    const baselineY = height * (maxPos / span);
 
-  let svgContent = "";
-  // 두 구간을 나누는 얇은 점선 + 영업이익 구간 안의 기준선(적자 분기가 있을 때만)
-  svgContent += `<line x1="0" y1="${(revRowH + rowGap / 2).toFixed(2)}" x2="${width}" y2="${(revRowH + rowGap / 2).toFixed(2)}" stroke="rgba(148,163,184,0.2)" stroke-width="0.5" stroke-dasharray="2,2" />`;
-  if (maxProfitNeg > 0) {
-    svgContent += `<line x1="0" y1="${profitBaselineY.toFixed(2)}" x2="${width}" y2="${profitBaselineY.toFixed(2)}" stroke="rgba(148,163,184,0.35)" stroke-width="1" />`;
-  }
-
-  shown.forEach((q, i) => {
-    const barX = i * slotWidth + (slotWidth - barWidth) / 2;
-
-    // 매출액 — 위쪽 구간 바닥에서 위로 자람
-    const revHeight = (Math.max(q.revenue, 0) / maxRev) * revRowH;
-    svgContent += `<rect x="${barX.toFixed(2)}" y="${(revRowH - revHeight).toFixed(2)}" width="${barWidth}" height="${revHeight.toFixed(2)}" rx="2" fill="var(--accent)" />`;
-
-    // 영업이익 — 아래쪽 구간, 자체 기준선에서 +/- 방향으로 자람
-    const profit = q.operatingProfit;
-    if (profit >= 0) {
-      const h = (profit / profitSpan) * profitRowH;
-      svgContent += `<rect x="${barX.toFixed(2)}" y="${(profitBaselineY - h).toFixed(2)}" width="${barWidth}" height="${h.toFixed(2)}" rx="2" fill="var(--success)" />`;
-    } else {
-      const h = (-profit / profitSpan) * profitRowH;
-      svgContent += `<rect x="${barX.toFixed(2)}" y="${profitBaselineY.toFixed(2)}" width="${barWidth}" height="${h.toFixed(2)}" rx="2" fill="var(--danger)" />`;
+    let svgContent = "";
+    if (maxNeg > 0) {
+      svgContent += `<line x1="0" y1="${baselineY.toFixed(2)}" x2="${width}" y2="${baselineY.toFixed(2)}" stroke="rgba(148,163,184,0.35)" stroke-width="1" />`;
     }
-  });
-
-  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  svg.innerHTML = svgContent;
-  svg.classList.remove("hidden");
-
-  // --- 분기 라벨: SVG 밖 별도 HTML 행에 그림 (preserveAspectRatio="none"으로 늘어난 SVG 안에
-  // <text>를 넣으면 글자가 가로/세로 비율이 달라져 찌그러져 보이는 문제를 피하기 위함) ---
-  if (labelsEl) {
-    labelsEl.innerHTML = "";
-    shown.forEach((q) => {
-      const span2 = document.createElement("span");
-      span2.textContent = shortQuarterLabel(q.yyyymm);
-      labelsEl.appendChild(span2);
+    values.forEach((v, i) => {
+      const barX = i * slotWidth + (slotWidth - barWidth) / 2;
+      const fill = colorFn(v);
+      if (v >= 0) {
+        const h = (v / span) * height;
+        svgContent += `<rect x="${barX.toFixed(2)}" y="${(baselineY - h).toFixed(2)}" width="${barWidth}" height="${h.toFixed(2)}" rx="3" fill="${fill}" />`;
+      } else {
+        const h = (-v / span) * height;
+        svgContent += `<rect x="${barX.toFixed(2)}" y="${baselineY.toFixed(2)}" width="${barWidth}" height="${h.toFixed(2)}" rx="3" fill="${fill}" />`;
+      }
     });
-    labelsEl.classList.remove("hidden");
+
+    svgEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svgEl.innerHTML = svgContent;
+    svgEl.classList.remove("hidden");
+
+    // 분기 라벨: SVG 밖 별도 HTML 행에 그림 (preserveAspectRatio="none"으로 늘어난 SVG 안에
+    // <text>를 넣으면 글자가 가로/세로 비율이 달라져 찌그러져 보이는 문제를 피하기 위함)
+    if (labelsEl) {
+      labelsEl.innerHTML = "";
+      shown.forEach((q) => {
+        const span2 = document.createElement("span");
+        span2.textContent = shortQuarterLabel(q.yyyymm);
+        labelsEl.appendChild(span2);
+      });
+      labelsEl.classList.remove("hidden");
+    }
   }
+
+  buildEarningsPanel(
+    revSvg,
+    revLabelsEl,
+    shown.map((q) => Math.max(q.revenue, 0)),
+    () => "var(--accent)"
+  );
+  buildEarningsPanel(
+    profitSvg,
+    profitLabelsEl,
+    shown.map((q) => q.operatingProfit),
+    (v) => (v >= 0 ? "var(--success)" : "var(--danger)")
+  );
 
   if (legend) legend.classList.remove("hidden");
 

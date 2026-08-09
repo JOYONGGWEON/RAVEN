@@ -1220,6 +1220,14 @@ body.raven-result-bg {
   color: var(--text-main);
 }
 
+/* 2026-08-10: 가격축/시간축 라벨이 .chart-container의 둥근 모서리(overflow:hidden)에 걸려
+   잘려 보이던 문제 — 안쪽에 살짝 여백을 준 host div에 실제 차트를 그림. */
+.lwc-chart-host {
+  width: calc(100% - 0.75rem);
+  height: calc(100% - 0.6rem);
+  margin: 0.35rem 0.5rem 0.25rem 0.25rem;
+}
+
 .chart-placeholder {
   height: 100%;
   display: flex;
@@ -1234,10 +1242,43 @@ body.raven-result-bg {
 
 
 /* 거래량 프로파일(Volume Profile) — earnings-svg와 동일한 순수 SVG 막대 방식(외부 라이브러리 없음).
-   POC(최대거래구간) 막대만 노란색으로 강조, 나머지는 파란색. */
-.volume-profile-svg {
-  width: 100%;
+   POC(최대거래구간) 막대만 노란색으로 강조, 나머지는 파란색.
+   2026-08-10 피드백: 각 막대 줄의 가격대를 왼쪽에 표시해달라는 요청 — SVG 안에 <text>를 직접
+   넣으면 preserveAspectRatio="none"로 늘어난 SVG 안에서 글자가 찌그러지는 문제가 있어서(위
+   earnings-chart-labels와 동일한 이유로 이미 피해온 패턴), 라벨은 SVG 밖 별도 HTML 컬럼에 그림. */
+.volume-profile-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
   height: 180px;
+}
+
+.volume-profile-price-labels {
+  flex: 0 0 auto;
+  width: 4.2rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.volume-profile-price-labels span {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 0.6rem;
+  color: var(--text-sub);
+  white-space: nowrap;
+}
+
+.volume-profile-price-labels span.vp-poc-label {
+  color: var(--macro-note);
+  font-weight: 700;
+}
+
+.volume-profile-svg {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
   overflow: visible;
 }
 
@@ -1307,6 +1348,13 @@ body.raven-result-bg {
 .strategy-box .narrative-bullets li {
   font-size: 0.92rem;
   line-height: 1.6;
+}
+
+/* 2026-08-10: 문장이 이모지(📉/🎯 등)로 이미 시작하면 불릿(•)이 중복으로 보여서 생략 —
+   list-style만 없애면 되고, 텍스트 위치는 부모 ul의 padding-left로 그대로 유지됨(narrative-divider
+   처럼 margin 보정 불필요). renderBulletList/renderNarrativeBullets 양쪽 다 이 클래스를 씀. */
+li.no-marker {
+  list-style: none;
 }
 
 .supply-kis-date {
@@ -1470,7 +1518,12 @@ body.raven-result-bg {
   font-weight: 500;
   line-height: 1.35;
   color: var(--text-sub);
-  overflow-wrap: anywhere;
+  /* 2026-08-10 피드백: overflow-wrap:anywhere가 "DI+ 우위"/"유리한 자리" 같은 짧은 한글
+     단어 중간(예: "우위"→"우"+"위")까지 갈라서 줄바꿈해 보기 안 좋았음 — word-break:keep-all로
+     단어(어절) 중간은 쪼개지 않고 띄어쓰기 단위로만 줄바꿈되게 함. break-word는 혹시 단어 하나가
+     박스보다 길 때(예: 아주 긴 영문 숫자)를 위한 안전장치로 유지. */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 /* 긍정/중립/부정 색상 코딩 — 지표박스(.indicator-interp) 전체 색칠과 문단 안 핵심 문구
@@ -1659,6 +1712,28 @@ body.raven-result-bg {
   text-align: center;
   color: var(--text-sub);
   font-size: 0.85rem;
+}
+
+/* 2026-08-10 피드백: 매출액/영업이익을 위아래로 나눠 그리던 방식 대신 좌우로 나란히 붙여서
+   각자 독립된 패널(자체 제목+자체 분기 라벨)로 표시해달라는 요청 — 두 계열을 하나의 SVG 안에서
+   같이 비교하기보다, 패널별로 훑어보는 구조로 재설계. */
+.earnings-chart-panels {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.earnings-chart-panel {
+  min-width: 0;
+}
+
+.earnings-panel-title {
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-sub);
+  margin-bottom: 0.4rem;
 }
 
 .earnings-svg {
