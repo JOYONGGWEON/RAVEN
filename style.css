@@ -910,10 +910,14 @@ body.raven-result-bg {
      2026-08-10 피드백(4차): 왼쪽(차트) 카드에도 동일하게 적용 — RAVEN SIGNAL/목표가·손절가 등
      안쪽 세부 박스는 위에서 불투명하게 바꿔둬서 이 배경에 묻히지 않고 구분됨.
      2026-08-10 피드백(5차): 그라디언트 윗부분(시작색)이 밝은 하늘색이라 가시성이 떨어진다는
-     지적 — 시작색을 좀 더 어두운 파랑-보라 쪽으로 낮춤(끝색 #9775fa는 유지). */
+     지적 — 시작색을 좀 더 어두운 파랑-보라 쪽으로 낮춤(끝색 #9775fa는 유지).
+     2026-08-10 피드백(6차): 시작색은 괜찮은데 시작·끝 전체적으로 더 어둡게, 그리고 AI분석
+     카드(.result-box-ai)도 감싸는 배경으로 포함(안의 .ai-analysis-result는 이미 90% 불투명이라
+     묻히지 않음, 버튼은 별도로 원래 밝은 색으로 되돌림 — 아래 .ai-analyze-btn 참고). */
   .result-col-left .result-box,
-  .result-col-right .result-box:first-of-type {
-    background: linear-gradient(135deg, #3b4fc9, #9775fa);
+  .result-col-right .result-box:first-of-type,
+  .result-box-ai {
+    background: linear-gradient(135deg, #2c3aa0, #7c4fe0);
   }
 
   .result-box-ai {
@@ -1050,11 +1054,14 @@ body.raven-result-bg {
 /* 2026-08-10 피드백(2차): "뺑뺑 도는" 회전 테두리가 아니라 — 카드 모양(사각형)은 고정된 채
    안에 채워진 색만 순환하는 느낌을 원한다는 재요청. raven-smoke-orb 팔레트(청록→하늘→인디고→보라,
    "이전에 쓴 보라색" 배경)를 카드 배경 자체로 쓰되, 그 위에 반투명 어두운 레이어를 겹쳐서
-   점수/글자 가독성은 유지 — background-position만 애니메이션해서 모양 변형/회전 없이 색만 흐르게 함. */
+   점수/글자 가독성은 유지 — background-position만 애니메이션해서 모양 변형/회전 없이 색만 흐르게 함.
+   2026-08-10 피드백(6차): 스크린샷 한 장으론 애니메이션 자체가 안 보이는 게 정상이지만("바뀐
+   것 같다"는 건 착각), 어두운 오버레이(55%)가 너무 짙어서 정지된 순간엔 거의 무채색으로 보이는
+   문제가 있었음 — 40%로 낮춰서 색이 더 잘 드러나게 함(가독성은 여전히 확보되는 수준). */
 .z-badge {
   position: relative;
   background:
-    linear-gradient(0deg, rgba(17, 24, 39, 0.55), rgba(17, 24, 39, 0.55)),
+    linear-gradient(0deg, rgba(17, 24, 39, 0.4), rgba(17, 24, 39, 0.4)),
     linear-gradient(120deg, #2dd4bf, #38bdf8, #6366f1, #a78bfa, #2dd4bf);
   background-size: 100% 100%, 300% 300%;
   animation: zBadgeColorCycle 10s ease-in-out infinite;
@@ -1515,11 +1522,14 @@ li.no-marker {
   min-width: 0;
 }
 
+/* 2026-08-10 피드백(6차): "RSI(14)"와 ": 상대강도"가 두 줄로 나뉘어 있던 걸 한 줄로 합침 */
 .indicator-box h4 {
   margin: 0 0 0.55rem 0;
   display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
+  flex-direction: row;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.3rem;
 }
 
 .indicator-title {
@@ -1617,13 +1627,14 @@ li.no-marker {
 
 /* 2026-08-01: 옅은 반투명 파란 배경 + 파란 글자였던 게 저시인성이라는 피드백을 받고, 엔트리
    화면 버튼(.entry-btn)과 같은 브랜드 그라디언트 + 흰 글자로 눈에 띄게 바꿈.
-   2026-08-10 피드백(5차): 카드 배경과 같은 이유로 시작색을 더 어두운 파랑-보라로 낮춤. */
+   2026-08-10 피드백(6차): "감싸는 UI"(카드 배경)를 어둡게 해달란 요청이었는데 버튼 자체를
+   어둡게 해버렸던 걸 원래 밝은 색으로 되돌림 — 어두운 그라디언트는 카드 배경(.result-box-ai)에 적용. */
 .ai-analyze-btn {
   width: 100%;
   padding: 0.9rem 1rem;
   border-radius: 0.875rem;
   border: none;
-  background: linear-gradient(135deg, #3b4fc9, #9775fa);
+  background: linear-gradient(135deg, #4dabf7, #9775fa);
   color: #fff;
   font-weight: 800;
   font-size: 0.95rem;
@@ -1681,27 +1692,24 @@ li.no-marker {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* 2026-08-10 피드백(6차): 카드 배경이 파랑-보라 그라디언트가 되면서 text-sub(회색)/accent(파랑)
+   글자색이 잘 안 보였음 — 활성/비활성 구분 없이 전부 흰색으로 통일(활성 표시는 밑줄만 유지). */
 .tab-btn {
   flex: 1;
   background: none;
   border: none;
-  color: var(--text-sub);
+  color: #fff;
   font-size: 0.85rem;
   font-weight: 600;
   padding: 0.75rem 0.5rem;
   cursor: pointer;
   border-bottom: 2px solid transparent;
-  transition: color 0.2s ease, border-color 0.2s ease;
+  transition: border-color 0.2s ease;
   white-space: nowrap;
 }
 
-.tab-btn:hover {
-  color: var(--text-main);
-}
-
 .tab-btn.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+  border-bottom-color: #fff;
 }
 
 /* 2026-08-04: 슬라이드(translateX + overflow:hidden) 방식을 세 차례 다르게 고쳐봐도 탭 전환
