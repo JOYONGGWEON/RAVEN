@@ -24,17 +24,33 @@ function formatConfidenceLabel(confidence) {
   return "신뢰도 보통";
 }
 
+function formatAlertPrice(price, domestic) {
+  return domestic
+    ? `₩ ${Math.round(price).toLocaleString("ko-KR")}`
+    : `$${price.toFixed(2)}`;
+}
+
+// 2026-08-10 피드백: "[RAVEN 알림]" 텍스트 대신 빨강/초록 아이콘+매수/매도 신호를 맨 앞에,
+// 신뢰도·현재가 앞에도 근거 목록과 같은 "•" 기호, 목표가/손절가도 추가.
 function formatAlertMessage(result, domestic, name) {
-  const label = result.signal === "BUY" ? "🟢 매수 신호" : "🔴 매도 신호";
-  const priceTxt = domestic
-    ? `₩${Math.round(result.price).toLocaleString("ko-KR")}`
-    : `$${result.price.toFixed(2)}`;
-  return (
-    `<b>[RAVEN 알림] ${formatSymbolLabel(result.symbol, name)} — ${label}</b>\n` +
-    `${formatConfidenceLabel(result.confidence)}\n` +
-    `현재가: ${priceTxt}\n` +
-    result.reasons.map((r) => `• ${r}`).join("\n")
-  );
+  const icon = result.signal === "BUY" ? "🟢" : "🔴";
+  const signalWord = result.signal === "BUY" ? "매수 신호" : "매도 신호";
+  const priceTxt = formatAlertPrice(result.price, domestic);
+
+  const lines = [
+    `<b>${icon} ${signalWord} — ${formatSymbolLabel(result.symbol, name)}</b>`,
+    `• ${formatConfidenceLabel(result.confidence)}`,
+    `• 현재가: ${priceTxt}`,
+  ];
+  if (Number.isFinite(result.target1)) {
+    lines.push(`• 목표가: ${formatAlertPrice(result.target1, domestic)}`);
+  }
+  if (Number.isFinite(result.stop)) {
+    lines.push(`• 손절가: ${formatAlertPrice(result.stop, domestic)}`);
+  }
+  lines.push(...result.reasons.map((r) => `• ${r}`));
+
+  return lines.join("\n");
 }
 
 // 관심종목 전체를 돌면서 골든/데드크로스·거래량 급증 신호를 체크하고, 신호가 있으면 텔레그램 전송

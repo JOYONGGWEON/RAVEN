@@ -7,26 +7,99 @@ const {
 
 // 관심종목 알림 전용 캔들 조회 — 프론트(app.js)의 fetchCandleData와 같은 응답 구조를 다루지만,
 // 서버 스케줄러에서 직접 KIS를 호출해야 해서(브라우저 전용 app.js는 require 불가) 별도로 둠.
+// 2026-08-10 피드백: 텔레그램 알림에 목표가/손절가도 넣어달라는 요청 — 계산에 필요한 highs/lows도
+// 같이 뽑아둠(기존엔 opens/closes/volumes만 썼음).
 async function fetchCandles(symbol) {
   const candles = await fetchKisCandles(symbol, 180);
 
   const chronological = [...candles].reverse();
   const opens = [];
+  const highs = [];
+  const lows = [];
   const closes = [];
   const volumes = [];
 
   for (const c of chronological) {
     const o = Number(c.openPrice);
+    const h = Number(c.highPrice);
+    const l = Number(c.lowPrice);
     const cl = Number(c.closePrice);
     const v = Number(c.volume);
-    if ([o, cl, v].some((n) => Number.isNaN(n))) continue;
+    if ([o, h, l, cl, v].some((n) => Number.isNaN(n))) continue;
     opens.push(o);
+    highs.push(h);
+    lows.push(l);
     closes.push(cl);
     volumes.push(v);
   }
 
   if (closes.length < 61) throw new Error("Not enough candle history for MA60");
-  return { opens, closes, volumes };
+  return { opens, highs, lows, closes, volumes };
+}
+
+// app.js의 calcATR과 동일한 Wilder 평활 방식(서버 전용 사본 — 브라우저 전용 app.js는 require 불가)
+function calcATR(highs, lows, closes, period = 14) {
+  const n = closes.length;
+  if (n < period + 1) return null;
+
+  const trList = [];
+  for (let i = 1; i < n; i++) {
+    const tr = Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - closes[i - 1]),
+      Math.abs(lows[i] - closes[i - 1])
+    );
+    trList.push(tr);
+  }
+
+  let atr = trList.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < trList.length; i++) {
+    atr = (atr * (period - 1) + trList[i]) / period;
+  }
+  return atr;
+}
+
+// 목표가/손절가 — app.js(analyzeData)의 로직을 간소화한 사본. 화면 분석은 스윙 클러스터링으로
+// 지지/저항을 잡지만, 알림은 빠른 참고용이라 최근 60봉 고가/저가로 간단히 근사(둘 다 최소 61봉을
+// 보장받으므로 항상 값이 나옴) — 손절은 지지선 또는 ATR×2 기준, 목표가는 저항선 또는 손절폭×1.5 기준.
+function calcTargetStop(highs, lows, closes) {
+  const n = closes.length;
+  const lastPrice = closes[n - 1];
+  const atr = calcATR(highs, lows, closes, 14);
+
+  const recentLows = lows.slice(Math.max(0, n - 60), n - 1);
+  const recentHighs = highs.slice(Math.max(0, n - 60), n - 1);
+  const support1 = recentLows.length ? Math.min(...recentLows) : null;
+  const resistance1 = recentHighs.length ? Math.max(...recentHighs) : null;
+
+  const MAX_RISK_PCT = 25;
+  const ATR_STOP_MULT = 2;
+
+  let stopBase;
+  if (support1 && support1 < lastPrice) {
+    stopBase = support1;
+  } else if (typeof atr === "number" && atr > 0) {
+    stopBase = lastPrice - ATR_STOP_MULT * atr;
+  } else {
+    stopBase = lastPrice * 0.95;
+  }
+
+  let riskPct = ((lastPrice - stopBase) / lastPrice) * 100;
+  if (riskPct > MAX_RISK_PCT) {
+    stopBase = lastPrice * (1 - MAX_RISK_PCT / 100);
+  }
+
+  const stop = stopBase * 0.99;
+  const riskAmount = lastPrice - stopBase;
+
+  let target1;
+  if (resistance1 && resistance1 > lastPrice) {
+    target1 = resistance1 * 0.995;
+  } else {
+    target1 = lastPrice + riskAmount * 1.5;
+  }
+
+  return { target1, stop };
 }
 
 // EMA "시리즈" — 크로스오버 감지는 어제/오늘 두 시점의 MA가 다 있어야 하므로
@@ -150,7 +223,7 @@ function rateConfidence(matchingCategories) {
 // 최종 신호(BUY/SELL/NONE)를 판정. 매도 쪽 신호가 항상 우선 — 알림 시스템은 놓치는 매수 기회보다
 // 놓치는 리스크 관리가 더 손해라는 판단(리스크 관리 우선 정책).
 async function checkSignal(symbol) {
-  const { opens, closes, volumes } = await fetchCandles(symbol);
+  const { opens, highs, lows, closes, volumes } = await fetchCandles(symbol);
 
   const maCross = detectMACross(closes);
   const volSurge = detectVolumeSurge(opens, closes, volumes);
@@ -221,12 +294,17 @@ async function checkSignal(symbol) {
     }
   }
 
+  // 목표가/손절가는 신호가 있을 때만 계산(불필요한 계산 방지) — 위 calcTargetStop 참고.
+  const targetStop = signal !== "NONE" ? calcTargetStop(highs, lows, closes) : null;
+
   return {
     symbol,
     signal,
     reasons,
     confidence: rateConfidence(matchingCategories),
     price: closes[closes.length - 1],
+    target1: targetStop ? targetStop.target1 : null,
+    stop: targetStop ? targetStop.stop : null,
   };
 }
 
