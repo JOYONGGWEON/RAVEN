@@ -62,42 +62,37 @@ function calcATR(highs, lows, closes, period = 14) {
 // 목표가/손절가 — app.js(analyzeData)의 로직을 간소화한 사본. 화면 분석은 스윙 클러스터링으로
 // 지지/저항을 잡지만, 알림은 빠른 참고용이라 최근 60봉 고가/저가로 간단히 근사(둘 다 최소 61봉을
 // 보장받으므로 항상 값이 나옴) — 손절은 지지선 또는 ATR×2 기준, 목표가는 저항선 또는 손절폭×1.5 기준.
+// 2026-08-10 피드백: 실측 결과 목표가/손절가가 비현실적으로 넓게 나오는 문제가 있었음
+// (예: 475150 손절 -25%/목표 +70%, 009150 손절 -26%/목표 +89%) — 원인 두 가지를 확인:
+// ①60일 최고/최저가를 그대로 저항/지지로 썼는데, 이 알림 대상 종목들처럼 60일 새 변동폭이 큰
+// 종목은 그 레벨 자체가 현재가에서 너무 멀리 떨어져 있어 "근거리 액션 가능한 알림"으로는 부적합
+// ②MAX_RISK_PCT 25%는 (화면 전체 분석용 app.js 로직을 그대로 복사한 값인데) 실시간 알림 문맥엔
+// 너무 느슨함 — 25% 손절은 사실상 "손절 기준이 없는 것"과 비슷한 리스크.
+// 그래서 알림 전용 로직은 60일 고가/저가 기반을 버리고 ATR(변동성)만으로 산정 — 종목 자체의
+// 최근 변동성에 비례해서 자동으로 스케일되고, R:R 1.5로 고정해 손절폭 대비 목표가가 항상 합리적인
+// 비율을 유지함. 손절폭 상한도 25%→12%로 낮춤(단기 알림 대상 손절로 합리적인 수준).
 function calcTargetStop(highs, lows, closes) {
   const n = closes.length;
   const lastPrice = closes[n - 1];
   const atr = calcATR(highs, lows, closes, 14);
 
-  const recentLows = lows.slice(Math.max(0, n - 60), n - 1);
-  const recentHighs = highs.slice(Math.max(0, n - 60), n - 1);
-  const support1 = recentLows.length ? Math.min(...recentLows) : null;
-  const resistance1 = recentHighs.length ? Math.max(...recentHighs) : null;
-
-  const MAX_RISK_PCT = 25;
   const ATR_STOP_MULT = 2;
+  const RR_RATIO = 1.5;
+  const MAX_RISK_PCT = 12;
 
-  let stopBase;
-  if (support1 && support1 < lastPrice) {
-    stopBase = support1;
-  } else if (typeof atr === "number" && atr > 0) {
-    stopBase = lastPrice - ATR_STOP_MULT * atr;
-  } else {
-    stopBase = lastPrice * 0.95;
-  }
+  let stopBase =
+    typeof atr === "number" && atr > 0
+      ? lastPrice - ATR_STOP_MULT * atr
+      : lastPrice * (1 - MAX_RISK_PCT / 100);
 
-  let riskPct = ((lastPrice - stopBase) / lastPrice) * 100;
+  const riskPct = ((lastPrice - stopBase) / lastPrice) * 100;
   if (riskPct > MAX_RISK_PCT) {
     stopBase = lastPrice * (1 - MAX_RISK_PCT / 100);
   }
 
   const stop = stopBase * 0.99;
   const riskAmount = lastPrice - stopBase;
-
-  let target1;
-  if (resistance1 && resistance1 > lastPrice) {
-    target1 = resistance1 * 0.995;
-  } else {
-    target1 = lastPrice + riskAmount * 1.5;
-  }
+  const target1 = lastPrice + riskAmount * RR_RATIO;
 
   return { target1, stop };
 }

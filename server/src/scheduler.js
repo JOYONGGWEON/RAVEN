@@ -30,8 +30,15 @@ function formatAlertPrice(price, domestic) {
     : `$${price.toFixed(2)}`;
 }
 
+// 현재가 대비 +/-% — 목표가/손절가 옆에 괄호로 병기(요청 반영)
+function formatPctVsPrice(level, price) {
+  const pct = ((level - price) / price) * 100;
+  const sign = pct >= 0 ? "+" : "";
+  return `${sign}${pct.toFixed(1)}%`;
+}
+
 // 2026-08-10 피드백: "[RAVEN 알림]" 텍스트 대신 빨강/초록 아이콘+매수/매도 신호를 맨 앞에,
-// 신뢰도·현재가 앞에도 근거 목록과 같은 "•" 기호, 목표가/손절가도 추가.
+// 신뢰도·현재가 앞에도 근거 목록과 같은 "•" 기호, 목표가/손절가도 추가(현재가 대비 %도 병기).
 function formatAlertMessage(result, domestic, name) {
   const icon = result.signal === "BUY" ? "🟢" : "🔴";
   const signalWord = result.signal === "BUY" ? "매수 신호" : "매도 신호";
@@ -43,10 +50,14 @@ function formatAlertMessage(result, domestic, name) {
     `• 현재가: ${priceTxt}`,
   ];
   if (Number.isFinite(result.target1)) {
-    lines.push(`• 목표가: ${formatAlertPrice(result.target1, domestic)}`);
+    lines.push(
+      `• 목표가: ${formatAlertPrice(result.target1, domestic)} (${formatPctVsPrice(result.target1, result.price)})`
+    );
   }
   if (Number.isFinite(result.stop)) {
-    lines.push(`• 손절가: ${formatAlertPrice(result.stop, domestic)}`);
+    lines.push(
+      `• 손절가: ${formatAlertPrice(result.stop, domestic)} (${formatPctVsPrice(result.stop, result.price)})`
+    );
   }
   lines.push(...result.reasons.map((r) => `• ${r}`));
 
