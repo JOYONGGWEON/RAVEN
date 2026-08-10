@@ -908,10 +908,12 @@ body.raven-result-bg {
   /* 2026-08-10 피드백: 검색버튼과 같은 그라디언트를 원한 게 이 카드(상세 탭을 감싸는 배경)였음 —
      스크린샷에 체크 표시된 부분. 그대로 적용.
      2026-08-10 피드백(4차): 왼쪽(차트) 카드에도 동일하게 적용 — RAVEN SIGNAL/목표가·손절가 등
-     안쪽 세부 박스는 위에서 불투명하게 바꿔둬서 이 배경에 묻히지 않고 구분됨. */
+     안쪽 세부 박스는 위에서 불투명하게 바꿔둬서 이 배경에 묻히지 않고 구분됨.
+     2026-08-10 피드백(5차): 그라디언트 윗부분(시작색)이 밝은 하늘색이라 가시성이 떨어진다는
+     지적 — 시작색을 좀 더 어두운 파랑-보라 쪽으로 낮춤(끝색 #9775fa는 유지). */
   .result-col-left .result-box,
   .result-col-right .result-box:first-of-type {
-    background: linear-gradient(135deg, #4dabf7, #9775fa);
+    background: linear-gradient(135deg, #3b4fc9, #9775fa);
   }
 
   .result-box-ai {
@@ -1255,7 +1257,8 @@ body.raven-result-bg {
 .volume-profile-wrap {
   display: flex;
   align-items: stretch;
-  gap: 0.4rem;
+  /* 2026-08-10 피드백(5차): 가격 라벨과 막대 사이 간격을 좀 더 벌려달라는 요청 */
+  gap: 0.9rem;
   /* 2026-08-10 피드백: 16개 매물대가 180px 안에 다 들어가면 한 줄당 11px 남짓이라 너무 촘촘해서
      가격 글씨와 막대 줄이 안 맞아 보였음(글씨가 줄 높이를 넘치는 수준) — 높이를 크게 늘려 줄당
      여백을 확보. */
@@ -1613,13 +1616,14 @@ li.no-marker {
 }
 
 /* 2026-08-01: 옅은 반투명 파란 배경 + 파란 글자였던 게 저시인성이라는 피드백을 받고, 엔트리
-   화면 버튼(.entry-btn)과 같은 브랜드 그라디언트 + 흰 글자로 눈에 띄게 바꿈. */
+   화면 버튼(.entry-btn)과 같은 브랜드 그라디언트 + 흰 글자로 눈에 띄게 바꿈.
+   2026-08-10 피드백(5차): 카드 배경과 같은 이유로 시작색을 더 어두운 파랑-보라로 낮춤. */
 .ai-analyze-btn {
   width: 100%;
   padding: 0.9rem 1rem;
   border-radius: 0.875rem;
   border: none;
-  background: linear-gradient(135deg, #4dabf7, #9775fa);
+  background: linear-gradient(135deg, #3b4fc9, #9775fa);
   color: #fff;
   font-weight: 800;
   font-size: 0.95rem;

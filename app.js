@@ -4187,20 +4187,32 @@ function renderTradingViewChart(symbol, data) {
       save_image: false,
       container_id: containerId,
       // 기본 지표: RSI, MACD, MA(5/15/33/60/112/224/448) — 2026-08-10 피드백으로 기간 변경.
-      // ⚠️ 실제 버그: "moving average N.length" study_overrides 방식은 동일 스터디를 여러 번
-      // 추가할 때 신뢰할 수 없었음(실측 — 3개(기본 period 9)로만 뜨고 나머지 override가 무시됨).
-      // 각 스터디를 {id, inputs}로 개별 지정하는 공식 방식으로 교체.
+      // ⚠️ 실측으로 확인된 이 무료 임베드 위젯(tv.js)의 한계: {id, inputs} 객체 방식으로
+      // 바꿔봤더니 오히려 EMA가 하나도 안 뜨는 전면 회귀가 발생함(실측 확인) — 문자열 배열 +
+      // study_overrides 방식(기존에도 3개만 부분 적용되던 방식)으로 되돌림. 이 무료 위젯은 동일
+      // 스터디를 여러 번 추가할 때 개별 기간(length) 지정을 안정적으로 지원하지 않는 것으로
+      // 보임 — 정확히 7개 기간을 다 강제하려면 이 위젯 대신 국내 차트처럼 자체 구현(Lightweight
+      // Charts + 해외 캔들 데이터)으로 교체해야 할 수 있음(더 큰 작업이라 보류).
       studies: [
         "RSI@tv-basicstudies",
         "MACD@tv-basicstudies",
-        { id: "MAExp@tv-basicstudies", inputs: { length: 5 } },
-        { id: "MAExp@tv-basicstudies", inputs: { length: 15 } },
-        { id: "MAExp@tv-basicstudies", inputs: { length: 33 } },
-        { id: "MAExp@tv-basicstudies", inputs: { length: 60 } },
-        { id: "MAExp@tv-basicstudies", inputs: { length: 112 } },
-        { id: "MAExp@tv-basicstudies", inputs: { length: 224 } },
-        { id: "MAExp@tv-basicstudies", inputs: { length: 448 } }
-      ]
+        "MAExp@tv-basicstudies",
+        "MAExp@tv-basicstudies",
+        "MAExp@tv-basicstudies",
+        "MAExp@tv-basicstudies",
+        "MAExp@tv-basicstudies",
+        "MAExp@tv-basicstudies",
+        "MAExp@tv-basicstudies"
+      ],
+      study_overrides: {
+        "moving average 1.length": 5,
+        "moving average 2.length": 15,
+        "moving average 3.length": 33,
+        "moving average 4.length": 60,
+        "moving average 5.length": 112,
+        "moving average 6.length": 224,
+        "moving average 7.length": 448
+      }
     });
   };
 
