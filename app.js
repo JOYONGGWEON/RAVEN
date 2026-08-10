@@ -2351,6 +2351,25 @@ function toneSpan(text, sentiment) {
   return `<span class="sentiment-${sentiment}">${text}</span>`;
 }
 
+// tone 숫자(1/0/-1) → toneSpan sentiment 문자열
+function toneToSentiment(tone) {
+  return tone > 0 ? "pos" : tone < 0 ? "neg" : "neu";
+}
+
+// 2026-08-10 피드백: 서버가 내려주는 줄 전체를 tone 하나로 통째로 물들이면, 한 줄 안에 서로 다른
+// 방향의 사실이 섞여 있을 때(예: "외국인은 순매도, 기관은 순매수") 오해를 줌 — highlights 배열로
+// 지정된 부분 문자열만 찾아서 toneSpan으로 감싸고 나머지는 원래 색 그대로 둠.
+// highlights가 없거나 비어있으면 null을 반환(호출측이 textContent로 그대로 표시하도록).
+function applyHighlights(text, highlights) {
+  if (!highlights || !highlights.length) return null;
+  let html = text;
+  highlights.forEach(({ text: fragment, tone }) => {
+    if (!fragment || !html.includes(fragment)) return;
+    html = html.split(fragment).join(toneSpan(fragment, toneToSentiment(tone)));
+  });
+  return html;
+}
+
 // sentiment: "pos"(긍정/녹색) | "neu"(중립/주황) | "neg"(부정/빨강) | undefined(색 없음, 기본색 유지)
 // interpHtml은 innerHTML로 렌더링됨 — toneSpan()으로 만든 부분 강조(예: MACD 크로스오버 문구만
 // 별도 색칠)를 문장 안에 그대로 심을 수 있게 하기 위함(아래 MACD 박스 참고).
@@ -4302,14 +4321,16 @@ function renderSupplyDemandBox(data) {
   if (dateEl) dateEl.textContent = data.date ? `기준일: ${data.date}` : "";
   if (listEl) {
     listEl.innerHTML = "";
-    // 2026-08-10 피드백: 전일수급 박스만 색상 코딩이 없었음 — 서버가 이제 각 줄의 tone(1/0/-1)도
-    // 같이 내려줘서(위 renderSupplyDemandBox 주석 참고), tone이 있는 줄만 toneSpan으로 색칠.
+    // ⚠️ 실제 버그(사용자 보고): 줄 전체를 tone 하나로 물들였더니, "개인 순매수·외국인 순매도·
+    // 기관 순매수"처럼 한 줄 안에 서로 다른 방향의 사실이 섞여 있을 때도 줄 전체가 한 색으로
+    // 칠해져서 오해를 줬음 — 서버가 이제 highlights(부분 문자열+tone 배열)도 내려주므로, 그
+    // 부분만 찾아서 색칠하고 나머지 텍스트(사실 나열 등)는 원래 색 그대로 둠.
     data.lines.forEach((line) => {
       const li = document.createElement("li");
       const text = typeof line === "string" ? line : line.text;
-      const tone = typeof line === "string" ? 0 : line.tone;
-      if (tone > 0) li.innerHTML = toneSpan(text, "pos");
-      else if (tone < 0) li.innerHTML = toneSpan(text, "neg");
+      const highlights = typeof line === "string" ? null : line.highlights;
+      const html = applyHighlights(text, highlights);
+      if (html) li.innerHTML = html;
       else li.textContent = text;
       listEl.appendChild(li);
     });
