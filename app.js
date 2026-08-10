@@ -3743,6 +3743,10 @@ function updateUI(data, analysis, fxRate, stockName) {
       detailLines.push(`참고할 지표: ${neutralBits.join(", ")}.`);
     }
     detailLines.push("레버리지/단기 트레이딩보다는 관망 또는 소량만 대응하는 것을 권장합니다.");
+    // 2026-08-10 피드백(3차): 수급/패턴 멘트(ctxLine)를 목표가·손절가 위로 이동, 그 사이는
+    // 이탈/돌파 시나리오처럼 점선으로 구분.
+    if (ctxLine) detailLines.push(ctxLine);
+    detailLines.push(NARRATIVE_DIVIDER);
     detailLines.push(
       ...buildActionLines(
         "여기까지 오르면 돌파 여부를 보고 추종 매수 재검토",
@@ -3750,7 +3754,6 @@ function updateUI(data, analysis, fxRate, stockName) {
         "여기까지 빠지면 지지 여부를 보고 매수 재검토"
       )
     );
-    if (ctxLine) detailLines.push(ctxLine);
     // NEUTRAL은 지지·저항 사이 어느 쪽으로도 열려있는 구간이라 양쪽 시나리오를 모두 제시
     addBreakScenarios(["support", "resistance"]);
 
@@ -3762,6 +3765,8 @@ function updateUI(data, analysis, fxRate, stockName) {
         if (oversoldBits.length) detailLines.push(`추가로 ${oversoldBits.join(", ")} 상태입니다.`);
         detailLines.push("단기 기술적 반등 가능성은 있지만, 추세 자체가 약세라 고위험 역추세 전략입니다.");
         detailLines.push("포지션 크기를 줄이고, 지지선 이탈 시 재진입을 포기하는 강한 손절 기준이 필요합니다.");
+        if (ctxLine) detailLines.push(ctxLine);
+        detailLines.push(NARRATIVE_DIVIDER);
         detailLines.push(
           ...buildActionLines(
             "반등 목표가 — 추세가 약하므로 도달 시 빠른 분할 익절 권장",
@@ -3771,7 +3776,6 @@ function updateUI(data, analysis, fxRate, stockName) {
         );
         const trailingLine1 = buildTrailingStopLine();
         if (trailingLine1) detailLines.push(trailingLine1);
-        if (ctxLine) detailLines.push(ctxLine);
         addBreakScenarios(["support"]);
       } else {
         mainTxt = "지지선 근처 눌림 매수 우위";
@@ -3783,6 +3787,8 @@ function updateUI(data, analysis, fxRate, stockName) {
         if (bits.length) detailLines.push(`현재가가 ${bits.join(", ")} 상태입니다.`);
         detailLines.push(`${rrTxt}로 손절 대비 기대 수익이 유리한 구조입니다.`);
         detailLines.push("지지선 이탈 시 빠른 손절을 전제로 한 분할 매수 전략이 1안입니다.");
+        if (ctxLine) detailLines.push(ctxLine);
+        detailLines.push(NARRATIVE_DIVIDER);
         detailLines.push(
           ...buildActionLines(
             "도달 시 절반 익절 후 나머지는 2차 목표가까지 홀딩 고려",
@@ -3792,7 +3798,6 @@ function updateUI(data, analysis, fxRate, stockName) {
         );
         const trailingLine2 = buildTrailingStopLine();
         if (trailingLine2) detailLines.push(trailingLine2);
-        if (ctxLine) detailLines.push(ctxLine);
         addBreakScenarios(["support"]);
       }
     } else if (verdict.tier === "SELL") {
@@ -3805,6 +3810,8 @@ function updateUI(data, analysis, fxRate, stockName) {
           `현재가가 ${bits.join(", ")}에 위치해 있고, ${rrTxt}로 아래쪽 리스크가 더 큰 구조입니다.`,
           "신규 매수보다는 기존 보유 물량의 분할 청산/헤지 전략이 1순위입니다."
         ];
+        if (ctxLine) detailLines.push(ctxLine);
+        detailLines.push(NARRATIVE_DIVIDER);
         detailLines.push(
           ...buildActionLines(
             "저항 돌파 실패 시(반등 후 재하락) 기존 보유 물량 분할 청산 구간",
@@ -3812,7 +3819,6 @@ function updateUI(data, analysis, fxRate, stockName) {
             "저항 부근에서도 밀리면서 이 가격대까지 빠지면 손절 검토"
           )
         );
-        if (ctxLine) detailLines.push(ctxLine);
         addBreakScenarios(["resistance"]);
       } else {
         mainTxt = "R:R 불리 (위험 대비 보상 부족)";
@@ -3822,6 +3828,8 @@ function updateUI(data, analysis, fxRate, stockName) {
         ];
         if (rrBits.length) detailLines.push(`추가로 ${rrBits.join(", ")} 상태입니다.`);
         detailLines.push("추세·수급이 좋아 보여도 진입보다는 다음 더 유리한 R:R 구간을 기다리는 것이 효율적입니다.");
+        if (ctxLine) detailLines.push(ctxLine);
+        detailLines.push(NARRATIVE_DIVIDER);
         detailLines.push(
           ...buildActionLines(
             "여기까지 오르면 R:R이 개선되니 그때 재검토",
@@ -3829,7 +3837,6 @@ function updateUI(data, analysis, fxRate, stockName) {
             "이 가격대까지 밀리면 추가 하락 리스크가 커지는 구간"
           )
         );
-        if (ctxLine) detailLines.push(ctxLine);
         addBreakScenarios(["resistance"]);
       }
     }
@@ -4374,7 +4381,8 @@ function updateNextEarningsPill() {
   }
 
   const estimateTxt = info.isEstimate ? " (예상)" : "";
-  barEl.innerHTML = `📅 다음 실적발표 예상일: ${info.date}${estimateTxt}`;
+  // 2026-08-10 피드백(2차): 눈에 띄는 바 대신 "*" 표시가 붙은 작은 텍스트로(위 CSS 참고).
+  barEl.innerHTML = `* 다음 실적발표 예상일: ${info.date}${estimateTxt}`;
   barEl.classList.remove("hidden");
 }
 

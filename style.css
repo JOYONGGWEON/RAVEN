@@ -905,6 +905,12 @@ body.raven-result-bg {
     padding: 2.4rem;
   }
 
+  /* 2026-08-10 피드백: 검색버튼과 같은 그라디언트를 원한 게 이 카드(상세 탭을 감싸는 배경)였음 —
+     스크린샷에 체크 표시된 부분. 그대로 적용. */
+  .result-col-right .result-box:first-of-type {
+    background: linear-gradient(135deg, #4dabf7, #9775fa);
+  }
+
   .result-box-ai {
     grid-column: 1 / -1;
   }
@@ -1036,34 +1042,27 @@ body.raven-result-bg {
   gap: 0.75rem;
 }
 
-/* 2026-08-10 피드백: RAVEN SCORE를 그라디언트 순환색상으로 표현해달라는 요청 — 카드 자체를
-   무지개색으로 채우면 안의 점수/글자 가독성이 떨어져서, 대신 raven-smoke-orb(PIN/엔트리 화면의
-   무지개빛 청록→하늘→인디고→보라 그라디언트, 이전에 쓴 "보라색" 배경이 이 팔레트)를 그대로 재사용한
-   회전하는 그라디언트 테두리로 표현. ::before를 카드보다 살짝 크게(inset:-2px) 뒤에 깔고
-   회전시키면, 카드의 불투명 배경에 가려 2px 테두리만 보임(overflow는 기본값 visible 유지 필요). */
+/* 2026-08-10 피드백(2차): "뺑뺑 도는" 회전 테두리가 아니라 — 카드 모양(사각형)은 고정된 채
+   안에 채워진 색만 순환하는 느낌을 원한다는 재요청. raven-smoke-orb 팔레트(청록→하늘→인디고→보라,
+   "이전에 쓴 보라색" 배경)를 카드 배경 자체로 쓰되, 그 위에 반투명 어두운 레이어를 겹쳐서
+   점수/글자 가독성은 유지 — background-position만 애니메이션해서 모양 변형/회전 없이 색만 흐르게 함. */
 .z-badge {
   position: relative;
-  background: linear-gradient(145deg, #1e2640, #111827);
+  background:
+    linear-gradient(0deg, rgba(17, 24, 39, 0.55), rgba(17, 24, 39, 0.55)),
+    linear-gradient(120deg, #2dd4bf, #38bdf8, #6366f1, #a78bfa, #2dd4bf);
+  background-size: 100% 100%, 300% 300%;
+  animation: zBadgeColorCycle 10s ease-in-out infinite;
   padding: 1.5rem;
   border-radius: 1rem;
   min-width: 8.75rem;
   text-align: center;
   border: 1px solid rgba(255,255,255,0.05);
-  z-index: 0;
 }
 
-.z-badge::before {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: inherit;
-  background: conic-gradient(from 0deg, #2dd4bf, #38bdf8, #6366f1, #a78bfa, #2dd4bf);
-  z-index: -1;
-  animation: zBadgeRingRotate 6s linear infinite;
-}
-
-@keyframes zBadgeRingRotate {
-  to { transform: rotate(360deg); }
+@keyframes zBadgeColorCycle {
+  0%, 100% { background-position: 0 0, 0% 50%; }
+  50% { background-position: 0 0, 100% 50%; }
 }
 
 .z-risk-label {
@@ -1660,25 +1659,27 @@ li.no-marker {
 
 /* ───────── 상세 탭 (추세·모멘텀 / 수급 / 패턴·신호 / 실적) ───────── */
 
-/* 2026-08-10 피드백: 탭 버튼(추세·모멘텀/수급/패턴·신호/실적/뉴스)을 검색버튼과 같은 그라디언트로
-   — 선택된 탭만 그라디언트 채움(active), 나머지는 작은 회색 박스(비활성) 상태를 유지. */
+/* 2026-08-10: 탭 버튼 그라디언트 시도는 되돌림(사용자가 의도한 "큰 탭 UI"가 아니었음 — 실제로는
+   이 탭들을 감싸는 카드 배경(.result-col-right .result-box:first-of-type)을 가리킨 것이었음,
+   아래 참고) — 원래의 밑줄 스타일로 복원. */
 .tabs-bar {
   display: flex;
   gap: 0.375rem;
   margin: 2rem 0 1rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .tab-btn {
   flex: 1;
-  background: rgba(255, 255, 255, 0.05);
+  background: none;
   border: none;
-  border-radius: 999px;
   color: var(--text-sub);
   font-size: 0.85rem;
   font-weight: 600;
-  padding: 0.65rem 0.5rem;
+  padding: 0.75rem 0.5rem;
   cursor: pointer;
-  transition: color 0.2s ease, background 0.2s ease;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s ease, border-color 0.2s ease;
   white-space: nowrap;
 }
 
@@ -1687,8 +1688,8 @@ li.no-marker {
 }
 
 .tab-btn.active {
-  background: linear-gradient(135deg, #4dabf7, #9775fa);
-  color: #fff;
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 /* 2026-08-04: 슬라이드(translateX + overflow:hidden) 방식을 세 차례 다르게 고쳐봐도 탭 전환
@@ -1771,12 +1772,14 @@ li.no-marker {
 
 /* 2026-08-10 피드백: 매출액/영업이익 제목을 가로로 긴 PILL UI로, 흰 글씨로 — 검색버튼
    (#search-btn/#analyze-btn)과 같은 브랜드 그라디언트를 그대로 재사용해 톤을 통일. */
+/* 2026-08-10 피드백: 카드 배경(.result-col-right .result-box:first-of-type)이 이제 같은
+   블루-퍼플 그라디언트를 쓰게 되면서 이 PILL도 같은 색이면 안 보임 — 다른 색(청록-하늘)으로 교체. */
 .earnings-panel-pill {
   display: inline-block;
   width: 100%;
   padding: 0.4rem 1rem;
   border-radius: 999px;
-  background: linear-gradient(135deg, #4dabf7, #9775fa);
+  background: linear-gradient(135deg, #2dd4bf, #0ea5e9);
   color: #fff;
   font-size: 0.8rem;
   font-weight: 700;
@@ -1857,7 +1860,7 @@ li.no-marker {
 /* 2026-08-10 피드백: 분기/매출/영업이익 제목 행이 배경 없이 밋밋해 보인다는 지적 — 검색버튼과
    같은 브랜드 그라디언트 pill로 변경(위 .earnings-panel-pill과 동일 톤). */
 .earnings-quarter-header .earnings-capsule-title {
-  background: linear-gradient(135deg, #4dabf7, #9775fa);
+  background: linear-gradient(135deg, #2dd4bf, #0ea5e9);
   color: #fff;
   padding: 0.4rem 0.5rem;
 }
@@ -1893,16 +1896,15 @@ li.no-marker {
 
 /* 2026-08-10 피드백: 다음 실적발표 예상일을 분기 리스트 안에 섞인 행이 아니라, 표 아래 별도의
    가로로 긴 바(bar)로 분리 — 검색버튼과 같은 브랜드 그라디언트로 시선을 끌게 함. */
+/* 2026-08-10 피드백(2차): 눈에 띄는 그라디언트 바 대신, 표 아래에 "*" 표시를 단 작은 노란색
+   텍스트 한 줄로 — 부가 정보 톤으로 낮춤. */
 .earnings-next-earnings {
   grid-column: 1 / -1;
   margin-top: 0.6rem;
-  padding: 0.55rem 1rem;
-  border-radius: 0.75rem;
-  background: linear-gradient(135deg, #4dabf7, #9775fa);
-  color: #fff;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  text-align: center;
+  color: var(--macro-note);
+  text-align: left;
 }
 
 /* ───────── 뉴스 탭 ───────── */
