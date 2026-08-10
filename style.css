@@ -906,7 +906,10 @@ body.raven-result-bg {
   }
 
   /* 2026-08-10 피드백: 검색버튼과 같은 그라디언트를 원한 게 이 카드(상세 탭을 감싸는 배경)였음 —
-     스크린샷에 체크 표시된 부분. 그대로 적용. */
+     스크린샷에 체크 표시된 부분. 그대로 적용.
+     2026-08-10 피드백(4차): 왼쪽(차트) 카드에도 동일하게 적용 — RAVEN SIGNAL/목표가·손절가 등
+     안쪽 세부 박스는 위에서 불투명하게 바꿔둬서 이 배경에 묻히지 않고 구분됨. */
+  .result-col-left .result-box,
   .result-col-right .result-box:first-of-type {
     background: linear-gradient(135deg, #4dabf7, #9775fa);
   }
@@ -1313,8 +1316,11 @@ body.raven-result-bg {
 
 /* ───────── Grid Sections ───────── */
 
+/* 2026-08-10 피드백(4차): 카드 배경에 그라디언트를 넣었더니 반투명(5%)이던 이 안쪽 박스들이
+   거의 그대로 비쳐서 카드와 구분이 안 됐음 — "가장 뒤쪽 배경만" 그라디언트가 적용되길 원했던
+   것이라, 안쪽 박스는 불투명한 원래 카드색(--bg-card)으로 채워서 겉과 속이 확실히 구분되게 함. */
 .section-box {
-  background: rgba(255,255,255,0.05);
+  background: var(--bg-card);
   padding: 1.5rem;
   border-radius: 1rem;
 }
@@ -1416,11 +1422,12 @@ li.no-marker {
   display: none;
 }
 
+/* 2026-08-10 피드백(4차): 카드 배경 그라디언트에 묻히지 않도록 불투명 톤으로 변경 */
 .wave-chip {
   padding: 0.9rem 0.5rem;
   border-radius: 0.875rem;
   text-align: center;
-  background: rgba(255, 255, 255, 0.04);
+  background: #26305a;
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -1496,8 +1503,9 @@ li.no-marker {
   grid-column: span 2;
 }
 
+/* 2026-08-10 피드백(4차): 카드 배경 그라디언트에 묻히지 않도록 불투명 톤으로 변경(위 .section-box 참고) */
 .indicator-box {
-  background: linear-gradient(160deg, rgba(59, 130, 246, 0.12), rgba(255, 255, 255, 0.02));
+  background: linear-gradient(160deg, #24304f, #1a2340);
   border: 1px solid rgba(59, 130, 246, 0.2);
   padding: 1.1rem 1.25rem;
   border-radius: 0.875rem;
@@ -1958,9 +1966,10 @@ li.no-marker {
   margin-top: 1.5rem;
 }
 
+/* 2026-08-10 피드백(4차): 카드 배경 그라디언트에 묻히지 않도록 불투명 톤으로 변경 */
 .target-box {
   flex: 1;
-  background: rgba(255,255,255,0.05);
+  background: var(--bg-card);
   padding: 1.5rem;
   border-radius: 1rem;
   text-align: center;

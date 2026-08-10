@@ -4082,12 +4082,15 @@ function renderDomesticLightweightChart(container, data) {
         lineData.push({ time: validDates[i], value: series[i] });
       }
       if (!lineData.length) return;
+      // 2026-08-10 피드백: 해외차트(TradingView MAExp 스터디)는 "EMA"로 표시되는데 국내차트만
+      // "MA"로 표시돼 있었음 — 둘 다 지수이동평균(calcEMASeries)으로 계산 방식은 이미 동일하니
+      // 표기만 EMA로 통일.
       const maSeries = chart.addSeries(LightweightCharts.LineSeries, {
         color,
         lineWidth: 1,
         priceLineVisible: false,
         lastValueVisible: false,
-        title: `MA${period}`
+        title: `EMA${period}`
       });
       maSeries.setData(lineData);
     });
