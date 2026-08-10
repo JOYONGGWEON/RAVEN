@@ -59,7 +59,9 @@ async function checkWatchlistAndAlert() {
 }
 
 // 매일 06:00 KST에 도는 전체 작업(수급데이터 수집 + 관심종목 신호체크·알림) — internal node-cron과
-// 외부 트리거(아래 /api/scheduler/run-daily 라우트) 양쪽에서 재사용하려고 별도 함수로 분리함.
+// 외부 트리거(routes/watchlist.js의 POST /api/watchlist/run-daily) 양쪽에서 재사용하려고 별도
+// 함수로 분리함. 실제 외부 호출은 .github/workflows/daily-scheduler.yml(GitHub Actions, 매일
+// 06:00 KST)이 담당 — 2026-08-10에 이 workflow 자체가 누락돼 있던 걸 발견하고 새로 추가함.
 // ⚠️ 2026-08-04 발견: Render 무료 플랜은 15분간 요청이 없으면 프로세스 자체가 잠들고, 그 상태에서는
 // node-cron도 같이 멈춰서 06:00에 아무도 안 깨워주면 이 코드가 통째로 실행이 안 됨(에러조차 안 남음,
 // 그냥 조용히 스킵됨) — 사용자가 "테스트 알림 이후 며칠째 알림이 안 온다"고 보고해서 발견함. 외부에서

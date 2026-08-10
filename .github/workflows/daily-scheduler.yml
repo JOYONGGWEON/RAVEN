@@ -1,0 +1,22 @@
+name: RAVEN Daily Scheduler
+
+# Render 무료 플랜은 15분간 요청이 없으면 서버가 잠들어서, 서버 안의 06:00 KST
+# node-cron(server/src/scheduler.js)이 같이 멈춰버림 — 여기서 매일 정해진 시각에
+# /api/watchlist/run-daily를 직접 호출해서 서버를 깨우고 작업(수급데이터 수집 +
+# 관심종목 신호체크 + 텔레그램 알림)이 실제로 실행되게 함.
+on:
+  schedule:
+    # 06:00 KST = 전날 21:00 UTC (cron 스케줄은 UTC 기준)
+    - cron: "0 21 * * *"
+  workflow_dispatch: {} # Actions 탭에서 수동으로도 실행 가능(테스트용)
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call RAVEN backend /api/watchlist/run-daily
+        run: |
+          curl -sf -X POST "https://raven-backend-z5uc.onrender.com/api/watchlist/run-daily?secret=${{ secrets.SCHEDULER_TRIGGER_SECRET }}" \
+            --max-time 120 \
+            -o response.json
+          cat response.json
