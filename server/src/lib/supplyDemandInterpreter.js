@@ -416,7 +416,11 @@ async function interpretSupplyDemand(symbol) {
 
   return {
     date: latestDate,
-    lines: parts.map((p) => p.text),
+    // 2026-08-10 피드백: 수급 탭 다른 곳엔 긍정/중립/부정 색상 코딩이 있는데 이 박스(전일수급)만
+    // 색이 전혀 없다는 지적 — 원인은 여기서 발견됨: 각 interpret*() 함수가 이미 tone(1/0/-1)을
+    // 계산해서 반환하는데, 이 줄에서 text만 뽑고 tone을 버리고 있었음(클라이언트가 색칠할 근거
+    // 자체가 응답에 없었음). tone도 같이 내려주도록 수정.
+    lines: parts.map((p) => ({ text: p.text, tone: p.tone })),
     outlook,
     outlookShort,
     // 외국인/기관 연속매매 tone(-2~+2, 방향당 ±1) — 클라이언트가 RAVEN SCORE에 소폭 반영할 때 씀.

@@ -34,7 +34,8 @@ const formatUSD = (num) =>
     maximumFractionDigits: 2
   });
 
-const formatKRW = (num) => "₩" + Math.round(Number(num)).toLocaleString("ko-KR");
+// 2026-08-10 피드백: "₩254,000"처럼 붙여쓰지 말고 "₩ 254,000"처럼 한 칸 띄워 표시.
+const formatKRW = (num) => "₩ " + Math.round(Number(num)).toLocaleString("ko-KR");
 
 // 페이지 새로고침·재검색 시 가격/지수 값이 정적으로 뚝 바뀌는 대신 이전 값에서 새 값으로
 // 굴러가듯 카운트업되는 시각 효과. 실시간 데이터 스트리밍이 아니라 순수 애니메이션임 —
@@ -990,12 +991,19 @@ function calcVolumeProfile(highs, lows, closes, volumes, lookback = 60, bucketCo
   const distPct = poc !== 0 ? ((lastPrice - poc) / poc) * 100 : 0;
 
   const maxVol = Math.max(...buckets);
+  // 2026-08-10 피드백: POC(최대거래구간, 노란색)처럼 현재가가 속한 매물대도 색으로 구분 —
+  // 현재가가 정확히 마지막 버킷 상단 경계와 같으면(52주 신고가 등) 마지막 버킷에 귀속시킴.
+  const currentIdx = Math.min(
+    bucketCount - 1,
+    Math.max(0, Math.floor((lastPrice - rangeLow) / bucketSize))
+  );
   // 버킷은 낮은 가격(index 0) → 높은 가격 순서 — 렌더링 쪽에서 화면상 위=높은 가격으로 뒤집어서 씀
   const bars = buckets.map((v, i) => ({
     priceLow: rangeLow + i * bucketSize,
     priceHigh: rangeLow + (i + 1) * bucketSize,
     ratio: maxVol > 0 ? v / maxVol : 0,
-    isPoc: i === pocIdx
+    isPoc: i === pocIdx,
+    isCurrent: i === currentIdx
   }));
 
   return { poc, distPct, bars };
@@ -1985,6 +1993,8 @@ function calcFlowSignal(data, analysis) {
   let flowNote =
     "거래량과 봉 구조 모두 평균적인 수준 — 뚜렷한 수급 쏠림보다는 추세/지지·저항이 더 중요.";
 
+  // 2026-08-10 피드백: 수급 탭 본문(flowNote)에도 긍정/중립/부정 색상 코딩 적용 — 해석 문구의
+  // 핵심 판단 어구만 toneSpan으로 강조(문장 전체를 물들이면 오히려 안 읽힘, 다른 탭과 동일 원칙).
   if (volRatio != null && volRatio >= 1.3 && bodyRatio >= 0.4 && c > o) {
     flowType = "BUY_DOMINANT";
     flowLabel = "매수세 우위";
@@ -1992,7 +2002,7 @@ function calcFlowSignal(data, analysis) {
       `거래량이 최근 평균 대비 약 ${volRatio.toFixed(
         1
       )}배, 몸통이 긴 양봉입니다. ` +
-      "기관·큰손 매수 유입 가능성이 높은 봉으로, 추세 이어질 경우 눌림 매수/추세 추종 구간이 될 수 있습니다.";
+      `${toneSpan("기관·큰손 매수 유입 가능성이 높은 봉", "pos")}으로, 추세 이어질 경우 눌림 매수/추세 추종 구간이 될 수 있습니다.`;
   } else if (volRatio != null && volRatio >= 1.3 && bodyRatio >= 0.4 && c < o) {
     flowType = "SELL_DOMINANT";
     flowLabel = "매도세 우위";
@@ -2000,18 +2010,17 @@ function calcFlowSignal(data, analysis) {
       `거래량이 최근 평균 대비 약 ${volRatio.toFixed(
         1
       )}배, 몸통이 긴 음봉입니다. ` +
-      "청산·손절이 한꺼번에 나온 봉일 가능성이 높고, 후속 하락 파동이 이어질 수 있는 자리입니다.";
+      `${toneSpan("청산·손절이 한꺼번에 나온 봉", "neg")}일 가능성이 높고, 후속 하락 파동이 이어질 수 있는 자리입니다.`;
   } else if (volRatio != null && volRatio >= 1.3 && bodyRatio < 0.3) {
     flowType = "BATTLE";
     flowLabel = "공방 치열";
     flowNote =
       `거래량은 평균 대비 높은데 몸통은 짧고 윗꼬리·아랫꼬리가 긴 봉입니다. ` +
-      "매수·매도 공방이 치열한 자리로, 방향이 정해지기 전까지는 진입보다 관망이 유리할 수 있습니다.";
+      `${toneSpan("매수·매도 공방이 치열한 자리", "neu")}로, 방향이 정해지기 전까지는 진입보다 관망이 유리할 수 있습니다.`;
   } else if (volRatio != null && volRatio <= 0.6) {
     flowType = "EMPTY";
     flowLabel = "수급 공백";
-    flowNote =
-      "거래량이 평소 대비 현저히 적은 ‘수급 공백’ 구간입니다. 큰손이 자리를 잡기 전인 경우가 많아, 단기 트레이더는 매매 효율이 떨어질 수 있습니다.";
+    flowNote = `거래량이 평소 대비 현저히 적은 ${toneSpan("‘수급 공백’ 구간", "neu")}입니다. 큰손이 자리를 잡기 전인 경우가 많아, 단기 트레이더는 매매 효율이 떨어질 수 있습니다.`;
   } else if (
     bodyRatio < 0.15 &&
     upperWick > range * 0.35 &&
@@ -2019,15 +2028,15 @@ function calcFlowSignal(data, analysis) {
   ) {
     flowType = "INDECISION";
     flowLabel = "변곡 대기 (Doji)";
-    flowNote = "윗/아랫꼬리가 모두 긴 도지형 — 다음 캔들 방향성이 핵심입니다.";
+    flowNote = `윗/아랫꼬리가 모두 긴 도지형 — ${toneSpan("다음 캔들 방향성이 핵심", "neu")}입니다.`;
   } else if (lowerWick > body * 2 && c > o) {
     flowType = "REBOUND_BUY";
     flowLabel = "저가 매수 반발";
-    flowNote = "아랫꼬리가 긴 양봉 — 지지선 인근의 반등 매수세 가능성.";
+    flowNote = `아랫꼬리가 긴 양봉 — ${toneSpan("지지선 인근의 반등 매수세 가능성", "pos")}.`;
   } else if (upperWick > body * 2 && c < o) {
     flowType = "REJECTION_SELL";
     flowLabel = "상단 저항 매도";
-    flowNote = "윗꼬리가 긴 음봉 — 저항선에서 매도 압력 강함.";
+    flowNote = `윗꼬리가 긴 음봉 — ${toneSpan("저항선에서 매도 압력 강함", "neg")}.`;
   }
 
   // OBV 다이버전스는 "오늘 하루" 얘기인 flowNote에 억지로 끼워넣지 않고,
@@ -3119,7 +3128,8 @@ function updateUI(data, analysis, fxRate, stockName) {
           const yTop = (n - 1 - i) * barHeight + gap / 2;
           const h = barHeight - gap;
           const w = Math.max(1.5, b.ratio * 97);
-          const fill = b.isPoc ? "#facc15" : "rgba(77, 171, 244, 0.55)";
+          // POC(최대거래구간)는 노란색, 현재가가 속한 매물대는 초록색(POC와 겹치면 POC 우선)
+          const fill = b.isPoc ? "#facc15" : b.isCurrent ? "#34d399" : "rgba(77, 171, 244, 0.55)";
           svgContent += `<rect x="0" y="${yTop.toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" fill="${fill}" rx="1.5" />`;
         });
         vpChart.innerHTML = svgContent;
@@ -3132,7 +3142,8 @@ function updateUI(data, analysis, fxRate, stockName) {
           .reverse()
           .forEach((b) => {
             const mid = (b.priceLow + b.priceHigh) / 2;
-            labelsHtml += `<span class="${b.isPoc ? "vp-poc-label" : ""}">${formatPrice(mid)}</span>`;
+            const cls = b.isPoc ? "vp-poc-label" : b.isCurrent ? "vp-current-label" : "";
+            labelsHtml += `<span class="${cls}">${formatPrice(mid)}</span>`;
           });
         vpLabels.innerHTML = labelsHtml;
 
@@ -3325,13 +3336,13 @@ function updateUI(data, analysis, fxRate, stockName) {
         `최근 ${obvInfo.lookback}일간 가격은 +${obvInfo.priceChangePct.toFixed(
           1
         )}% 올랐는데, 누적 거래량(OBV) 기준 수급은 오히려 빠지는 다이버전스가 나타났습니다. ` +
-        "상승이 소수의 거래에 의존하고 있다는 신호로, 고점 분산(매집 소진) 가능성을 염두에 둬야 합니다.";
+        `상승이 소수의 거래에 의존하고 있다는 신호로, ${toneSpan("고점 분산(매집 소진) 가능성", "neg")}을 염두에 둬야 합니다.`;
     } else if (obvInfo.divergence === "BULLISH") {
       obvTxt =
         `최근 ${obvInfo.lookback}일간 가격은 ${obvInfo.priceChangePct.toFixed(
           1
         )}% 빠졌는데, 누적 거래량(OBV) 기준 수급은 오히려 느는 다이버전스가 나타났습니다. ` +
-        "저점에서 조용히 매집이 들어오고 있을 가능성이 있는 구간입니다.";
+        `${toneSpan("저점에서 조용히 매집이 들어오고 있을 가능성", "pos")}이 있는 구간입니다.`;
     } else {
       obvTxt =
         `최근 ${obvInfo.lookback}일간 가격 흐름(${
@@ -4074,18 +4085,23 @@ function renderDomesticLightweightChart(container, data) {
       maSeries.setData(lineData);
     });
 
-    chart.timeScale().fitContent();
+    // 2026-08-10 피드백: fitContent()로 전체 이력(최대 200봉)을 한 화면에 다 욱여넣으면 봉이
+    // 너무 좁아져서 처음 열었을 때 알아보기 어려움 — 기본 표시 구간을 최근 6개월(~126거래일)로
+    // 좁혀서 열리게 하고, 사용자가 원하면 직접 확대/축소해서 더 넓게/좁게 볼 수 있음.
+    const DEFAULT_VISIBLE_DAYS = 126;
+    if (candleData.length > DEFAULT_VISIBLE_DAYS) {
+      const fromIdx = candleData.length - DEFAULT_VISIBLE_DAYS;
+      chart.timeScale().setVisibleRange({
+        from: candleData[fromIdx].time,
+        to: candleData[candleData.length - 1].time
+      });
+    } else {
+      chart.timeScale().fitContent();
+    }
 
     // Lightweight Charts(Apache 2.0) 라이선스 조건 — 저작권 표시 + tradingview.com 링크 필요.
-    // 재검색 때마다 중복 추가되지 않도록 기존 캡션을 먼저 지우고 다시 붙임.
-    const existingCaption = document.getElementById("lwc-attribution");
-    if (existingCaption) existingCaption.remove();
-    const caption = document.createElement("div");
-    caption.id = "lwc-attribution";
-    caption.className = "lwc-attribution";
-    caption.innerHTML =
-      'Chart by <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView</a>';
-    container.insertAdjacentElement("afterend", caption);
+    // 2026-08-10 피드백: 차트 바로 아래 매번 뜨는 게 굳이 필요하냐는 지적 — 페이지 맨 아래
+    // 출처 표시(footer-note)로 옮김(index.html, 항상 노출되므로 라이선스 조건은 그대로 충족).
   };
 
   if (typeof LightweightCharts === "undefined") {
@@ -4129,11 +4145,7 @@ function renderTradingViewChart(symbol, data) {
   }
   const containerId = container.id;
 
-  // 이전 차트 정리 — 직전 검색이 국내(lightweight-charts) 종목이었다면 저작권 표시 캡션도
-  // container 바깥(형제 노드)에 남아있으므로 같이 지움.
   container.innerHTML = "";
-  const prevCaption = document.getElementById("lwc-attribution");
-  if (prevCaption) prevCaption.remove();
 
   // TradingView 무료 위젯은 KRX(한국거래소) 실시간 데이터 재배포를 막아둬서
   // 국내 종목은 심볼 형식과 무관하게 항상 에러가 남 — 위젯 대신 우리 데이터로 직접 그림
@@ -4164,27 +4176,21 @@ function renderTradingViewChart(symbol, data) {
       hide_legend: false,
       save_image: false,
       container_id: containerId,
-      // 기본 지표: RSI, MACD, MA(5/15/33/60/112/224/448) — 2026-08-10 피드백으로 기간 변경
+      // 기본 지표: RSI, MACD, MA(5/15/33/60/112/224/448) — 2026-08-10 피드백으로 기간 변경.
+      // ⚠️ 실제 버그: "moving average N.length" study_overrides 방식은 동일 스터디를 여러 번
+      // 추가할 때 신뢰할 수 없었음(실측 — 3개(기본 period 9)로만 뜨고 나머지 override가 무시됨).
+      // 각 스터디를 {id, inputs}로 개별 지정하는 공식 방식으로 교체.
       studies: [
         "RSI@tv-basicstudies",
         "MACD@tv-basicstudies",
-        "MAExp@tv-basicstudies",
-        "MAExp@tv-basicstudies",
-        "MAExp@tv-basicstudies",
-        "MAExp@tv-basicstudies",
-        "MAExp@tv-basicstudies",
-        "MAExp@tv-basicstudies",
-        "MAExp@tv-basicstudies"
-      ],
-      study_overrides: {
-        "moving average 1.length": 5,
-        "moving average 2.length": 15,
-        "moving average 3.length": 33,
-        "moving average 4.length": 60,
-        "moving average 5.length": 112,
-        "moving average 6.length": 224,
-        "moving average 7.length": 448
-      }
+        { id: "MAExp@tv-basicstudies", inputs: { length: 5 } },
+        { id: "MAExp@tv-basicstudies", inputs: { length: 15 } },
+        { id: "MAExp@tv-basicstudies", inputs: { length: 33 } },
+        { id: "MAExp@tv-basicstudies", inputs: { length: 60 } },
+        { id: "MAExp@tv-basicstudies", inputs: { length: 112 } },
+        { id: "MAExp@tv-basicstudies", inputs: { length: 224 } },
+        { id: "MAExp@tv-basicstudies", inputs: { length: 448 } }
+      ]
     });
   };
 
@@ -4274,9 +4280,15 @@ function renderSupplyDemandBox(data) {
   if (dateEl) dateEl.textContent = data.date ? `기준일: ${data.date}` : "";
   if (listEl) {
     listEl.innerHTML = "";
+    // 2026-08-10 피드백: 전일수급 박스만 색상 코딩이 없었음 — 서버가 이제 각 줄의 tone(1/0/-1)도
+    // 같이 내려줘서(위 renderSupplyDemandBox 주석 참고), tone이 있는 줄만 toneSpan으로 색칠.
     data.lines.forEach((line) => {
       const li = document.createElement("li");
-      li.textContent = line;
+      const text = typeof line === "string" ? line : line.text;
+      const tone = typeof line === "string" ? 0 : line.tone;
+      if (tone > 0) li.innerHTML = toneSpan(text, "pos");
+      else if (tone < 0) li.innerHTML = toneSpan(text, "neg");
+      else li.textContent = text;
       listEl.appendChild(li);
     });
   }
