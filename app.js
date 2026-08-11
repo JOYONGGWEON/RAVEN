@@ -4125,18 +4125,29 @@ function renderDomesticLightweightChart(container, data) {
     });
 
     // 2026-08-10 피드백: fitContent()로 전체 이력(최대 200봉)을 한 화면에 다 욱여넣으면 봉이
-    // 너무 좁아져서 처음 열었을 때 알아보기 어려움 — 기본 표시 구간을 최근 6개월(~126거래일)로
-    // 좁혀서 열리게 하고, 사용자가 원하면 직접 확대/축소해서 더 넓게/좁게 볼 수 있음.
+    // 너무 좁아져서 처음 열었을 때 알아보기 어려워서, 기본 표시 구간을 최근 6개월(~126거래일)로
+    // 좁혀서 열리게 함.
+    // 2026-08-11 피드백(실사용 재현): 페이지를 새로고침한 "첫" 검색에서는 정상인데, 같은 페이지에서
+    // 종목을 바꿔 "두 번째 이후" 검색할 때만 캔들이 오른쪽 끝에 좁게 몰리는 버그를 실제로 재현함
+    // (종목과 무관 — 005930/058610 둘 다 두 번째 검색에서만 재현됨). 원인은 `autoSize:true`가
+    // ResizeObserver로 실제 픽셀 너비를 비동기로 확정하는데, 첫 검색은 PIN/인트로 등을 거치며
+    // 자연스럽게 시간이 걸려 그 사이 ResizeObserver가 이미 한 번 실행되지만, 두 번째 이후 검색은
+    // 모든 게 이미 로드되어 있어 setVisibleRange 호출이 ResizeObserver의 첫 콜백보다 먼저(폭이
+    // 아직 확정 안 된 상태로) 실행돼버리는 타이밍 경쟁으로 추정됨 — requestAnimationFrame으로
+    // 한 프레임 이상 미뤄서 레이아웃이 확정된 뒤에 범위를 적용하도록 수정.
     const DEFAULT_VISIBLE_DAYS = 126;
-    if (candleData.length > DEFAULT_VISIBLE_DAYS) {
-      const fromIdx = candleData.length - DEFAULT_VISIBLE_DAYS;
-      chart.timeScale().setVisibleRange({
-        from: candleData[fromIdx].time,
-        to: candleData[candleData.length - 1].time
-      });
-    } else {
-      chart.timeScale().fitContent();
-    }
+    const applyDefaultVisibleRange = () => {
+      if (candleData.length > DEFAULT_VISIBLE_DAYS) {
+        const fromIdx = candleData.length - DEFAULT_VISIBLE_DAYS;
+        chart.timeScale().setVisibleRange({
+          from: candleData[fromIdx].time,
+          to: candleData[candleData.length - 1].time
+        });
+      } else {
+        chart.timeScale().fitContent();
+      }
+    };
+    requestAnimationFrame(() => requestAnimationFrame(applyDefaultVisibleRange));
 
     // Lightweight Charts(Apache 2.0) 라이선스 조건 — 저작권 표시 + tradingview.com 링크 필요.
     // 2026-08-10 피드백: 차트 바로 아래 매번 뜨는 게 굳이 필요하냐는 지적 — 페이지 맨 아래
