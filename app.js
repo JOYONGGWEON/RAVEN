@@ -1644,9 +1644,12 @@ function analyzeData(data, benchmarkData, intradayCloses, weeklyCloses, intraday
     // (실제로 재현: 지지 -20.6%, 저항 +56.2% 같은 비현실적인 레벨이 나온 걸 확인함).
     // ATR% 기반으로 "지금 실제로 의미 있는 거리"만 후보로 남기고, 그 안에 없으면 그냥 없는 걸로 처리
     // (아래 60봉 fallback 로직이 대신 더 가까운 값을 잡아줌).
+    // 2026-08-11 알고리즘 업데이트: 12%~30% 범위가 실측 결과 여전히 넓었음(같은 문제를 겪은
+    // 실시간 알림 엔진을 12%→18% 상한으로 손본 것과 같은 맥락) — 10%~20%로 낮춤. 이 값은 지지선
+    // (=손절 기준)뿐 아니라 저항선(=목표가) 탐색 범위도 같이 좁혀서, 목표가 쪽도 같이 타이트해짐.
     const srMaxDist = Number.isFinite(atrPct)
-      ? Math.max(0.12, Math.min(0.3, (atrPct * 6) / 100))
-      : 0.18;
+      ? Math.max(0.1, Math.min(0.2, (atrPct * 5) / 100))
+      : 0.15;
 
     const supportLevels = pickSupportResistance(lowClusters, lastPrice, true, srMaxDist);
     const resistanceLevels = pickSupportResistance(
@@ -1698,8 +1701,15 @@ function analyzeData(data, benchmarkData, intradayCloses, weeklyCloses, intraday
   // ATR(변동성) 기반 손절폭으로 대체. 저항선이 없을 때의 목표가도 고정 +5%/+15% 대신
   // "손절폭 대비 R:R 1.5 / 3.0"으로 잡아서, 화면에 뜨는 R:R 숫자가 실제 손절·목표가와 항상 일치하도록 함
   // (예전엔 R:R 표시가 원본 지지/저항 값 기준, 실제 손절/목표가는 버퍼 적용된 값 기준이라 서로 미묘하게 안 맞았음)
-  const MAX_RISK_PCT = 25;
-  const ATR_STOP_MULT = 2; // 진입가 - 2×ATR : 변동성 기반 손절폭의 표준적인 배수
+  // 2026-08-11 알고리즘 업데이트: 사용자 피드백("목표가 손절가가 과하게 잡혀서 리스크 관리가
+  // 어렵다") — 실시간 알림 엔진에서 같은 문제(60일 고가/저가 기반 목표가가 +70~89%까지 나오던
+  // 버그)를 ATR 배수 2→1.5, 상한 25%→(알림 전용은 18%) 낮춰서 고친 것과 같은 방향으로 맞춤.
+  // 이 값은 지지선을 못 찾았을 때의 ATR 폴백뿐 아니라, 지지선을 찾은 경우의 손절폭에도 최종
+  // 상한으로 적용됨(아래 riskPct 캡 로직 참고) — 즉 어떤 경로로 손절가가 정해지든 이 비율을
+  // 절대 못 넘게 하는 전역 안전장치.
+  const MAX_RISK_PCT = 18;
+  const ATR_STOP_MULT = 1.5; // 진입가 - 1.5×ATR : 변동성 기반 손절폭(2배는 실측 결과 상한에
+  // 거의 항상 걸릴 만큼 넓었음)
 
   let stopBase;
   if (support1 && support1 < lastPrice) {
@@ -5030,7 +5040,10 @@ function renderWatchlistSidebar(list) {
       const priceTxt = isDomestic ? formatKRW(quote.last) : formatUSD(quote.last);
       const arrow = quote.changePct > 0 ? "▲" : quote.changePct < 0 ? "▼" : "-";
       el.textContent = `${priceTxt} ${arrow}${Math.abs(quote.changePct).toFixed(2)}%`;
-      el.classList.add(quote.changePct > 0 ? "sentiment-pos" : quote.changePct < 0 ? "sentiment-neg" : "");
+      // ⚠️ 실제 버그(2026-08-11 발견, 오늘 작업과 무관한 기존 버그): 등락률이 정확히 0%일 때
+      // classList.add("")가 빈 문자열을 토큰으로 추가하려다 던지는 에러였음 — 그 경우만 생략.
+      const changeCls = quote.changePct > 0 ? "sentiment-pos" : quote.changePct < 0 ? "sentiment-neg" : null;
+      if (changeCls) el.classList.add(changeCls);
     }, i * 350);
   });
 

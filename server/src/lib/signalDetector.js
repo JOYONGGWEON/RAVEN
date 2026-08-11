@@ -62,23 +62,27 @@ function calcATR(highs, lows, closes, period = 14) {
 // 목표가/손절가 — app.js(analyzeData)의 로직을 간소화한 사본. 화면 분석은 스윙 클러스터링으로
 // 지지/저항을 잡지만, 알림은 빠른 참고용이라 최근 60봉 고가/저가로 간단히 근사(둘 다 최소 61봉을
 // 보장받으므로 항상 값이 나옴) — 손절은 지지선 또는 ATR×2 기준, 목표가는 저항선 또는 손절폭×1.5 기준.
-// 2026-08-10 피드백: 실측 결과 목표가/손절가가 비현실적으로 넓게 나오는 문제가 있었음
-// (예: 475150 손절 -25%/목표 +70%, 009150 손절 -26%/목표 +89%) — 원인 두 가지를 확인:
-// ①60일 최고/최저가를 그대로 저항/지지로 썼는데, 이 알림 대상 종목들처럼 60일 새 변동폭이 큰
-// 종목은 그 레벨 자체가 현재가에서 너무 멀리 떨어져 있어 "근거리 액션 가능한 알림"으로는 부적합
-// ②MAX_RISK_PCT 25%는 (화면 전체 분석용 app.js 로직을 그대로 복사한 값인데) 실시간 알림 문맥엔
-// 너무 느슨함 — 25% 손절은 사실상 "손절 기준이 없는 것"과 비슷한 리스크.
-// 그래서 알림 전용 로직은 60일 고가/저가 기반을 버리고 ATR(변동성)만으로 산정 — 종목 자체의
-// 최근 변동성에 비례해서 자동으로 스케일되고, R:R 1.5로 고정해 손절폭 대비 목표가가 항상 합리적인
-// 비율을 유지함. 손절폭 상한도 25%→12%로 낮춤(단기 알림 대상 손절로 합리적인 수준).
+// 2026-08-10 1차 수정: 60일 고가/저가 기반(비현실적으로 넓음, 예: -25%/+70%)을 ATR 기반으로
+// 교체하면서 MAX_RISK_PCT를 12%로 잡았는데, 다음날 아침 실제 알림을 보니 관심종목 전종목의
+// 목표가/손절가 %가 전부 똑같이 찍히는 문제가 재현됨(실측 확인: 006800/112610/058610/034020/
+// 475150 등 신호 뜬 종목 전부 target +18.0%/stop -12.9%로 동일).
+// ⚠️ 원인: 2×ATR(14)를 이 관심종목 리스트의 실제 종목들에 계산해보니 12.6%~32.3% 범위로
+// *전부* 12% 상한을 넘어서 있었음 — 즉 "종목별 변동성에 비례해서 스케일된다"는 설계 의도와
+// 다르게, 12% 상한이 사실상 모든 종목에 걸리는 디폴트 값이 되어버려 ATR 기반의 의미가 없어짐.
+// 상한 자체가 이 종목군의 실제 변동성보다 너무 타이트하게 잡혔던 게 문제 — ①ATR 배수를 2배→1.5배로
+// 낮추고(이러면 대부분 종목이 자연스럽게 상한 아래로 들어와 실제로 종목마다 다른 값이 나옴,
+// 실측: 6종목 중 5종목이 9.45%~14.72%로 전부 다르게 나옴) ②그래도 남는 진짜 이상치(예:
+// 475150의 24.2%)를 위한 안전장치로만 상한을 18%로 완화 ③반대로 변동성이 너무 낮아 손절폭이
+// 노이즈 수준으로 좁아지는 것도 막기 위해 최소 4% 하한도 추가.
 function calcTargetStop(highs, lows, closes) {
   const n = closes.length;
   const lastPrice = closes[n - 1];
   const atr = calcATR(highs, lows, closes, 14);
 
-  const ATR_STOP_MULT = 2;
+  const ATR_STOP_MULT = 1.5;
   const RR_RATIO = 1.5;
-  const MAX_RISK_PCT = 12;
+  const MIN_RISK_PCT = 4;
+  const MAX_RISK_PCT = 18;
 
   let stopBase =
     typeof atr === "number" && atr > 0
@@ -88,6 +92,8 @@ function calcTargetStop(highs, lows, closes) {
   const riskPct = ((lastPrice - stopBase) / lastPrice) * 100;
   if (riskPct > MAX_RISK_PCT) {
     stopBase = lastPrice * (1 - MAX_RISK_PCT / 100);
+  } else if (riskPct < MIN_RISK_PCT) {
+    stopBase = lastPrice * (1 - MIN_RISK_PCT / 100);
   }
 
   const stop = stopBase * 0.99;
@@ -134,6 +140,110 @@ function detectMACross(closes) {
   return "NONE";
 }
 
+// 2026-08-11 알고리즘 업데이트: ADX(14, Wilder) — app.js의 calcADX 사본(서버 전용, 최종 값만 필요
+// 해서 DI±/시리즈는 생략). MA크로스가 "추세 없는 횡보장의 가짜 신호"이기 쉬운 걸 걸러내는 용도.
+function calcADX(highs, lows, closes, period = 14) {
+  const n = closes.length;
+  if (n < period * 2 + 1) return null;
+
+  const trList = [];
+  const plusDMList = [];
+  const minusDMList = [];
+  for (let i = 1; i < n; i++) {
+    const upMove = highs[i] - highs[i - 1];
+    const downMove = lows[i - 1] - lows[i];
+    plusDMList.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDMList.push(downMove > upMove && downMove > 0 ? downMove : 0);
+    trList.push(
+      Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1]))
+    );
+  }
+
+  const wilderSmooth = (arr) => {
+    const len = arr.length;
+    if (len < period) return null;
+    const smoothed = [];
+    let sum = 0;
+    for (let i = 0; i < period; i++) sum += arr[i];
+    smoothed.push(sum);
+    for (let i = period; i < len; i++) {
+      smoothed.push(smoothed[smoothed.length - 1] - smoothed[smoothed.length - 1] / period + arr[i]);
+    }
+    return smoothed;
+  };
+
+  const trSmoothed = wilderSmooth(trList);
+  const plusDMSmoothed = wilderSmooth(plusDMList);
+  const minusDMSmoothed = wilderSmooth(minusDMList);
+  if (!trSmoothed || !plusDMSmoothed || !minusDMSmoothed) return null;
+
+  const dxList = [];
+  for (let i = 0; i < trSmoothed.length; i++) {
+    const tr = trSmoothed[i];
+    if (!tr) {
+      dxList.push(null);
+      continue;
+    }
+    const plusDI = (plusDMSmoothed[i] / tr) * 100;
+    const minusDI = (minusDMSmoothed[i] / tr) * 100;
+    const sum = plusDI + minusDI;
+    dxList.push(sum > 0 ? (Math.abs(plusDI - minusDI) / sum) * 100 : 0);
+  }
+
+  const validDx = dxList.filter((v) => v != null);
+  if (validDx.length < period) return null;
+
+  let adx = validDx.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < validDx.length; i++) {
+    adx = (adx * (period - 1) + validDx[i]) / period;
+  }
+  return adx;
+}
+
+// 2026-08-11 알고리즘 업데이트: MACD(12,26,9) 크로스오버 — app.js의 calcMACDFull 로직 중
+// 크로스오버 판정 부분만 요약한 사본. MA크로스(가격 축)·거래량급증·연속매매(수급 축)와 달리
+// 모멘텀이라는 별개 축이라, 세 카테고리가 우연히 겹칠 때보다 진짜 다양한 근거가 됨.
+function detectMacdCross(closes) {
+  if (closes.length < 26 + 9) return "NONE";
+  const ema12Series = calcEMASeries(closes, 12);
+  const ema26Series = calcEMASeries(closes, 26);
+  if (!ema12Series || !ema26Series) return "NONE";
+
+  const n = closes.length;
+  const validStart = 25; // EMA26가 유효해지는 인덱스(26-1)부터 MACD 라인도 유효
+  const macdValid = [];
+  for (let i = validStart; i < n; i++) {
+    macdValid.push(ema12Series[i] - ema26Series[i]);
+  }
+  const signalValidSeries = calcEMASeries(macdValid, 9);
+  if (!signalValidSeries) return "NONE";
+
+  const macdSeries = new Array(n).fill(null);
+  const signalSeries = new Array(n).fill(null);
+  for (let i = 0; i < macdValid.length; i++) {
+    macdSeries[validStart + i] = macdValid[i];
+    if (signalValidSeries[i] != null) signalSeries[validStart + i] = signalValidSeries[i];
+  }
+
+  const last = n - 1;
+  const prev = n - 2;
+  if (
+    macdSeries[last] == null ||
+    signalSeries[last] == null ||
+    prev < 0 ||
+    macdSeries[prev] == null ||
+    signalSeries[prev] == null
+  ) {
+    return "NONE";
+  }
+
+  const prevDiff = macdSeries[prev] - signalSeries[prev];
+  const currDiff = macdSeries[last] - signalSeries[last];
+  if (prevDiff <= 0 && currDiff > 0) return "GOLDEN";
+  if (prevDiff >= 0 && currDiff < 0) return "DEAD";
+  return "NONE";
+}
+
 // 평균 대비 2배 이상 거래량 급증 + 뚜렷한 방향(±1.5% 이상)이 함께 나온 날만 신호로 침
 function detectVolumeSurge(opens, closes, volumes) {
   const n = closes.length;
@@ -175,31 +285,43 @@ async function detectInvestorStreakSignal(symbol) {
   }
 
   const history = await getInvestorTrendHistory(symbol, 15);
-  const frgnStreak = computeStreak(history, "frgn_ntby_qty");
-  const orgnStreak = computeStreak(history, "orgn_ntby_qty");
 
   const reasons = [];
   const confirmReasons = [];
   let signal = "NONE";
   let confirmSignal = "NONE";
 
-  const consider = (streak, label) => {
+  // ⚠️ 실제 버그(2026-08-11 아침 사용자 보고 계기로 재검토): MA크로스는 "오늘 막 뒤집힌 사건"만
+  // 잡아서 하루만 알림이 뜨는데, 연속매매(5일+)는 조건이 유지되는 한 6일째·7일째·8일째도 매일 다시
+  // 발신되고 있었음(상태 기반이라 그런 것 — 다른 트리거들과의 일관성이 깨짐, 알림 피로 유발).
+  // "어제 기준으로는 5일 미만이었는데 오늘 막 5일을 채운 날"에만 독립 신호로 발신하고, 이미
+  // 5일 이상이 이어지는 중이면(재발신 상황) confirm(참고 근거)로 강등 — 완전히 사라지진 않지만
+  // 다른 트리거가 이미 알림을 울린 날에만 신뢰도 보너스로 붙는 조용한 역할로 바뀜.
+  const consider = (field, label) => {
+    const streak = computeStreak(history, field);
     if (!streak || streak.days < INVESTOR_STREAK_CONFIRM_MIN_DAYS) return;
     const verb = streak.direction === "BUY" ? "순매수" : "순매도";
     const text = `${label} ${streak.days}일 연속 ${verb}(누적 ${Math.abs(streak.cumulative).toLocaleString()}주)`;
 
     if (streak.days >= INVESTOR_STREAK_ALERT_MIN_DAYS) {
-      reasons.push(text);
-      // 매도 우선 정책 — 이미 BUY였어도 SELL 스트릭이면 덮어씀
-      if (streak.direction === "SELL" || signal === "NONE") signal = streak.direction;
+      const yesterdayStreak = computeStreak(history.slice(1), field);
+      const isNewlyCrossed = !yesterdayStreak || yesterdayStreak.days < INVESTOR_STREAK_ALERT_MIN_DAYS;
+      if (isNewlyCrossed) {
+        reasons.push(text);
+        // 매도 우선 정책 — 이미 BUY였어도 SELL 스트릭이면 덮어씀
+        if (streak.direction === "SELL" || signal === "NONE") signal = streak.direction;
+      } else {
+        confirmReasons.push(text);
+        if (streak.direction === "SELL" || confirmSignal === "NONE") confirmSignal = streak.direction;
+      }
     } else {
       confirmReasons.push(text);
       if (streak.direction === "SELL" || confirmSignal === "NONE") confirmSignal = streak.direction;
     }
   };
 
-  consider(frgnStreak, "외국인");
-  consider(orgnStreak, "기관");
+  consider("frgn_ntby_qty", "외국인");
+  consider("orgn_ntby_qty", "기관");
 
   return { signal, reasons, confirmSignal, confirmReasons };
 }
@@ -217,11 +339,18 @@ function rateConfidence(matchingCategories) {
 // 종목 하나에 대해 골든/데드크로스 + 거래량 급증 + 외국인/기관 연속매매(5일+)를 합쳐
 // 최종 신호(BUY/SELL/NONE)를 판정. 매도 쪽 신호가 항상 우선 — 알림 시스템은 놓치는 매수 기회보다
 // 놓치는 리스크 관리가 더 손해라는 판단(리스크 관리 우선 정책).
+// 2026-08-11 알고리즘 업데이트: MA크로스는 추세 없는 횡보장에서도 가짜로 뜨기 쉬운 게 기술적
+// 분석의 잘 알려진 약점 — ADX가 뚜렷한 추세 구간(≥20)일 때만 신호로 인정. app.js의 지표 해석
+// 박스가 쓰는 것과 같은 임계값(추세 뚜렷함 25 / 보통 20 / 약함 20 미만)에서 "보통" 이상만 통과.
+const ADX_TREND_THRESHOLD = 20;
+
 async function checkSignal(symbol) {
   const { opens, highs, lows, closes, volumes } = await fetchCandles(symbol);
 
   const maCross = detectMACross(closes);
   const volSurge = detectVolumeSurge(opens, closes, volumes);
+  const adx = calcADX(highs, lows, closes, 14);
+  const macdCross = detectMacdCross(closes);
   const streakResult = await detectInvestorStreakSignal(symbol).catch((e) => {
     console.error(`[RAVEN] 연속매매 신호 체크 실패 (${symbol}):`, e.message);
     return { signal: "NONE", reasons: [], confirmSignal: "NONE", confirmReasons: [] };
@@ -235,16 +364,19 @@ async function checkSignal(symbol) {
       })
     : { signal: "NONE", reasons: [] };
 
+  const adxOk = typeof adx === "number" && adx >= ADX_TREND_THRESHOLD;
+  const maCrossConfirmed = adxOk ? maCross : "NONE";
+
   // 카테고리별 방향/근거를 먼저 각자 계산 — 최종 신호를 정하기 전에 "몇 개가 같은 방향을
   // 가리키는지"를 신뢰도 산정에 써야 하므로, 매도 우선 override와 분리해서 처리함.
   const categories = [
     {
-      dir: maCross === "GOLDEN" ? "BUY" : maCross === "DEAD" ? "SELL" : "NONE",
+      dir: maCrossConfirmed === "GOLDEN" ? "BUY" : maCrossConfirmed === "DEAD" ? "SELL" : "NONE",
       reasons:
-        maCross === "GOLDEN"
-          ? ["MA20이 MA60을 상향 돌파 (골든크로스)"]
-          : maCross === "DEAD"
-          ? ["MA20이 MA60을 하향 돌파 (데드크로스)"]
+        maCrossConfirmed === "GOLDEN"
+          ? [`MA20이 MA60을 상향 돌파 (골든크로스, ADX ${adx.toFixed(1)}로 추세 확인됨)`]
+          : maCrossConfirmed === "DEAD"
+          ? [`MA20이 MA60을 하향 돌파 (데드크로스, ADX ${adx.toFixed(1)}로 추세 확인됨)`]
           : [],
     },
     {
@@ -257,6 +389,15 @@ async function checkSignal(symbol) {
           : [],
     },
     { dir: streakResult.signal, reasons: streakResult.reasons },
+    {
+      dir: macdCross === "GOLDEN" ? "BUY" : macdCross === "DEAD" ? "SELL" : "NONE",
+      reasons:
+        macdCross === "GOLDEN"
+          ? ["MACD 골든크로스 (모멘텀 전환)"]
+          : macdCross === "DEAD"
+          ? ["MACD 데드크로스 (모멘텀 전환)"]
+          : [],
+    },
   ];
 
   let signal = "NONE";
