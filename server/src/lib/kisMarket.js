@@ -105,14 +105,16 @@ async function fetchDomesticWeeklyCandles(symbol) {
   }));
 }
 
-// 2026-08-12: 백테스팅 엔진용으로 count를 훨씬 크게 요청할 수 있도록(예: 800 = 3년치) 2회 고정
-// 스티칭을 N회 루프로 일반화 — count가 작으면(기존 180 등) 예전과 동일하게 1~2번만 돌아서
-// 라이브 분석 경로(app.js/signalDetector.js)엔 동작 변화 없음. MAX_BATCHES는 무한 루프 방지용
-// 안전장치(8배치 × 100건 ≈ 800거래일 ≈ 3년치, 이 이상은 백테스트 표본으로도 과함).
+// 2026-08-12: 백테스팅 엔진용으로 count를 훨씬 크게 요청할 수 있도록 2회 고정 스티칭을 N회
+// 루프로 일반화 — count가 작으면(기존 180 등) 예전과 동일하게 1~2번만 돌아서 라이브 분석 경로
+// (app.js/signalDetector.js)엔 동작 변화 없음. 처음엔 MAX_BATCHES=8(≈800거래일≈3년치)로
+// 잡았는데, 백테스트를 다른 기간으로도 검증해달라는 요청으로 실측해보니 KIS가 16배치(≈1600
+// 거래일≈6년치, 삼성전자 기준 2020년 초까지)도 문제없이 더 내려가는 걸 확인함 — 두 구간으로
+// 쪼개 비교 검증할 수 있도록 16으로 올림.
 async function fetchDomesticCandles(symbol, count) {
   let rows = [];
   let dateTo = ymd(new Date());
-  const MAX_BATCHES = 8;
+  const MAX_BATCHES = 16;
 
   for (let i = 0; i < MAX_BATCHES && rows.length < count; i++) {
     if (i > 0) await sleep(600);
@@ -211,7 +213,7 @@ async function fetchOverseasCandles(symbol, count) {
   const excd = await resolveOverseasExchange(symbol);
   let rows = [];
   let bymd = "";
-  const MAX_BATCHES = 8;
+  const MAX_BATCHES = 16; // 위 fetchDomesticCandles와 동일한 이유로 상향
 
   for (let i = 0; i < MAX_BATCHES && rows.length < count; i++) {
     await sleep(600);

@@ -9,8 +9,14 @@
 //
 // 실행: cd server && node scripts/backtest.js
 //
+// 2026-08-12 추가: 첫 실행 결과(단일 ~3년 구간)를 "다른 기간으로도 검증해보자"는 요청으로
+// 두 기간으로 나눠 비교하도록 확장 — KIS가 16배치(≈1600거래일≈6년치)까지 문제없이 주는 걸
+// 실측 확인(kisMarket.js 참고)해서, 전체 이력을 절반으로 나눠 "이전 구간"/"최근 구간"을
+// 완전히 독립적으로 집계함(지표 계산 자체는 항상 그 시점까지의 전체 이력을 보되 — 실제 라이브
+// 분석과 동일한 방식 — 결과를 어느 버킷에 넣을지만 신호 발생일 기준으로 나눔).
+//
 // ⚠️ 알려진 한계(결과 해석 시 감안할 것):
-// - KIS 일봉 조회가 배치당 100건, 백테스트용으로 최대 8배치(≈800거래일≈3년치)까지 늘렸지만
+// - KIS 일봉 조회가 배치당 100건, 백테스트용으로 최대 16배치(≈1600거래일≈6년치)까지 늘렸지만
 //   실제 상장 이력이 짧은 종목/최근 신규상장 종목은 이보다 훨씬 적은 표본만 나올 수 있음
 // - "표본 수(N)가 작으면 승률 숫자 자체를 신뢰하지 말 것" — 특히 종목별로 쪼개면 N이 10~20개
 //   수준일 수 있어 통계적으로 거의 무의미함. 카테고리 합산(전종목) 수치를 우선 참고할 것
@@ -21,7 +27,7 @@
 //   관심 가질 만한 이유가 있어 골랐을 것)이 있을 수 있음을 감안할 것
 
 const { getWatchlist } = require("../src/scheduler");
-const { fetchCandles: fetchKisCandles, isDomesticSymbol } = require("../src/lib/kisMarket");
+const { fetchCandles: fetchKisCandles } = require("../src/lib/kisMarket");
 const {
   calcADX,
   detectMACross,
@@ -31,7 +37,7 @@ const {
   ADX_TREND_THRESHOLD,
 } = require("../src/lib/signalDetector");
 
-const EXTENDED_HISTORY_DAYS = 750; // ≈3년치 (KIS 8배치 상한)
+const EXTENDED_HISTORY_DAYS = 1600; // ≈6년치 (KIS 16배치 상한 — kisMarket.js 참고)
 const START_IDX = 60; // MA60 워밍업(60개) — detectMACross가 이전 값까지 필요해서 61번째 봉부터 유효
 const LOOKAHEAD_DAYS = 20; // 스윙(며칠~몇 주) 전제에 맞춘 목표가/손절가 도달 확인 기간
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -116,13 +122,6 @@ function formatStat(label, stat) {
   ).padEnd(3)} 미결=${String(stat.timeout).padEnd(3)} 승률(결판난 것 중)=${winRate}%  평균 방향적중 수익률=${avgReturn}%`;
 }
 
-// 2026-08-12 추가: 신호별 승률/수익률만 보고 "좋다/나쁘다"를 판단하면 함정이 있음 — 예를 들어
-// 백테스트 구간(최근 ~3년) 자체가 전반적 상승장이었다면, BUY는 아무 신호 없이 "그냥 아무 날에나
-// 사서 20일 들고 있기"만 해도 승률이 높게 나오고, SELL은 반대로 "실제 하락 예측 능력"과 무관하게
-// 그 상승 드리프트 때문에 불리해 보일 수 있음. 그래서 신호 유무와 무관하게 "이 구간 아무 날에나
-// 진입해서 20일 뒤 어떻게 됐는지"를 기준선(baseline)으로 같이 재서, 신호가 기준선 대비 진짜
-// 초과 성과(알파)가 있는지로 해석해야 함 — 순수 승률/수익률 숫자만 보고 SELL을 폐기하거나 BUY를
-// 과신하면 안 됨.
 function newBaseline() {
   return { n: 0, upDays: 0, returnSum: 0 };
 }
@@ -138,8 +137,32 @@ function newZoneStat() {
   return { PROFIT: newStat(), LOSS: newStat(), NO_REF: newStat() };
 }
 
-async function backtestSymbol(symbol, stats) {
-  const { highs, lows, closes, opens, volumes } = await fetchExtendedHistory(symbol);
+// 한 기간(이전/최근) 몫의 전체 통계 트리 — main()에서 두 벌(older/recent) 만들어서 같은 심볼
+// 하나의 연속된 walk 안에서 신호 발생일이 어느 절반에 속하는지에 따라 둘 중 하나에만 기록됨.
+function newStatsTree() {
+  return {
+    maCrossRaw: { BUY: newStat(), SELL: newStat() },
+    maCrossAdxGated: { BUY: newStat(), SELL: newStat() },
+    macdCross: { BUY: newStat(), SELL: newStat() },
+    volumeSurge: { BUY: newStat(), SELL: newStat() },
+    baseline: newBaseline(),
+    sellZone: {
+      maCross: newZoneStat(),
+      macdCross: newZoneStat(),
+      volumeSurge: newZoneStat(),
+    },
+    minDate: null,
+    maxDate: null,
+  };
+}
+
+function trackDate(stats, date) {
+  if (stats.minDate === null || date < stats.minDate) stats.minDate = date;
+  if (stats.maxDate === null || date > stats.maxDate) stats.maxDate = date;
+}
+
+async function backtestSymbol(symbol, statsOlder, statsRecent) {
+  const { dates, highs, lows, closes, opens, volumes } = await fetchExtendedHistory(symbol);
   const n = closes.length;
   if (n < START_IDX + LOOKAHEAD_DAYS + 1) {
     console.log(`  ⚠️ ${symbol}: 이력 부족(${n}봉) — 스킵`);
@@ -147,6 +170,9 @@ async function backtestSymbol(symbol, stats) {
   }
 
   const lastEvalIdx = n - 1 - LOOKAHEAD_DAYS; // 이 이후로는 미래 데이터가 부족해 평가 불가
+  const walkLen = lastEvalIdx - START_IDX + 1;
+  const midIdx = START_IDX + Math.floor(walkLen / 2); // i < midIdx → 이전 구간, i >= midIdx → 최근 구간
+
   let signalCount = 0;
   let lastBuyEntryPrice = null; // 이 종목에서 가장 최근에 뜬 BUY류 신호의 진입가 근사치(위 newZoneStat 주석 참고)
 
@@ -156,6 +182,7 @@ async function backtestSymbol(symbol, stats) {
   };
 
   for (let i = START_IDX; i <= lastEvalIdx; i++) {
+    const stats = i < midIdx ? statsOlder : statsRecent;
     const h = highs.slice(0, i + 1);
     const l = lows.slice(0, i + 1);
     const c = closes.slice(0, i + 1);
@@ -163,6 +190,8 @@ async function backtestSymbol(symbol, stats) {
     const v = volumes.slice(0, i + 1);
     const entryPrice = c[c.length - 1];
     const fromIdx = i + 1;
+
+    trackDate(stats, dates[i]);
 
     // 기준선: 신호 발생 여부와 무관하게 모든 날에 대해 20일 뒤 수익률을 그대로 기록
     const baseEndIdx = Math.min(fromIdx + LOOKAHEAD_DAYS - 1, closes.length - 1);
@@ -219,52 +248,18 @@ async function backtestSymbol(symbol, stats) {
     if (firedBuyToday) lastBuyEntryPrice = entryPrice;
   }
 
-  console.log(`  ✓ ${symbol}: ${n}봉 확보, 신호 ${signalCount}건 평가`);
+  console.log(`  ✓ ${symbol}: ${n}봉 확보(${dates[0]}~${dates[n - 1]}), 신호 ${signalCount}건 평가`);
 }
 
-async function main() {
-  console.log("[RAVEN 백테스트] 시작 —", new Date().toISOString());
-  console.log(`설정: 최대 ${EXTENDED_HISTORY_DAYS}거래일 이력, lookahead ${LOOKAHEAD_DAYS}거래일\n`);
-
-  const watchlist = await getWatchlist();
-  if (!watchlist.length) {
-    console.log("관심종목이 비어있어 백테스트할 종목이 없습니다.");
-    return;
-  }
-
-  const stats = {
-    maCrossRaw: { BUY: newStat(), SELL: newStat() },
-    maCrossAdxGated: { BUY: newStat(), SELL: newStat() },
-    macdCross: { BUY: newStat(), SELL: newStat() },
-    volumeSurge: { BUY: newStat(), SELL: newStat() },
-    baseline: newBaseline(),
-    sellZone: {
-      maCross: newZoneStat(),
-      macdCross: newZoneStat(),
-      volumeSurge: newZoneStat(),
-    },
-  };
-
-  console.log(`대상 종목 ${watchlist.length}개:\n`);
-  for (const { symbol } of watchlist) {
-    try {
-      await backtestSymbol(symbol, stats);
-    } catch (e) {
-      console.log(`  ✗ ${symbol}: 실패 — ${e.message}`);
-    }
-    await sleep(600);
-  }
-
+function printReport(label, stats) {
   const baseUpRate = ((stats.baseline.upDays / stats.baseline.n) * 100).toFixed(1);
   const baseAvgReturn = (stats.baseline.returnSum / stats.baseline.n).toFixed(2);
+
+  console.log(`\n\n########## [${label}] 구간: ${stats.minDate} ~ ${stats.maxDate} ##########`);
 
   console.log("\n===== 기준선(신호 유무 무관, 아무 날에나 진입했을 때) =====\n");
   console.log(
     `이 구간 전체: N=${stats.baseline.n}  20일 뒤 상승 비율=${baseUpRate}%  평균 20일 수익률=${baseAvgReturn}%`
-  );
-  console.log(
-    "→ BUY 신호는 이 상승비율/평균수익률보다 높아야, SELL 신호는 하락비율((100-상승비율)%)보다\n" +
-      "  높은 적중률을 보여야 각각 '신호 자체의 알파'가 있다고 볼 수 있음(단순 시장 드리프트가 아니라)."
   );
 
   console.log("\n===== 결과 요약 =====\n");
@@ -281,28 +276,50 @@ async function main() {
   console.log(formatStat("BUY", stats.volumeSurge.BUY));
   console.log(formatStat("SELL", stats.volumeSurge.SELL));
 
-  console.log("\n(승률은 target1/stop 중 하나를 실제로 친 신호만 대상 — 미결은 별도 표기)");
-  console.log(`(기준선: 상승비율 ${baseUpRate}%, 평균수익률 ${baseAvgReturn}% — 위 신호별 수치와 비교해서 해석할 것)`);
+  console.log(`\n(기준선: 상승비율 ${baseUpRate}%, 평균수익률 ${baseAvgReturn}% — 위 신호별 수치와 비교해서 해석할 것)`);
 
-  console.log("\n===== SELL 신호 — 익절 구간 vs 손실 구간 분리 =====");
-  console.log(
-    "(사용자 피드백: 이미 수익 구간에서 뜬 SELL은 방향이 틀려도 저위험 — 손실/미실현 구간에서\n" +
-      " 뜬 SELL의 정확도가 진짜 중요함. '진입가'는 그 종목의 가장 최근 BUY류 신호 가격으로 근사함)\n"
-  );
-  for (const [key, label] of [
+  console.log("\n===== SELL 신호 — 익절 구간 vs 손실 구간 분리 =====\n");
+  for (const [key, zLabel] of [
     ["maCross", "MA20/60 데드크로스"],
     ["macdCross", "MACD 데드크로스"],
     ["volumeSurge", "거래량급증 SELL"],
   ]) {
     const z = stats.sellZone[key];
-    console.log(`[${label}]`);
+    console.log(`[${zLabel}]`);
     console.log(formatStat("  익절 구간(이미 진입가 위)", z.PROFIT));
     console.log(formatStat("  손실/미실현 구간(진입가 이하)", z.LOSS));
     console.log(formatStat("  기준 없음(직전 BUY 신호 없음)", z.NO_REF));
     console.log("");
   }
+}
 
-  console.log("[RAVEN 백테스트] 종료 —", new Date().toISOString());
+async function main() {
+  console.log("[RAVEN 백테스트] 시작 —", new Date().toISOString());
+  console.log(`설정: 최대 ${EXTENDED_HISTORY_DAYS}거래일 이력, lookahead ${LOOKAHEAD_DAYS}거래일, 이전/최근 2구간 분리\n`);
+
+  const watchlist = await getWatchlist();
+  if (!watchlist.length) {
+    console.log("관심종목이 비어있어 백테스트할 종목이 없습니다.");
+    return;
+  }
+
+  const statsOlder = newStatsTree();
+  const statsRecent = newStatsTree();
+
+  console.log(`대상 종목 ${watchlist.length}개:\n`);
+  for (const { symbol } of watchlist) {
+    try {
+      await backtestSymbol(symbol, statsOlder, statsRecent);
+    } catch (e) {
+      console.log(`  ✗ ${symbol}: 실패 — ${e.message}`);
+    }
+    await sleep(600);
+  }
+
+  printReport("이전 구간", statsOlder);
+  printReport("최근 구간", statsRecent);
+
+  console.log("\n\n[RAVEN 백테스트] 종료 —", new Date().toISOString());
 }
 
 main().catch((e) => {
