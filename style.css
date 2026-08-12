@@ -675,17 +675,6 @@ body.raven-result-bg {
   text-align: center;
 }
 
-/* 데이터 연동 전 자리만 예약해둔 칩(코스피 야간선물) — 점선 테두리 + 흐린 텍스트로 "아직 없음" 표시 */
-.index-chip-pending {
-  border-style: dashed;
-  opacity: 0.55;
-}
-
-.index-chip-pending .index-chip-value {
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
 .index-chip-label {
   font-size: 0.72rem;
   color: var(--text-sub);

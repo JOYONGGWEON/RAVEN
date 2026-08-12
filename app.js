@@ -1125,7 +1125,6 @@ async function fetchKospiNightFuturesData() {
     const json = await res.json();
     const data = json && json.result;
     if (!data || typeof data.lastClose !== "number") throw new Error("No result");
-    if (box) box.classList.remove("index-chip-pending");
     renderIndexChip("kospi-night", data, {});
   } catch (e) {
     console.warn("[RAVEN] 코스피 야간선물 조회 실패:", e);
