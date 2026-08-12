@@ -1689,11 +1689,39 @@ function analyzeData(data, benchmarkData, intradayCloses, weeklyCloses, intraday
     }
   }
 
-  // 60분봉 기준 장중 지지/저항(해외 전용, 위 calcIntradaySR 참고) — target/stop/R:R 계산에는
-  // 관여하지 않고, 일봉 기준 support1/resistance1과 같은 자리인지 교차 확인하는 용도로만 씀.
+  // 60분봉 기준 장중 지지/저항(해외 전용, 위 calcIntradaySR 참고).
+  // 2026-08-12까지: target/stop/R:R 계산에는 관여하지 않고, 일봉 기준 support1/resistance1과
+  // 같은 자리인지 교차 확인하는 narrative 용도로만 씀.
   const intradaySR = intradaySwing
     ? calcIntradaySR(intradaySwing.highs, intradaySwing.lows, lastPrice, atrPct)
     : null;
+
+  // 2026-08-12: "60분봉 목표가/손절가 반영" 요청으로 실제 계산에도 반영 시작(해외 전용 —
+  // intradaySwing 자체가 해외에서만 옴, 국내는 KIS가 60분봉 이력을 아예 안 줘서 여전히 불가).
+  // 손절폭을 인트라데이 "변동성"(ATR 등) 기준으로 좁히는 건 스윙 보유기간과 안 맞는다고 사용자에게
+  // 이미 설명했지만(며칠~몇 주 보유 전제인데 시간봉 노이즈로 손절을 잡으면 잦은 손절 위험), 이건
+  // 그것과 달리 "실제 스윙 저점/고점 자리"를 일봉보다 더 촘촘한 시간 단위로 찾는 것뿐이라 종류가
+  // 다름 — 일봉/60분봉 둘 다 진짜 지지·저항 후보고, 그중 현재가에 더 가까운(=더 최근에 형성된, 더
+  // 정밀한) 쪽을 쓰는 것으로 설계함. narrative의 "교차 확인" 문구는 원래(일봉 단독) 값과 비교해야
+  // 의미가 있어서, 반영 전 일봉 단독 값을 dailySupport1/dailyResistance1로 따로 보관.
+  const dailySupport1 = support1;
+  const dailyResistance1 = resistance1;
+  if (intradaySR) {
+    if (
+      Number.isFinite(intradaySR.support) &&
+      intradaySR.support < lastPrice &&
+      (support1 === null || intradaySR.support > support1)
+    ) {
+      support1 = intradaySR.support;
+    }
+    if (
+      Number.isFinite(intradaySR.resistance) &&
+      intradaySR.resistance > lastPrice &&
+      (resistance1 === null || intradaySR.resistance < resistance1)
+    ) {
+      resistance1 = intradaySR.resistance;
+    }
+  }
 
   // R:R / 목표가·손절
   // 지지선이 없을 때 예전엔 종목 변동성과 무관하게 고정 -5%를 손절가로 썼음 →
@@ -1902,6 +1930,8 @@ function analyzeData(data, benchmarkData, intradayCloses, weeklyCloses, intraday
     maCrossover,
     weeklyTrend,
     intradaySR,
+    dailySupport1,
+    dailyResistance1,
     vwapInfo,
     volumeProfile,
     ma5Breakout,
@@ -3232,8 +3262,16 @@ function updateUI(data, analysis, fxRate, stockName) {
   const whyInfo = calcWhyTodaySignal(data, analysis, flowInfo);
   const patterns = detectCandlePatterns(data, analysis);
 
-  const { support1: s1, support2: s2, resistance1: r1, resistance2: r2, price: px, rsi: rsiVal } =
-    analysis;
+  const {
+    support1: s1,
+    support2: s2,
+    resistance1: r1,
+    resistance2: r2,
+    price: px,
+    rsi: rsiVal,
+    dailySupport1,
+    dailyResistance1
+  } = analysis;
 
   const nearSupport =
     typeof s1 === "number" &&
@@ -3649,17 +3687,40 @@ function updateUI(data, analysis, fxRate, stockName) {
         }
       }
 
-      // 2026-08-09: 60분봉 기준 장중 지지/저항(해외 전용) — 일봉 기준 1차 지지/저항과 가까운 자리에
-      // 장중 스윙에서도 같은 레벨이 확인되면 "여러 타임프레임에서 겹치는 자리"라는 신뢰도 근거로 추가.
-      // target/stop 자체는 그대로 일봉 기준(위 analyzeData 주석 참고), 여기선 확인 문구만 덧붙임.
+      // 2026-08-09: 60분봉 기준 장중 지지/저항(해외 전용). 2026-08-12부터 일봉보다 현재가에
+      // 더 가까우면(=더 정밀한 최신 자리) analyzeData가 실제 s1/r1 자체를 이걸로 교체하도록
+      // 바뀌었음(위 analyzeData 주석 참고) — 그래서 여기서는 "s1과 같은지"가 아니라 "일봉 단독
+      // 값(dailySupport1/dailyResistance1)과 같은지"로 비교해야 함(안 그러면 이미 자기 자신과
+      // 비교하는 꼴이라 늘 참이 되어버림). 실제로 60분봉 값이 채택된 경우엔 "우선 적용", 단순히
+      // 일봉 값과 우연히 가까운 경우엔 기존처럼 "교차 확인" 문구를 씀.
       if (analysis.intradaySR) {
         const isSr = analysis.intradaySR.support;
         const irR = analysis.intradaySR.resistance;
-        if (Number.isFinite(isSr) && Number.isFinite(s1) && Math.abs(isSr - s1) / s1 <= 0.015) {
+        if (Number.isFinite(isSr) && s1 === isSr && dailySupport1 !== s1) {
+          const txt = toneSpan(
+            `60분봉 기준 더 최근 지지선(${formatPrice(isSr)})을 우선 적용`,
+            "pos"
+          );
+          bits.push(direction === "SELL" ? `다만 ${txt}` : txt);
+        } else if (
+          Number.isFinite(isSr) &&
+          Number.isFinite(dailySupport1) &&
+          Math.abs(isSr - dailySupport1) / dailySupport1 <= 0.015
+        ) {
           const txt = toneSpan("60분봉 기준으로도 같은 지지 자리 확인", "pos");
           bits.push(direction === "SELL" ? `다만 ${txt}` : txt);
         }
-        if (Number.isFinite(irR) && Number.isFinite(r1) && Math.abs(irR - r1) / r1 <= 0.015) {
+        if (Number.isFinite(irR) && r1 === irR && dailyResistance1 !== r1) {
+          const txt = toneSpan(
+            `60분봉 기준 더 최근 저항선(${formatPrice(irR)})을 우선 적용`,
+            "neg"
+          );
+          bits.push(direction === "BUY" ? `다만 ${txt}` : txt);
+        } else if (
+          Number.isFinite(irR) &&
+          Number.isFinite(dailyResistance1) &&
+          Math.abs(irR - dailyResistance1) / dailyResistance1 <= 0.015
+        ) {
           const txt = toneSpan("60분봉 기준으로도 같은 저항 자리 확인", "neg");
           bits.push(direction === "BUY" ? `다만 ${txt}` : txt);
         }
