@@ -59,46 +59,156 @@ function calcATR(highs, lows, closes, period = 14) {
   return atr;
 }
 
-// 목표가/손절가 — app.js(analyzeData)의 로직을 간소화한 사본. 화면 분석은 스윙 클러스터링으로
-// 지지/저항을 잡지만, 알림은 빠른 참고용이라 최근 60봉 고가/저가로 간단히 근사(둘 다 최소 61봉을
-// 보장받으므로 항상 값이 나옴) — 손절은 지지선 또는 ATR×2 기준, 목표가는 저항선 또는 손절폭×1.5 기준.
-// 2026-08-10 1차 수정: 60일 고가/저가 기반(비현실적으로 넓음, 예: -25%/+70%)을 ATR 기반으로
-// 교체하면서 MAX_RISK_PCT를 12%로 잡았는데, 다음날 아침 실제 알림을 보니 관심종목 전종목의
-// 목표가/손절가 %가 전부 똑같이 찍히는 문제가 재현됨(실측 확인: 006800/112610/058610/034020/
-// 475150 등 신호 뜬 종목 전부 target +18.0%/stop -12.9%로 동일).
-// ⚠️ 원인: 2×ATR(14)를 이 관심종목 리스트의 실제 종목들에 계산해보니 12.6%~32.3% 범위로
-// *전부* 12% 상한을 넘어서 있었음 — 즉 "종목별 변동성에 비례해서 스케일된다"는 설계 의도와
-// 다르게, 12% 상한이 사실상 모든 종목에 걸리는 디폴트 값이 되어버려 ATR 기반의 의미가 없어짐.
-// 상한 자체가 이 종목군의 실제 변동성보다 너무 타이트하게 잡혔던 게 문제 — ①ATR 배수를 2배→1.5배로
-// 낮추고(이러면 대부분 종목이 자연스럽게 상한 아래로 들어와 실제로 종목마다 다른 값이 나옴,
-// 실측: 6종목 중 5종목이 9.45%~14.72%로 전부 다르게 나옴) ②그래도 남는 진짜 이상치(예:
-// 475150의 24.2%)를 위한 안전장치로만 상한을 18%로 완화 ③반대로 변동성이 너무 낮아 손절폭이
-// 노이즈 수준으로 좁아지는 것도 막기 위해 최소 4% 하한도 추가.
+// ────────────────────────────────
+// 스윙 포인트 → 지지/저항 레벨 클러스터링 헬퍼 (app.js의 clusterSwingLevels/pickSupportResistance
+// 사본 — 서버 전용, 브라우저 전용 app.js는 require 불가)
+// 2026-08-12: 아래 calcTargetStop 통일 작업으로 신규 이식.
+// ────────────────────────────────
+function clusterSwingLevels(levels, totalBars, tol = 0.03) {
+  const clusters = [];
+  levels.forEach((lv) => {
+    const { price, idx } = lv;
+    let found = null;
+    for (const c of clusters) {
+      const diff = Math.abs(price - c.price) / c.price;
+      if (diff <= tol) {
+        found = c;
+        break;
+      }
+    }
+    if (!found) {
+      clusters.push({ price, idxs: [idx], lastIdx: idx });
+    } else {
+      found.idxs.push(idx);
+      found.lastIdx = Math.max(found.lastIdx, idx);
+      const k = found.idxs.length;
+      found.price = (found.price * (k - 1) + price) / k;
+    }
+  });
+  clusters.forEach((c) => {
+    const touchCount = c.idxs.length;
+    const timeBoost = 1 + c.lastIdx / Math.max(1, totalBars);
+    c.score = touchCount * timeBoost;
+  });
+  return clusters;
+}
+
+function pickSupportResistance(clusters, lastPrice, isSupport, maxDistPct = 0.3) {
+  const filtered = clusters.filter((c) => {
+    if (isSupport ? c.price >= lastPrice : c.price <= lastPrice) return false;
+    const distPct = Math.abs(lastPrice - c.price) / lastPrice;
+    return distPct <= maxDistPct;
+  });
+  if (!filtered.length) return [];
+  filtered.sort((a, b) => b.score - a.score);
+  const top = filtered.slice(0, 5);
+  top.sort((a, b) => Math.abs(lastPrice - a.price) - Math.abs(lastPrice - b.price));
+  return top;
+}
+
+// 목표가/손절가 — 2026-08-12: 결과화면(app.js analyzeData)과 완전히 같은 알고리즘으로 통일.
+// 기존엔 알림 전용으로 ATR만 쓰는 간소화 버전이었는데(60일 고가/저가 → ATR 전환 히스토리는 아래
+// 예전 주석 참고), 사용자가 "화면에서 본 목표가/손절가랑 알림으로 온 값이 서로 다른 근거로 계산돼서
+// 어긋난다"고 지적 — app.js의 5봉 스윙 피벗 기반 지지/저항 클러스터링을 그대로 이식해서, 알림도
+// 결과화면과 똑같이 "지지선=손절 기준/저항선=목표가 기준(각각 못 찾으면 ATR 폴백)" 순서로 계산하도록
+// 맞춤. ⚠️ 포팅 중 실제로 겪은 함정: 기존 알림 엔진에 있던 MIN_RISK_PCT(4%) 하한을 그대로
+// 들고 왔다가, 실측(에스피지 058610)에서 지지선이 현재가 0.2% 아래라는 진짜 유효한 근거를
+// 찾고도 "너무 좁다"며 하한이 억지로 손절폭을 4%로 넓혀버리는 걸 재현함 — 결과화면(app.js)엔
+// 이런 하한이 아예 없고, 지지선 기반 손절은 그게 아무리 가까워도(그만큼 진입 시점이 좋다는
+// 뜻이므로) 그대로 쓰는 게 맞음. app.js와 완전히 같은 기준으로 통일하는 게 이번 작업의 목적이라
+// MIN_RISK_PCT는 제거함(ATR 폴백 경로에도 동일 적용 — app.js도 그렇게 함).
+//
+// [이전 히스토리] 2026-08-10 1차 수정: 60일 고가/저가 기반(비현실적으로 넓음, 예: -25%/+70%)을
+// ATR 기반으로 교체하면서 MAX_RISK_PCT를 12%로 잡았는데, 다음날 아침 실제 알림을 보니 관심종목
+// 전종목의 목표가/손절가 %가 전부 똑같이 찍히는 문제가 재현됨(실측 확인: 006800/112610/058610/
+// 034020/475150 등 신호 뜬 종목 전부 target +18.0%/stop -12.9%로 동일) — 원인은 2×ATR(14)가
+// 이 종목군 전체에서 12% 상한을 항상 넘어서 있었던 것(12.6%~32.3%). ATR 배수 2→1.5, 상한 12%→18%로
+// 재조정해서 해결(이 값들은 이번 통일 작업에서도 그대로 유지).
 function calcTargetStop(highs, lows, closes) {
   const n = closes.length;
   const lastPrice = closes[n - 1];
   const atr = calcATR(highs, lows, closes, 14);
+  const atrPct = typeof atr === "number" && lastPrice > 0 ? (atr / lastPrice) * 100 : null;
+
+  let support1 = null;
+  let resistance1 = null;
+
+  if (n >= 10) {
+    const start = Math.max(2, n - 80);
+    const swingLows = [];
+    const swingHighs = [];
+    // 좌우 2봉씩 비교하는 5봉 피벗(app.js와 동일) — 좌우 1봉(3봉)만 보면 하루짜리 노이즈까지
+    // 스윙 고점/저점으로 잡혀버림.
+    for (let i = start; i < n - 2; i++) {
+      const h = highs[i];
+      const l = lows[i];
+      if (h > highs[i - 1] && h > highs[i - 2] && h > highs[i + 1] && h > highs[i + 2]) {
+        swingHighs.push({ price: h, idx: i });
+      }
+      if (l < lows[i - 1] && l < lows[i - 2] && l < lows[i + 1] && l < lows[i + 2]) {
+        swingLows.push({ price: l, idx: i });
+      }
+    }
+
+    // 클러스터링 허용오차·탐색거리 둘 다 종목 변동성(ATR%) 기반(app.js와 동일 상수).
+    const swingTol = Number.isFinite(atrPct)
+      ? Math.max(0.015, Math.min(0.08, (atrPct * 1.5) / 100))
+      : 0.03;
+    const srMaxDist = Number.isFinite(atrPct)
+      ? Math.max(0.1, Math.min(0.2, (atrPct * 5) / 100))
+      : 0.15;
+
+    const lowClusters = clusterSwingLevels(swingLows, n, swingTol);
+    const highClusters = clusterSwingLevels(swingHighs, n, swingTol);
+
+    const supportLevels = pickSupportResistance(lowClusters, lastPrice, true, srMaxDist);
+    const resistanceLevels = pickSupportResistance(highClusters, lastPrice, false, srMaxDist);
+
+    if (supportLevels.length > 0) support1 = supportLevels[0].price;
+    if (resistanceLevels.length > 0) resistance1 = resistanceLevels[0].price;
+
+    // 클러스터링으로 못 찾으면 60봉 최고/최저로 폴백(오늘 봉 자체는 제외) — srMaxDist를
+    // fallback에도 똑같이 적용(app.js에서 실제로 재현됐던 "저항선이 현재가 대비 +64%" 버그와
+    // 같은 함정을 여기서도 피하기 위함).
+    if (support1 === null) {
+      const recentLows = lows.slice(Math.max(0, n - 60), n - 1);
+      if (recentLows.length) {
+        const minLow = Math.min(...recentLows);
+        const distPct = (lastPrice - minLow) / lastPrice;
+        if (minLow < lastPrice && distPct <= srMaxDist) support1 = minLow;
+      }
+    }
+    if (resistance1 === null) {
+      const recentHighs = highs.slice(Math.max(0, n - 60), n - 1);
+      if (recentHighs.length) {
+        const maxHigh = Math.max(...recentHighs);
+        const distPct = (maxHigh - lastPrice) / lastPrice;
+        if (maxHigh > lastPrice && distPct <= srMaxDist) resistance1 = maxHigh;
+      }
+    }
+  }
 
   const ATR_STOP_MULT = 1.5;
   const RR_RATIO = 1.5;
-  const MIN_RISK_PCT = 4;
   const MAX_RISK_PCT = 18;
 
-  let stopBase =
-    typeof atr === "number" && atr > 0
-      ? lastPrice - ATR_STOP_MULT * atr
-      : lastPrice * (1 - MAX_RISK_PCT / 100);
+  let stopBase;
+  if (support1 !== null && support1 < lastPrice) {
+    stopBase = support1;
+  } else if (typeof atr === "number" && atr > 0) {
+    stopBase = lastPrice - ATR_STOP_MULT * atr;
+  } else {
+    stopBase = lastPrice * (1 - MAX_RISK_PCT / 100);
+  }
 
-  const riskPct = ((lastPrice - stopBase) / lastPrice) * 100;
+  let riskPct = ((lastPrice - stopBase) / lastPrice) * 100;
   if (riskPct > MAX_RISK_PCT) {
     stopBase = lastPrice * (1 - MAX_RISK_PCT / 100);
-  } else if (riskPct < MIN_RISK_PCT) {
-    stopBase = lastPrice * (1 - MIN_RISK_PCT / 100);
   }
 
   const stop = stopBase * 0.99;
   const riskAmount = lastPrice - stopBase;
-  const target1 = lastPrice + riskAmount * RR_RATIO;
+  const target1 = resistance1 !== null ? resistance1 * 0.995 : lastPrice + riskAmount * RR_RATIO;
 
   return { target1, stop };
 }
