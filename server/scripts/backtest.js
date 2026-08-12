@@ -116,6 +116,17 @@ function formatStat(label, stat) {
   ).padEnd(3)} 미결=${String(stat.timeout).padEnd(3)} 승률(결판난 것 중)=${winRate}%  평균 방향적중 수익률=${avgReturn}%`;
 }
 
+// 2026-08-12 추가: 신호별 승률/수익률만 보고 "좋다/나쁘다"를 판단하면 함정이 있음 — 예를 들어
+// 백테스트 구간(최근 ~3년) 자체가 전반적 상승장이었다면, BUY는 아무 신호 없이 "그냥 아무 날에나
+// 사서 20일 들고 있기"만 해도 승률이 높게 나오고, SELL은 반대로 "실제 하락 예측 능력"과 무관하게
+// 그 상승 드리프트 때문에 불리해 보일 수 있음. 그래서 신호 유무와 무관하게 "이 구간 아무 날에나
+// 진입해서 20일 뒤 어떻게 됐는지"를 기준선(baseline)으로 같이 재서, 신호가 기준선 대비 진짜
+// 초과 성과(알파)가 있는지로 해석해야 함 — 순수 승률/수익률 숫자만 보고 SELL을 폐기하거나 BUY를
+// 과신하면 안 됨.
+function newBaseline() {
+  return { n: 0, upDays: 0, returnSum: 0 };
+}
+
 async function backtestSymbol(symbol, stats) {
   const { highs, lows, closes, opens, volumes } = await fetchExtendedHistory(symbol);
   const n = closes.length;
@@ -135,6 +146,13 @@ async function backtestSymbol(symbol, stats) {
     const v = volumes.slice(0, i + 1);
     const entryPrice = c[c.length - 1];
     const fromIdx = i + 1;
+
+    // 기준선: 신호 발생 여부와 무관하게 모든 날에 대해 20일 뒤 수익률을 그대로 기록
+    const baseEndIdx = Math.min(fromIdx + LOOKAHEAD_DAYS - 1, closes.length - 1);
+    const baseReturnPct = ((closes[baseEndIdx] - entryPrice) / entryPrice) * 100;
+    stats.baseline.n++;
+    stats.baseline.returnSum += baseReturnPct;
+    if (baseReturnPct > 0) stats.baseline.upDays++;
 
     // ── MA20/60 골든/데드크로스 (ADX 게이트 적용 전/후 둘 다 측정 — 게이트 자체가 실제로
     //    도움되는지 검증하는 게 이 백테스트의 핵심 동기 중 하나)
@@ -189,6 +207,7 @@ async function main() {
     maCrossAdxGated: { BUY: newStat(), SELL: newStat() },
     macdCross: { BUY: newStat(), SELL: newStat() },
     volumeSurge: { BUY: newStat(), SELL: newStat() },
+    baseline: newBaseline(),
   };
 
   console.log(`대상 종목 ${watchlist.length}개:\n`);
@@ -200,6 +219,18 @@ async function main() {
     }
     await sleep(600);
   }
+
+  const baseUpRate = ((stats.baseline.upDays / stats.baseline.n) * 100).toFixed(1);
+  const baseAvgReturn = (stats.baseline.returnSum / stats.baseline.n).toFixed(2);
+
+  console.log("\n===== 기준선(신호 유무 무관, 아무 날에나 진입했을 때) =====\n");
+  console.log(
+    `이 구간 전체: N=${stats.baseline.n}  20일 뒤 상승 비율=${baseUpRate}%  평균 20일 수익률=${baseAvgReturn}%`
+  );
+  console.log(
+    "→ BUY 신호는 이 상승비율/평균수익률보다 높아야, SELL 신호는 하락비율((100-상승비율)%)보다\n" +
+      "  높은 적중률을 보여야 각각 '신호 자체의 알파'가 있다고 볼 수 있음(단순 시장 드리프트가 아니라)."
+  );
 
   console.log("\n===== 결과 요약 =====\n");
   console.log("[MA20/60 크로스 — ADX 게이트 적용 전(원본)]");
@@ -216,6 +247,7 @@ async function main() {
   console.log(formatStat("SELL", stats.volumeSurge.SELL));
 
   console.log("\n(승률은 target1/stop 중 하나를 실제로 친 신호만 대상 — 미결은 별도 표기)");
+  console.log(`(기준선: 상승비율 ${baseUpRate}%, 평균수익률 ${baseAvgReturn}% — 위 신호별 수치와 비교해서 해석할 것)`);
   console.log("[RAVEN 백테스트] 종료 —", new Date().toISOString());
 }
 
