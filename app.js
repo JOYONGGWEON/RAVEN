@@ -2431,6 +2431,28 @@ function setIndicatorBox(el, valueText, interpHtml, sentiment) {
 }
 
 // 4) 캔들 패턴 인식 (12종 확장)
+// 2026-08-12 피드백: "당일 캔들뿐 아니라 이전까지의 캔들을 종합했을 때 나오는 패턴"이 빠진 게
+// 없는지 검토해달라는 요청으로 두 종류의 개선을 함께 진행함.
+// ① 니슨(Nison) 캔들차트 이론 기준으로, 반전형 패턴(해머/역망치/유성/도지류/장악형/관통형/먹구름형/
+//    샛별·석별)은 전부 "그 직전에 실제로 반대 방향 추세가 있었는가"가 성립 조건인데, 기존 코드는
+//    당일(+전1~2봉)의 캔들 모양만 보고 판정해서 상승장 한복판에 우연히 나온 망치형 캔들에도
+//    "하락 반전 신호일 수 있다"는 코멘트가 붙는 오분류가 있었음 — 패턴 시작 직전 5봉의 순변동률로
+//    "직전 추세"를 계산해서 방향 조건으로 추가함(아래 precedingTrendDirection).
+// ② 3봉까지만 보던 기존 구조라, 정의상 3~5봉이 필요한 패턴들이 통째로 빠져있었음 — Three Inside
+//    Up/Down(하라미+확인봉), Three Outside Up/Down(장악형+확인봉, 기존 "Doji 반전 확인"과 같은
+//    설계), Rising/Falling Three Methods(5봉 추세지속형), Kicker(갭 기반 최강 반전형) 신규 추가.
+function precedingTrendDirection(closes, beforeIdx, lookback = 5) {
+  const startIdx = beforeIdx - lookback;
+  if (startIdx < 0) return "FLAT";
+  const start = closes[startIdx];
+  const end = closes[beforeIdx - 1];
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start === 0) return "FLAT";
+  const changePct = ((end - start) / start) * 100;
+  if (changePct <= -2) return "DOWN";
+  if (changePct >= 2) return "UP";
+  return "FLAT";
+}
+
 function detectCandlePatterns(data, analysis) {
   const { opens, closes, highs, lows } = data;
   const n = closes.length;
@@ -2453,6 +2475,11 @@ function detectCandlePatterns(data, analysis) {
   const c2 = closes[idx - 2];
   const h2 = highs[idx - 2];
   const l2 = lows[idx - 2];
+
+  // 1~2봉짜리 패턴(해머류/도지류/장악형/관통형/먹구름형)용 — 오늘 캔들 시작 직전까지의 추세.
+  // 3봉짜리 스타 패턴(샛별/석별)용 — 별 패턴 자체가 시작되는 idx-2 캔들 직전까지의 추세.
+  const trendBeforeToday = precedingTrendDirection(closes, idx, 5);
+  const trendBeforeStar = precedingTrendDirection(closes, idx - 2, 5);
 
   const body = Math.abs(c - o);
   const range = Math.max(h, l, o, c) - Math.min(h, l, o, c) || 1e-9;
@@ -2477,73 +2504,79 @@ function detectCandlePatterns(data, analysis) {
 
   const rsi = analysis.rsi;
 
-  // 4-1) Bullish Engulfing
+  // 4-1) Bullish Engulfing — 니슨 정의상 "직전 하락 추세"가 성립 조건(없으면 그냥 큰 양봉일 뿐,
+  // 반전 신호가 아님) — trendBeforeToday 조건 추가.
   if (
     isBull &&
     isBear1 &&
     o < c1 &&
     c > o1 &&
     bodyRatio > 0.4 &&
-    body1 / (range1 || 1e-9) > 0.2
+    body1 / (range1 || 1e-9) > 0.2 &&
+    trendBeforeToday === "DOWN"
   ) {
     patterns.push({
       name: "Bullish Engulfing",
       direction: "pos",
       strength: 3,
       comment:
-        "전일 음봉을 통째로 감싸는 강한 양봉이 출현해, 단기 추세 전환/반등 가능성이 높은 패턴입니다."
+        "직전 하락 흐름 속에서 전일 음봉을 통째로 감싸는 강한 양봉이 출현해, 단기 추세 전환/반등 가능성이 높은 패턴입니다."
     });
   }
 
-  // 4-2) Bearish Engulfing
+  // 4-2) Bearish Engulfing — 직전 상승 추세가 성립 조건.
   if (
     isBear &&
     isBull1 &&
     o > c1 &&
     c < o1 &&
     bodyRatio > 0.4 &&
-    body1 / (range1 || 1e-9) > 0.2
+    body1 / (range1 || 1e-9) > 0.2 &&
+    trendBeforeToday === "UP"
   ) {
     patterns.push({
       name: "Bearish Engulfing",
       direction: "neg",
       strength: 3,
       comment:
-        "전일 양봉을 통째로 뒤집는 강한 음봉이 출현해, 단기 상방 피로/조정 가능성이 높은 패턴입니다."
+        "직전 상승 흐름 속에서 전일 양봉을 통째로 뒤집는 강한 음봉이 출현해, 단기 상방 피로/조정 가능성이 높은 패턴입니다."
     });
   }
 
-  // 4-3) Hammer (망치형)
+  // 4-3) Hammer (망치형) — 정의상 "하락 추세 말단"에서 나와야 의미 있는 반전 신호. 상승장 도중
+  // 우연히 나온 아랫꼬리 캔들까지 "반등 가능성"으로 코멘트가 붙던 오분류를 막기 위해 조건 추가.
   if (
     bodyRatio < 0.4 &&
     lowerWick > body * 2 &&
     upperWick < body * 0.5 &&
-    isBull
+    isBull &&
+    trendBeforeToday === "DOWN"
   ) {
     patterns.push({
       name: "Hammer",
       direction: "pos",
       strength: 2,
       comment:
-        "아랫꼬리가 긴 망치형 캔들로, 아래꼬리 구간에서 매수 방어가 강하게 나온 신호입니다. 지지선 부근이라면 기술적 반등 가능성이 있습니다."
+        "직전 하락 흐름 끝에서 아랫꼬리가 긴 망치형 캔들이 나와, 아래꼬리 구간에서 매수 방어가 강하게 들어온 신호입니다. 지지선 부근이라면 기술적 반등 가능성이 있습니다."
     });
   }
 
-  // 4-4) Inverted Hammer / Shooting Star (역망치형)
+  // 4-4) Inverted Hammer / Shooting Star (역망치형) — 역망치형(Inverted Hammer)은 하락 추세
+  // 말단, 유성형(Shooting Star)은 상승 추세 말단에서 나와야 각각의 반전 의미가 성립함.
   if (
     bodyRatio < 0.4 &&
     upperWick > body * 2 &&
     lowerWick < body * 0.5
   ) {
-    if (isBear) {
+    if (isBear && trendBeforeToday === "UP") {
       patterns.push({
         name: "Shooting Star",
         direction: "neg",
         strength: 2,
         comment:
-          "윗꼬리가 긴 역망치형 캔들로, 위쪽에서 매도 압력이 강하게 나온 신호입니다. 저항선 부근이라면 단기 피크/조정 가능성을 시사합니다."
+          "직전 상승 흐름 끝에서 윗꼬리가 긴 역망치형 캔들이 나와, 위쪽에서 매도 압력이 강하게 들어온 신호입니다. 저항선 부근이라면 단기 피크/조정 가능성을 시사합니다."
       });
-    } else {
+    } else if (!isBear && trendBeforeToday === "DOWN") {
       patterns.push({
         name: "Inverted Hammer",
         direction: "pos",
@@ -2554,24 +2587,28 @@ function detectCandlePatterns(data, analysis) {
     }
   }
 
-  // 4-5) Doji / Dragonfly / Gravestone
+  // 4-5) Doji / Dragonfly / Gravestone — Dragonfly/Gravestone은 각각 하락/상승 추세 말단에서
+  // 나와야 반전 신호로서 의미가 있음. 추세 조건이 안 맞으면 모양은 맞아도 그냥 일반 Doji로 표시
+  // (사라지지 않고 한 단계 약한 라벨로 폴백 — 도지 자체는 여전히 사실이므로).
   const isDoji = bodyRatio < 0.1;
   if (isDoji) {
-    if (lowerWick > body * 4 && upperWick < body * 0.5) {
+    const longLowerWick = lowerWick > body * 4 && upperWick < body * 0.5;
+    const longUpperWick = upperWick > body * 4 && lowerWick < body * 0.5;
+    if (longLowerWick && trendBeforeToday === "DOWN") {
       patterns.push({
         name: "Dragonfly Doji",
         direction: "pos",
         strength: 2,
         comment:
-          "아랫꼬리가 긴 Dragonfly Doji로, 하락 중 매수 방어가 강하게 들어온 모양입니다. 지지선 부근이라면 반등 신호가 될 수 있습니다."
+          "직전 하락 흐름 속에서 아랫꼬리가 긴 Dragonfly Doji가 나와, 매수 방어가 강하게 들어온 모양입니다. 지지선 부근이라면 반등 신호가 될 수 있습니다."
       });
-    } else if (upperWick > body * 4 && lowerWick < body * 0.5) {
+    } else if (longUpperWick && trendBeforeToday === "UP") {
       patterns.push({
         name: "Gravestone Doji",
         direction: "neg",
         strength: 2,
         comment:
-          "윗꼬리가 긴 Gravestone Doji로, 상승 중 위에서 매도 압력이 강한 형태입니다. 저항 부근이라면 피크/조정 신호일 수 있습니다."
+          "직전 상승 흐름 속에서 윗꼬리가 긴 Gravestone Doji가 나와, 위에서 매도 압력이 강한 형태입니다. 저항 부근이라면 피크/조정 신호일 수 있습니다."
       });
     } else {
       patterns.push({
@@ -2681,25 +2718,29 @@ function detectCandlePatterns(data, analysis) {
     });
   }
 
-  // 4-9) Morning Star / Evening Star (3캔들 반전 패턴)
+  // 4-9) Morning Star / Evening Star (3캔들 반전 패턴) — 기존엔 RSI<50/>50로 "추세 방향"을
+  // 대충 근사했는데, RSI는 모멘텀이지 추세 유무 자체를 보장하진 않음(예: 얕은 횡보에서도 RSI가
+  // 50 근처를 오갈 수 있음) — 실제 직전 추세(trendBeforeStar)로 교체해 더 정확하게 만듦.
+  // 첫 캔들(idx-2)이 원래 추세 방향으로 충분히 강해야 한다는 정석 조건도 추가(기존엔 계산만 하고
+  // 안 쓰던 smallBody2를 "첫 캔들이 강해야 함" 조건으로 바로잡아 활용).
   const smallBody1 = body1 / (range1 || 1e-9) < 0.3;
-  const smallBody2 = body2 / (range2 || 1e-9) < 0.3;
+  const firstCandleStrong2 = body2 / (range2 || 1e-9) > 0.4;
 
   if (
     isBull &&
     isBear1 &&
     isBear2 &&
+    firstCandleStrong2 &&
     smallBody1 &&
     c > (o1 + c1) / 2 &&
-    rsi &&
-    rsi < 50
+    trendBeforeStar === "DOWN"
   ) {
     patterns.push({
       name: "Morning Star",
       direction: "pos",
       strength: 3,
       comment:
-        "하락 후 작은 몸통과 강한 양봉이 이어지는 상승 반전 패턴입니다. 지지선 근처에서 나타나면 추세 전환 신호로 볼 수 있습니다."
+        "직전 하락 추세 끝에서 작은 몸통과 강한 양봉이 이어지는 상승 반전 패턴입니다. 지지선 근처에서 나타나면 추세 전환 신호로 볼 수 있습니다."
     });
   }
 
@@ -2707,17 +2748,17 @@ function detectCandlePatterns(data, analysis) {
     isBear &&
     isBull1 &&
     isBull2 &&
+    firstCandleStrong2 &&
     smallBody1 &&
     c < (o1 + c1) / 2 &&
-    rsi &&
-    rsi > 50
+    trendBeforeStar === "UP"
   ) {
     patterns.push({
       name: "Evening Star",
       direction: "neg",
       strength: 3,
       comment:
-        "상승 추세 후 작은 몸통과 강한 음봉이 이어지는 하락 반전 패턴입니다. 저항 부근에서는 피크 아웃 신호일 가능성이 높습니다."
+        "직전 상승 추세 끝에서 작은 몸통과 강한 음봉이 이어지는 하락 반전 패턴입니다. 저항 부근에서는 피크 아웃 신호일 가능성이 높습니다."
     });
   }
 
@@ -2737,39 +2778,43 @@ function detectCandlePatterns(data, analysis) {
     });
   }
 
-  // 4-11) Piercing Line (관통형) — 하락 후 반전 시도, Bullish Engulfing보다는 약한 형태
+  // 4-11) Piercing Line (관통형) — 하락 후 반전 시도, Bullish Engulfing보다는 약한 형태.
+  // 정석대로 직전 하락 추세 조건 추가.
   if (
     isBull &&
     isBear1 &&
     o <= c1 &&
     c > (o1 + c1) / 2 &&
     c < o1 &&
-    body1 / (range1 || 1e-9) > 0.3
+    body1 / (range1 || 1e-9) > 0.3 &&
+    trendBeforeToday === "DOWN"
   ) {
     patterns.push({
       name: "Piercing Line",
       direction: "pos",
       strength: 3,
       comment:
-        "전일 음봉 몸통의 절반 이상을 되돌리는 양봉이 출현한 관통형 패턴입니다. 완전한 장악(Engulfing)만큼 강하진 않지만, 하락 흐름에 제동이 걸렸다는 신호로 볼 수 있습니다."
+        "직전 하락 흐름 속에서 전일 음봉 몸통의 절반 이상을 되돌리는 양봉이 출현한 관통형 패턴입니다. 완전한 장악(Engulfing)만큼 강하진 않지만, 하락 흐름에 제동이 걸렸다는 신호로 볼 수 있습니다."
     });
   }
 
-  // 4-12) Dark Cloud Cover (먹구름형) — 상승 후 반전 시도, Piercing Line의 대칭 패턴
+  // 4-12) Dark Cloud Cover (먹구름형) — 상승 후 반전 시도, Piercing Line의 대칭 패턴.
+  // 정석대로 직전 상승 추세 조건 추가.
   if (
     isBear &&
     isBull1 &&
     o >= c1 &&
     c < (o1 + c1) / 2 &&
     c > o1 &&
-    body1 / (range1 || 1e-9) > 0.3
+    body1 / (range1 || 1e-9) > 0.3 &&
+    trendBeforeToday === "UP"
   ) {
     patterns.push({
       name: "Dark Cloud Cover",
       direction: "neg",
       strength: 3,
       comment:
-        "전일 양봉 몸통의 절반 이상을 되돌리는 음봉이 덮은 먹구름형 패턴입니다. 상승 추세 상단에서 나오면 매수세 소진·단기 조정 신호로 해석합니다."
+        "직전 상승 흐름 속에서 전일 양봉 몸통의 절반 이상을 되돌리는 음봉이 덮은 먹구름형 패턴입니다. 매수세 소진·단기 조정 신호로 해석합니다."
     });
   }
 
@@ -2815,6 +2860,163 @@ function detectCandlePatterns(data, analysis) {
       strength: 2,
       comment:
         "전일과 오늘의 저점이 거의 같은 높이에서 지지된 집게형 하단 패턴입니다. 같은 가격대에서 매수세가 반복적으로 들어왔다는 뜻으로, 지지선 부근이라면 신뢰도가 더 높아집니다."
+    });
+  }
+
+  // 4-15) Three Inside Up / Down — Harami(idx-1이 idx-2 몸통 안에 들어감) 다음날 확인봉까지
+  // 포함한 3봉 패턴. 기존 "Doji 반전 확인"(4-5-1)과 같은 설계 사상 — 하라미 자체는 방향 전환
+  // "가능성"만 보여주고, 확인봉이 나와야 실제로 방향이 정해졌다고 봄.
+  const idx1InsideIdx2 =
+    Math.min(o1, c1) > Math.min(o2, c2) && Math.max(o1, c1) < Math.max(o2, c2);
+
+  if (
+    isBear2 &&
+    body2 / (range2 || 1e-9) > 0.4 &&
+    idx1InsideIdx2 &&
+    isBull &&
+    c > Math.max(o2, c2)
+  ) {
+    patterns.push({
+      name: "Three Inside Up",
+      direction: "pos",
+      strength: 4,
+      comment:
+        "하락 하라미(작은 몸통이 전전일 큰 음봉 안에 들어옴) 다음날 그 범위를 완전히 뛰어넘는 양봉이 나와, 상승 반전이 확인된 패턴입니다."
+    });
+  }
+
+  if (
+    isBull2 &&
+    body2 / (range2 || 1e-9) > 0.4 &&
+    idx1InsideIdx2 &&
+    isBear &&
+    c < Math.min(o2, c2)
+  ) {
+    patterns.push({
+      name: "Three Inside Down",
+      direction: "neg",
+      strength: 4,
+      comment:
+        "상승 하라미(작은 몸통이 전전일 큰 양봉 안에 들어옴) 다음날 그 범위를 완전히 뛰어넘는 음봉이 나와, 하락 반전이 확인된 패턴입니다."
+    });
+  }
+
+  // 4-16) Three Outside Up / Down — Engulfing(idx-1이 idx-2를 장악) 다음날 확인봉까지 포함한
+  // 3봉 패턴. Three Inside와 같은 사상이지만 하라미 대신 장악형이 기준.
+  const idx1EngulfsIdx2Bull = isBull1 && isBear2 && o1 < c2 && c1 > o2;
+  const idx1EngulfsIdx2Bear = isBear1 && isBull2 && o1 > c2 && c1 < o2;
+
+  if (idx1EngulfsIdx2Bull && isBull && c > c1) {
+    patterns.push({
+      name: "Three Outside Up",
+      direction: "pos",
+      strength: 4,
+      comment:
+        "전전일 음봉을 장악하는 양봉이 나온 다음, 오늘도 추가 상승 마감하며 상승 반전이 재확인된 패턴입니다."
+    });
+  }
+
+  if (idx1EngulfsIdx2Bear && isBear && c < c1) {
+    patterns.push({
+      name: "Three Outside Down",
+      direction: "neg",
+      strength: 4,
+      comment:
+        "전전일 양봉을 장악하는 음봉이 나온 다음, 오늘도 추가 하락 마감하며 하락 반전이 재확인된 패턴입니다."
+    });
+  }
+
+  // 4-17) Rising / Falling Three Methods — 5봉짜리 추세지속형 패턴. 지금까지는 최대 3봉(오늘+
+  // 전2일)만 보던 구조라 통째로 빠져있었음 — "장대 캔들 하나 + 그 범위 안에서 숨고르는 작은
+  // 캔들 3개 + 원래 방향으로 재돌파하는 캔들"이라는, 며칠에 걸친 캔들을 종합해야 나오는 대표적인
+  // 패턴이라 이번 검토의 핵심 추가 대상. idx-4(첫 장대봉)까지 필요해서 별도 인덱스 확보.
+  if (idx - 4 >= 0) {
+    const o3 = opens[idx - 3], c3 = closes[idx - 3], h3 = highs[idx - 3], l3 = lows[idx - 3];
+    const o4 = opens[idx - 4], c4 = closes[idx - 4], h4 = highs[idx - 4], l4 = lows[idx - 4];
+    const body4 = Math.abs(c4 - o4);
+    const range4 = Math.max(h4, l4, o4, c4) - Math.min(h4, l4, o4, c4) || 1e-9;
+    const isBull4 = c4 > o4;
+    const isBear4 = c4 < o4;
+
+    const middleCandles = [
+      { o: o3, c: c3 },
+      { o: o2, c: c2 },
+      { o: o1, c: c1 }
+    ];
+    // 중간 3봉이 첫 캔들의 고가/저가 범위 안에 들어오고, 몸통도 첫 캔들보다 확연히 작아야
+    // "숨고르기"로 볼 수 있음(그냥 3개의 큰 반대방향 캔들이면 다른 패턴이 되어야 함).
+    const allInsideFirstRange = middleCandles.every(
+      (k) => Math.max(k.o, k.c) <= h4 && Math.min(k.o, k.c) >= l4
+    );
+    const allSmallBodies = middleCandles.every((k) => Math.abs(k.c - k.o) < body4 * 0.6);
+
+    if (
+      isBull4 &&
+      body4 / range4 > 0.5 &&
+      allInsideFirstRange &&
+      allSmallBodies &&
+      isBull &&
+      c > c4
+    ) {
+      patterns.push({
+        name: "Rising Three Methods",
+        direction: "pos",
+        strength: 3,
+        comment:
+          "장대 양봉 이후 3봉 동안 그 범위 안에서 숨고르기를 하다가, 오늘 다시 강하게 상승 돌파하며 상승 추세가 이어지는 지속형 패턴입니다."
+      });
+    }
+
+    if (
+      isBear4 &&
+      body4 / range4 > 0.5 &&
+      allInsideFirstRange &&
+      allSmallBodies &&
+      isBear &&
+      c < c4
+    ) {
+      patterns.push({
+        name: "Falling Three Methods",
+        direction: "neg",
+        strength: 3,
+        comment:
+          "장대 음봉 이후 3봉 동안 그 범위 안에서 숨고르기를 하다가, 오늘 다시 강하게 하락 돌파하며 하락 추세가 이어지는 지속형 패턴입니다."
+      });
+    }
+  }
+
+  // 4-18) Kicker (킥커) — 갭을 동반한 정반대 색 마루보즈 두 개가 이어지는, 캔들차트 이론에서
+  // 손꼽히는 가장 강력한 반전 신호(장악형보다도 강하다고 평가됨). 기존 목록에 아예 없던 패턴이라
+  // 신규 추가 — strength를 다른 모든 패턴보다 한 단계 높은 5로 부여.
+  if (
+    isBear1 &&
+    body1 / (range1 || 1e-9) > 0.6 &&
+    isBull &&
+    bodyRatio > 0.6 &&
+    o >= o1
+  ) {
+    patterns.push({
+      name: "Bullish Kicker",
+      direction: "pos",
+      strength: 5,
+      comment:
+        "전일 강한 음봉을 시가부터 뛰어넘는 갭과 함께 강한 양봉이 출현한 킥커 패턴입니다. 캔들차트 이론상 가장 강력한 반전 신호 중 하나로 꼽힙니다."
+    });
+  }
+
+  if (
+    isBull1 &&
+    body1 / (range1 || 1e-9) > 0.6 &&
+    isBear &&
+    bodyRatio > 0.6 &&
+    o <= o1
+  ) {
+    patterns.push({
+      name: "Bearish Kicker",
+      direction: "neg",
+      strength: 5,
+      comment:
+        "전일 강한 양봉을 시가부터 무너뜨리는 갭과 함께 강한 음봉이 출현한 킥커 패턴입니다. 캔들차트 이론상 가장 강력한 반전 신호 중 하나로 꼽힙니다."
     });
   }
 
