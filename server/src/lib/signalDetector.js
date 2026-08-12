@@ -554,4 +554,18 @@ async function checkSignal(symbol) {
   };
 }
 
-module.exports = { checkSignal };
+// 2026-08-12: 백테스팅 엔진(server/scripts/backtest.js)이 checkSignal 안의 개별 판정 함수를
+// "당일 데이터까지만 잘라서" 과거 시점별로 재현해야 해서, 로직을 새로 베끼지 않고 그대로 재사용하도록
+// export 추가(단일 진실 공급원 유지 — 복붙하면 나중에 실서비스 로직만 고치고 백테스트는 안 고쳐서
+// 둘이 어긋나는 위험이 생김).
+module.exports = {
+  checkSignal,
+  fetchCandles,
+  calcATR,
+  calcADX,
+  detectMACross,
+  detectMacdCross,
+  detectVolumeSurge,
+  calcTargetStop,
+  ADX_TREND_THRESHOLD,
+};

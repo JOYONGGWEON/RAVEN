@@ -105,15 +105,22 @@ async function fetchDomesticWeeklyCandles(symbol) {
   }));
 }
 
+// 2026-08-12: 백테스팅 엔진용으로 count를 훨씬 크게 요청할 수 있도록(예: 800 = 3년치) 2회 고정
+// 스티칭을 N회 루프로 일반화 — count가 작으면(기존 180 등) 예전과 동일하게 1~2번만 돌아서
+// 라이브 분석 경로(app.js/signalDetector.js)엔 동작 변화 없음. MAX_BATCHES는 무한 루프 방지용
+// 안전장치(8배치 × 100건 ≈ 800거래일 ≈ 3년치, 이 이상은 백테스트 표본으로도 과함).
 async function fetchDomesticCandles(symbol, count) {
-  const batch1 = await fetchDomesticCandleBatch(symbol, ymd(new Date()));
-  let rows = batch1;
+  let rows = [];
+  let dateTo = ymd(new Date());
+  const MAX_BATCHES = 8;
 
-  if (batch1.length && count > batch1.length) {
-    const oldest = batch1[batch1.length - 1].stck_bsop_date;
-    await sleep(600);
-    const batch2 = await fetchDomesticCandleBatch(symbol, shiftYmd(oldest, -1));
-    rows = rows.concat(batch2);
+  for (let i = 0; i < MAX_BATCHES && rows.length < count; i++) {
+    if (i > 0) await sleep(600);
+    const batch = await fetchDomesticCandleBatch(symbol, dateTo);
+    if (!batch.length) break;
+    rows = rows.concat(batch);
+    const oldest = batch[batch.length - 1].stck_bsop_date;
+    dateTo = shiftYmd(oldest, -1);
   }
 
   return rows.map((r) => ({
@@ -198,20 +205,24 @@ async function fetchOverseasCandleBatch(symbol, excd, bymd) {
   return json.output2 || [];
 }
 
+// 2026-08-12: 국내와 동일하게 백테스트용 확장 조회를 위해 N회 루프로 일반화(위 fetchDomesticCandles
+// 주석 참고 — count가 작은 라이브 경로는 동작 변화 없음).
 async function fetchOverseasCandles(symbol, count) {
   const excd = await resolveOverseasExchange(symbol);
-  await sleep(600);
+  let rows = [];
+  let bymd = "";
+  const MAX_BATCHES = 8;
 
-  const batch1 = await fetchOverseasCandleBatch(symbol, excd, "");
-  let rows = batch1;
-
-  if (batch1.length && count > batch1.length) {
-    const oldest = batch1[batch1.length - 1].xymd;
+  for (let i = 0; i < MAX_BATCHES && rows.length < count; i++) {
     await sleep(600);
-    const batch2 = await fetchOverseasCandleBatch(symbol, excd, oldest);
-    // BYMD 기준일 자체가 양쪽 배치에 중복으로 걸릴 수 있어 날짜 기준으로 중복 제거
+    const batch = await fetchOverseasCandleBatch(symbol, excd, bymd);
+    if (!batch.length) break;
+    // BYMD 기준일 자체가 배치 경계에서 중복으로 걸릴 수 있어 날짜 기준으로 중복 제거
     const seen = new Set(rows.map((r) => r.xymd));
-    rows = rows.concat(batch2.filter((r) => !seen.has(r.xymd)));
+    const fresh = batch.filter((r) => !seen.has(r.xymd));
+    if (!fresh.length) break;
+    rows = rows.concat(fresh);
+    bymd = batch[batch.length - 1].xymd;
   }
 
   return rows.map((r) => ({
