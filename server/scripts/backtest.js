@@ -127,6 +127,17 @@ function newBaseline() {
   return { n: 0, upDays: 0, returnSum: 0 };
 }
 
+// 2026-08-12 추가(사용자 피드백): SELL의 방향 정확도가 기준선과 비슷하다는 결과에 "손절이 아니라
+// 익절 구간에서 나온 SELL이면 정확도가 낮아도 괜찮지 않냐"는 정확한 지적을 받음 — RAVEN의 SELL은
+// 숏 진입 예측이 아니라 기존 롱 포지션의 청산 신호라, "그 뒤 가격이 내렸는가"만으로 품질을 매기면
+// 안 되고 "그 시점에 이미 수익 구간이었는가(그럼 손절 여부와 무관하게 저위험)"를 나눠서 봐야 함.
+// 완전한 포지션 추적 시뮬레이터는 과한 스코프라, 근사치로 "그 종목에서 가장 최근에 뜬 BUY류 신호의
+// 가격"을 진입가로 간주해 SELL 시점 현재가와 비교 — 실제 포트폴리오 상태 추적이 아니라 근사임을
+// 감안할 것(예: 그 BUY 신호 자체를 실제로 매매하지 않았을 수도 있음).
+function newZoneStat() {
+  return { PROFIT: newStat(), LOSS: newStat(), NO_REF: newStat() };
+}
+
 async function backtestSymbol(symbol, stats) {
   const { highs, lows, closes, opens, volumes } = await fetchExtendedHistory(symbol);
   const n = closes.length;
@@ -137,6 +148,12 @@ async function backtestSymbol(symbol, stats) {
 
   const lastEvalIdx = n - 1 - LOOKAHEAD_DAYS; // 이 이후로는 미래 데이터가 부족해 평가 불가
   let signalCount = 0;
+  let lastBuyEntryPrice = null; // 이 종목에서 가장 최근에 뜬 BUY류 신호의 진입가 근사치(위 newZoneStat 주석 참고)
+
+  const classifyZone = (currentPrice) => {
+    if (lastBuyEntryPrice == null) return "NO_REF";
+    return currentPrice > lastBuyEntryPrice ? "PROFIT" : "LOSS";
+  };
 
   for (let i = START_IDX; i <= lastEvalIdx; i++) {
     const h = highs.slice(0, i + 1);
@@ -154,6 +171,11 @@ async function backtestSymbol(symbol, stats) {
     stats.baseline.returnSum += baseReturnPct;
     if (baseReturnPct > 0) stats.baseline.upDays++;
 
+    // 오늘 BUY류 신호가 하나라도 뜨면 lastBuyEntryPrice를 갱신하는데, 오늘 SELL의 구간 분류는
+    // "오늘 갱신되기 전" 기준(그동안 들고 있었다고 가정한 진입가)으로 해야 하므로 zone 분류를
+    // 먼저 다 마치고 맨 마지막에 한 번만 갱신함.
+    let firedBuyToday = false;
+
     // ── MA20/60 골든/데드크로스 (ADX 게이트 적용 전/후 둘 다 측정 — 게이트 자체가 실제로
     //    도움되는지 검증하는 게 이 백테스트의 핵심 동기 중 하나)
     const maCross = detectMACross(c);
@@ -166,6 +188,8 @@ async function backtestSymbol(symbol, stats) {
       recordOutcome(stats.maCrossRaw[direction], result);
       const adxOk = typeof adx === "number" && adx >= ADX_TREND_THRESHOLD;
       if (adxOk) recordOutcome(stats.maCrossAdxGated[direction], result);
+      if (direction === "SELL") recordOutcome(stats.sellZone.maCross[classifyZone(entryPrice)], result);
+      else firedBuyToday = true;
       signalCount++;
     }
 
@@ -176,6 +200,8 @@ async function backtestSymbol(symbol, stats) {
       const { target1, stop } = calcTargetStop(h, l, c);
       const result = evaluateOutcome(direction, entryPrice, target1, stop, highs, lows, closes, fromIdx);
       recordOutcome(stats.macdCross[direction], result);
+      if (direction === "SELL") recordOutcome(stats.sellZone.macdCross[classifyZone(entryPrice)], result);
+      else firedBuyToday = true;
       signalCount++;
     }
 
@@ -185,8 +211,12 @@ async function backtestSymbol(symbol, stats) {
       const { target1, stop } = calcTargetStop(h, l, c);
       const result = evaluateOutcome(volSurge, entryPrice, target1, stop, highs, lows, closes, fromIdx);
       recordOutcome(stats.volumeSurge[volSurge], result);
+      if (volSurge === "SELL") recordOutcome(stats.sellZone.volumeSurge[classifyZone(entryPrice)], result);
+      else firedBuyToday = true;
       signalCount++;
     }
+
+    if (firedBuyToday) lastBuyEntryPrice = entryPrice;
   }
 
   console.log(`  ✓ ${symbol}: ${n}봉 확보, 신호 ${signalCount}건 평가`);
@@ -208,6 +238,11 @@ async function main() {
     macdCross: { BUY: newStat(), SELL: newStat() },
     volumeSurge: { BUY: newStat(), SELL: newStat() },
     baseline: newBaseline(),
+    sellZone: {
+      maCross: newZoneStat(),
+      macdCross: newZoneStat(),
+      volumeSurge: newZoneStat(),
+    },
   };
 
   console.log(`대상 종목 ${watchlist.length}개:\n`);
@@ -248,6 +283,25 @@ async function main() {
 
   console.log("\n(승률은 target1/stop 중 하나를 실제로 친 신호만 대상 — 미결은 별도 표기)");
   console.log(`(기준선: 상승비율 ${baseUpRate}%, 평균수익률 ${baseAvgReturn}% — 위 신호별 수치와 비교해서 해석할 것)`);
+
+  console.log("\n===== SELL 신호 — 익절 구간 vs 손실 구간 분리 =====");
+  console.log(
+    "(사용자 피드백: 이미 수익 구간에서 뜬 SELL은 방향이 틀려도 저위험 — 손실/미실현 구간에서\n" +
+      " 뜬 SELL의 정확도가 진짜 중요함. '진입가'는 그 종목의 가장 최근 BUY류 신호 가격으로 근사함)\n"
+  );
+  for (const [key, label] of [
+    ["maCross", "MA20/60 데드크로스"],
+    ["macdCross", "MACD 데드크로스"],
+    ["volumeSurge", "거래량급증 SELL"],
+  ]) {
+    const z = stats.sellZone[key];
+    console.log(`[${label}]`);
+    console.log(formatStat("  익절 구간(이미 진입가 위)", z.PROFIT));
+    console.log(formatStat("  손실/미실현 구간(진입가 이하)", z.LOSS));
+    console.log(formatStat("  기준 없음(직전 BUY 신호 없음)", z.NO_REF));
+    console.log("");
+  }
+
   console.log("[RAVEN 백테스트] 종료 —", new Date().toISOString());
 }
 
