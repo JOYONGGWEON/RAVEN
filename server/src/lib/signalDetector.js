@@ -499,14 +499,17 @@ async function checkSignal(symbol) {
           : [],
     },
     { dir: streakResult.signal, reasons: streakResult.reasons },
+    // 2026-08-12 백테스트 실증(project_raven_algorithm_update 메모리 참고): MACD 골든크로스는
+    // BUY 쪽에서 두 독립 ~3년 구간 모두 기준선 대비 우위를 보였지만, MACD 데드크로스는 SELL 쪽에서
+    // 두 구간 모두 기준선 대비 우위가 없었고(방향 정확도가 "아무 날에나 하락에 걸기"와 비슷하거나
+    // 낮음), 드물게 이미 수익 구간에서 떴을 때조차 전체 분석 중 가장 나쁜 성적(승률 40%대, 평균
+    // -3~-6%대)이었음 — 잘 나가는 포지션을 조기에 끊는 경우가 많았다는 뜻이라 "저위험"도 아니었음.
+    // GOLDEN(BUY)은 그대로 독립 카테고리로 남기고, DEAD(SELL)만 독립 트리거에서 제외 — 아래에서
+    // 다른 신호가 이미 SELL로 판정됐을 때만 확인 근거(confirm)로 반영(program-trade 조합/3~4일
+    // 연속매매와 같은 패턴, 완전히 버리진 않되 단독으로 알림을 못 울리게 강등).
     {
-      dir: macdCross === "GOLDEN" ? "BUY" : macdCross === "DEAD" ? "SELL" : "NONE",
-      reasons:
-        macdCross === "GOLDEN"
-          ? ["MACD 골든크로스 (모멘텀 전환)"]
-          : macdCross === "DEAD"
-          ? ["MACD 데드크로스 (모멘텀 전환)"]
-          : [],
+      dir: macdCross === "GOLDEN" ? "BUY" : "NONE",
+      reasons: macdCross === "GOLDEN" ? ["MACD 골든크로스 (모멘텀 전환)"] : [],
     },
   ];
 
@@ -536,6 +539,13 @@ async function checkSignal(symbol) {
     // "참고 근거"로 신뢰도에 반영 — 사용자 요청("3일 연속 수급까지 붙으면 신뢰도 상승").
     if (streakResult.confirmSignal === signal && streakResult.confirmReasons.length) {
       reasons.push(...streakResult.confirmReasons);
+      matchingCategories++;
+    }
+
+    // MACD 데드크로스 확인 근거 — 위 categories 배열 주석 참고(백테스트로 독립 SELL 트리거에서
+    // 강등됨). 다른 신호가 이미 SELL을 확정한 날에만 참고용으로 덧붙임.
+    if (signal === "SELL" && macdCross === "DEAD") {
+      reasons.push("MACD 데드크로스 동반(모멘텀도 하락 전환 — 참고용, 백테스트 결과 단독 신뢰도 낮아 트리거로는 안 씀)");
       matchingCategories++;
     }
   }
